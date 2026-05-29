@@ -70,6 +70,10 @@ SCORING GUIDANCE:
 - addressGeocoded=false OR addressMatchConfidence<0.5 → strong fraud (+15 to +25)  [false only, not null]
 - addressMatchesCity=false → moderate fraud (+10 to +20) — the address resolved to a different city than claimed; =true → mild legitimacy (-5); null → neutral
 - crypto_payment / banking_info_upfront in flags → strong fraud (+20 to +30)
+- web.businessMatch=="mismatch" → strong fraud (+20 to +30); =="match" → legitimacy (-10 to -20)
+- web.locationMatch=="mismatch" → moderate fraud (+10 to +15); =="match" → mild legitimacy (-5)
+- web.hasJobsListing=="yes" → mild legitimacy bonus (-5 to -10); "no"/"unknown" is NEUTRAL, never a penalty
+- web fields that are null/"uncertain"/"unknown" → strictly neutral (same null-vs-false rule)
 - mail_physical_resume + software role → strong fraud (+20)
 - EMAIL — judge ONLY from the \`generic_email_domain\` flag below, which is authoritative and fires
   ONLY when the contact email is at a FREE consumer provider (gmail/outlook/yahoo/hotmail/aol/icloud/
