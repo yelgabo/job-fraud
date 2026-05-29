@@ -1,5 +1,20 @@
 import { z } from "zod"
 
+export const WebVerificationSchema = z.object({
+  websiteUrl: z
+    .string()
+    .transform((s) => (s.trim() ? s.trim() : null))
+    .nullable(),
+  websiteReachable: z.enum(["yes", "no", "unknown"]),
+  businessMatch: z.enum(["match", "mismatch", "uncertain"]),
+  locationMatch: z.enum(["match", "mismatch", "uncertain"]),
+  hasJobsListing: z.enum(["yes", "no", "unknown"]),
+  confidence: z.number().min(0).max(1),
+  summary: z.string(),
+})
+
+export type WebVerification = z.infer<typeof WebVerificationSchema>
+
 export const ChecksSchema = z
   .object({
     websiteReachable: z.boolean().nullable().optional(),
@@ -10,6 +25,7 @@ export const ChecksSchema = z
     addressResolvedTo: z.string().nullable().optional(),
     addressMatchesCity: z.boolean().nullable().optional(),
     addressFlags: z.array(z.string()).optional(),
+    web: WebVerificationSchema.nullable().optional(),
   })
   .passthrough()
 
