@@ -34,11 +34,14 @@ model Job {
   atsProvider       String?
   externalApplyOk   Boolean?
   applicationFlags  Json      @default("[]")
-  fraudScore        Int
-  riskBand          String
-  reasoning         String
-  signals           Json
+  // Scoring fields are null until the `judge` phase evaluates the posting.
+  fraudScore        Int?
+  riskBand          String?
+  reasoning         String?
+  signals           Json?
+  scoredAt          DateTime?
   scrapedAt         DateTime  @default(now())
 
   @@index([riskBand, fraudScore])
+  @@index([scoredAt])
 }

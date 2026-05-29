@@ -28,18 +28,19 @@ export default async function HomePage({
     : "all"
 
   const [grouped, total, agg, rows] = await Promise.all([
-    prisma.job.groupBy({ by: ["riskBand"], _count: true }),
-    prisma.job.count(),
+    prisma.job.groupBy({ by: ["riskBand"], _count: true, where: { scoredAt: { not: null } } }),
+    prisma.job.count({ where: { scoredAt: { not: null } } }),
     prisma.job.aggregate({ _max: { scrapedAt: true } }),
     prisma.job.findMany({
-      where: active === "all" ? {} : { riskBand: active },
+      // Only show judged postings; pending (unscored) ones are hidden until evaluated.
+      where: active === "all" ? { scoredAt: { not: null } } : { riskBand: active },
       orderBy: [{ fraudScore: "desc" }, { title: "asc" }],
       include: { employer: true },
     }),
   ])
 
   const counts: Record<string, number> = { all: total }
-  for (const g of grouped) counts[g.riskBand] = g._count
+  for (const g of grouped) if (g.riskBand) counts[g.riskBand] = g._count
 
   const scored = (counts.high ?? 0) + (counts.medium ?? 0) + (counts.low ?? 0)
   const lastScraped = agg._max.scrapedAt
@@ -85,7 +86,7 @@ export default async function HomePage({
               {rows.map((job) => (
                 <tr key={job.workbcId} className="hover:bg-zinc-50">
                   <td className="px-4 py-3 align-top">
-                    <ScoreChip score={job.fraudScore} />
+                    <ScoreChip score={job.fraudScore ?? 0} />
                   </td>
                   <td className="px-4 py-3 align-top">
                     <Link href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">

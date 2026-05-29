@@ -3,11 +3,12 @@ import { z } from "zod"
 const DEFAULT_SEARCH_URL =
   "https://www.workbc.ca/search-and-prepare-job/find-jobs#/job-search;search=software;pagesize=50;"
 
-/** Build a WorkBC search URL for a single free-text term. */
-export function searchUrlForTerm(term: string): string {
-  return `https://www.workbc.ca/search-and-prepare-job/find-jobs#/job-search;search=${encodeURIComponent(
+/** Build a WorkBC search URL for a single free-text term and (1-based) results page. */
+export function searchUrlForTerm(term: string, page = 1): string {
+  const base = `https://www.workbc.ca/search-and-prepare-job/find-jobs#/job-search;search=${encodeURIComponent(
     term,
   )};pagesize=50;`
+  return page > 1 ? `${base}page=${page};` : base
 }
 
 const webSchema = z.object({

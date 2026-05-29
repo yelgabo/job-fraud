@@ -34,7 +34,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
   const { id } = await params
   const employer = await prisma.employer.findUnique({
     where: { id },
-    include: { jobs: { orderBy: { fraudScore: "desc" } } },
+    include: { jobs: { where: { scoredAt: { not: null } }, orderBy: { fraudScore: "desc" } } },
   })
   if (!employer) notFound()
 
@@ -138,7 +138,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
           <ul className="divide-y divide-zinc-100">
             {employer.jobs.map((job) => (
               <li key={job.workbcId} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50">
-                <ScoreChip score={job.fraudScore} />
+                <ScoreChip score={job.fraudScore ?? 0} />
                 <Link href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">
                   {job.title}
                 </Link>

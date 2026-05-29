@@ -13,6 +13,18 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const job = await prisma.job.findUnique({ where: { workbcId: id }, include: { employer: true } })
   if (!job) notFound()
 
+  if (!job.scoredAt) {
+    return (
+      <div className="space-y-4">
+        <Link href="/" className="text-sm text-zinc-500 hover:underline">
+          ← Back to all postings
+        </Link>
+        <h1 className="text-2xl font-semibold text-zinc-900">{job.title}</h1>
+        <p className="text-zinc-600">This posting hasn’t been evaluated yet.</p>
+      </div>
+    )
+  }
+
   const signals = parseSignals(job.signals).slice().sort((a, b) => b.weight - a.weight)
   const flags = parseFlags(job.applicationFlags)
   const checks = job.employer ? parseChecks(job.employer.checks) : {}
@@ -26,7 +38,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <ScoreChip score={job.fraudScore} />
+            <ScoreChip score={job.fraudScore ?? 0} />
             <h1 className="text-2xl font-semibold text-zinc-900">{job.title}</h1>
           </div>
           <p className="mt-1 text-zinc-600">
@@ -53,7 +65,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">Verdict</h2>
-        <p className="mb-4 text-zinc-700">{job.reasoning}</p>
+        <p className="mb-4 text-zinc-700">{job.reasoning ?? ""}</p>
         {signals.length > 0 && (
           <ul className="space-y-2">
             {signals.map((s, i) => {
