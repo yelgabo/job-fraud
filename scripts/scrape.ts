@@ -13,6 +13,7 @@ import { probe } from "../lib/http-probe"
 import { geocode } from "../lib/geocode"
 import { normalizeEmployer } from "../lib/normalize-employer"
 import { cityMatches } from "../lib/address-match"
+import { searchJobsApi } from "../lib/workbc-api"
 import { bandFor } from "../lib/risk-band"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/scoring"
 import { verifyEmployerWeb } from "../lib/verify-employer-web"
@@ -26,6 +27,7 @@ type Args = {
   captureFixtures: string | null
   verifyWeb: boolean
   searchTerms: string | null
+  pages: number
 }
 
 function parseArgs(): Args {
@@ -37,6 +39,7 @@ function parseArgs(): Args {
     captureFixtures: null,
     verifyWeb: true,
     searchTerms: null,
+    pages: 1,
   }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
@@ -48,6 +51,7 @@ function parseArgs(): Args {
     else if (t === "--capture-fixtures") a.captureFixtures = argv[++i] ?? null
     else if (t === "--no-verify-web") a.verifyWeb = false
     else if (t === "--search-terms") a.searchTerms = argv[++i] ?? null
+    else if (t === "--pages") a.pages = parseInt(argv[++i] ?? "1", 10) || 1
   }
   return a
 }
@@ -237,26 +241,31 @@ async function main() {
     }
 
     // Phase A: search page
-    const terms = (args.searchTerms ?? env.WORKBC_SEARCH_TERMS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
     let stubs: JobStub[]
-    if (!isOffline && terms.length > 0) {
-      // The WorkBC SPA renders only ~20 cards per query, so query each term and merge by id.
+    if (isOffline) {
+      // Offline/fixtures: replay the saved search HTML (used by tests + offline dev).
+      log.log({ stage: "search:start", ok: true, meta: { offline: true, url: env.WORKBC_SEARCH_URL } })
+      const searchHtml = await getSearchHtml(args, workbcPage, env.WORKBC_SEARCH_URL)
+      stubs = parseListingCards(searchHtml)
+    } else {
+      // Online: query WorkBC's JSON JobSearch API (reliable pagination + employer/city/salary),
+      // one or more keywords merged + deduped by JobId. Default keyword: "software engineer".
+      const terms = (args.searchTerms ?? env.WORKBC_SEARCH_TERMS ?? "software engineer")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const target = args.limit ?? 50
       const byId = new Map<string, JobStub>()
       for (const term of terms) {
         log.log({ stage: "search:start", ok: true, meta: { term } })
-        const found = await searchTermStubs(workbcPage!, searchUrlForTerm(term))
+        const found = await searchJobsApi(term, target, (pg, total, count) =>
+          console.log(`[search] "${term}" page ${pg}: ${total} collected / ${count} total results`),
+        )
         for (const s of found) if (!byId.has(s.workbcId)) byId.set(s.workbcId, s)
-        console.log(`[search] term "${term}": ${found.length} stubs (running total ${byId.size})`)
-        await sleep(1200)
+        console.log(`[search] "${term}": ${found.length} stubs (running total ${byId.size})`)
+        if (byId.size >= target) break
       }
       stubs = [...byId.values()]
-    } else {
-      log.log({ stage: "search:start", ok: true, meta: { offline: isOffline, url: env.WORKBC_SEARCH_URL } })
-      const searchHtml = await getSearchHtml(args, workbcPage, env.WORKBC_SEARCH_URL)
-      stubs = parseListingCards(searchHtml)
     }
     log.log({ stage: "search:done", ok: stubs.length > 0, meta: { stubCount: stubs.length } })
     if (stubs.length === 0) {
