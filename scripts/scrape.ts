@@ -215,8 +215,11 @@ async function main() {
     const limited = args.limit ? stubs.slice(0, args.limit) : stubs
     console.log(`[search] ${stubs.length} stubs; processing ${limited.length}`)
 
-    // Phase B: detail + external pages, sequential
+    // Phase B: detail + external pages, sequential. Each posting is upserted as it's scraped
+    // (incremental write = crash-safe / resumable for large runs).
     const enriched: EnrichedJob[] = []
+    const empIdCache = new Map<string, string>()
+    let written = 0
     for (const stub of limited) {
       const dt0 = Date.now()
       const html = await getDetailHtml(args, workbcPage, stub)
@@ -259,61 +262,29 @@ async function main() {
         if (!isOffline) await sleep(POLITE_EXTERNAL_DELAY)
       }
 
-      enriched.push({ stub, detail, externalApplyUrl, externalApplyHost, atsProvider, externalApplyOk, applicationFlags: appFlags, descriptionMd })
-      log.log({ workbcId: stub.workbcId, stage: "detail", ok: true, durationMs: Date.now() - dt0, meta: { flagCount: appFlags.length, ats: atsProvider } })
-      if (!isOffline) await sleep(POLITE_DETAIL_DELAY)
-    }
-    console.log(`[detail] enriched ${enriched.length}/${limited.length}`)
-
-    // Phase C: employer identity dedupe (no checks — those are part of `judge`)
-    const employerMap = new Map<string, EmployerRow>()
-    for (const e of enriched) {
-      const display = e.detail.employerName ?? e.stub.employerName ?? null
-      if (!display) continue
-      const key = normalizeEmployer(display)
-      if (!key || employerMap.has(key)) continue
-      employerMap.set(key, {
-        nameNormalized: key,
-        nameDisplay: display,
-        website: e.detail.employerWebsite,
-        applicationUrl: e.externalApplyUrl,
-        addressRaw: e.detail.addressRaw,
-      })
-    }
-    console.log(`[employers] ${employerMap.size} unique employers`)
-
-    // Phase D: upsert raw postings (accumulate; no TRUNCATE). Scoring stays null = pending.
-    if (args.dryRun) {
-      console.log(`[scrape] dry-run: ${enriched.length} postings collected, not written`)
-    } else {
-      const empIdMap = new Map<string, string>()
-      for (const emp of employerMap.values()) {
-        const row = await prisma.employer.upsert({
-          where: { nameNormalized: emp.nameNormalized },
-          // create with identity only; existing employers keep their judge-populated checks/checkedAt
-          create: {
-            nameNormalized: emp.nameNormalized,
-            nameDisplay: emp.nameDisplay,
-            website: emp.website,
-            applicationUrl: emp.applicationUrl,
-            addressRaw: emp.addressRaw,
-          },
-          update: {
-            nameDisplay: emp.nameDisplay,
-            website: emp.website ?? undefined,
-            applicationUrl: emp.applicationUrl ?? undefined,
-            addressRaw: emp.addressRaw ?? undefined,
-          },
-        })
-        empIdMap.set(emp.nameNormalized, row.id)
-      }
-
-      let written = 0
-      for (const e of enriched) {
-        const empKey = e.detail.employerName ?? e.stub.employerName
-        const empId = empKey ? empIdMap.get(normalizeEmployer(empKey)) ?? null : null
+      const e: EnrichedJob = { stub, detail, externalApplyUrl, externalApplyHost, atsProvider, externalApplyOk, applicationFlags: appFlags, descriptionMd }
+      enriched.push(e)
+      if (!args.dryRun) {
+        const display = e.detail.employerName ?? e.stub.employerName ?? null
+        let employerId: string | null = null
+        if (display) {
+          const key = normalizeEmployer(display)
+          if (key) {
+            employerId = empIdCache.get(key) ?? null
+            if (!employerId) {
+              const row = await prisma.employer.upsert({
+                where: { nameNormalized: key },
+                // identity only; existing employers keep their judge-populated checks/checkedAt
+                create: { nameNormalized: key, nameDisplay: display, website: e.detail.employerWebsite, applicationUrl: e.externalApplyUrl, addressRaw: e.detail.addressRaw },
+                update: { nameDisplay: display, website: e.detail.employerWebsite ?? undefined, applicationUrl: e.externalApplyUrl ?? undefined, addressRaw: e.detail.addressRaw ?? undefined },
+              })
+              employerId = row.id
+              empIdCache.set(key, employerId)
+            }
+          }
+        }
         const fields = {
-          employerId: empId,
+          employerId,
           title: e.detail.title || e.stub.title,
           location: e.detail.location ?? e.stub.location ?? null,
           salary: e.detail.salary,
@@ -326,17 +297,19 @@ async function main() {
           externalApplyOk: e.externalApplyOk,
           applicationFlags: e.applicationFlags as never,
         }
-        // create as pending; on re-scrape, refresh scraped fields but preserve prior judgment.
+        // create as pending (score null); on re-scrape, refresh scraped fields, preserve judgment.
         await prisma.job.upsert({ where: { workbcId: e.stub.workbcId }, create: { workbcId: e.stub.workbcId, ...fields }, update: fields })
         written++
       }
-      console.log(`[db] upserted ${written} postings (pending judgment), ${employerMap.size} employers`)
+      log.log({ workbcId: stub.workbcId, stage: "detail", ok: true, durationMs: Date.now() - dt0, meta: { flagCount: appFlags.length, ats: atsProvider } })
+      if (!isOffline) await sleep(POLITE_DETAIL_DELAY)
     }
+    console.log(`[detail] enriched ${enriched.length}/${limited.length}; upserted ${written}, ${empIdCache.size} employers`)
 
     console.log(`\n=== SCRAPE SUMMARY ===`)
     console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-    console.log(`Collected: ${enriched.length} of ${limited.length} attempted`)
-    console.log(`Next: run \`npm run judge\` to evaluate pending postings.`)
+    console.log(`Collected ${written} postings (pending judgment) from ${empIdCache.size} employers`)
+    console.log(`Next: run the judge-postings skill (or npm run judge:fetch) to evaluate pending postings.`)
     console.log(`Log: ${logPath}`)
   } finally {
     if (workbcContext) await workbcContext.close().catch(() => {})
