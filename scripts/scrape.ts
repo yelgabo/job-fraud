@@ -4,7 +4,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import pLimit from "p-limit"
 import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
-import { loadScrapeEnv } from "../lib/env"
+import { loadScrapeEnv, searchUrlForTerm } from "../lib/env"
 import { parseListingCards, parseDetail, type JobStub, type DetailFields } from "../lib/scrape-workbc"
 import { extractBodyText } from "../lib/scrape-external"
 import { classifyHost, isKnownAts } from "../lib/ats-registry"
@@ -25,6 +25,7 @@ type Args = {
   reverifyEmployers: boolean
   captureFixtures: string | null
   verifyWeb: boolean
+  searchTerms: string | null
 }
 
 function parseArgs(): Args {
@@ -35,6 +36,7 @@ function parseArgs(): Args {
     reverifyEmployers: false,
     captureFixtures: null,
     verifyWeb: true,
+    searchTerms: null,
   }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
@@ -45,6 +47,7 @@ function parseArgs(): Args {
     else if (t === "--reverify-employers") a.reverifyEmployers = true
     else if (t === "--capture-fixtures") a.captureFixtures = argv[++i] ?? null
     else if (t === "--no-verify-web") a.verifyWeb = false
+    else if (t === "--search-terms") a.searchTerms = argv[++i] ?? null
   }
   return a
 }
@@ -67,6 +70,33 @@ async function fetchHtmlPW(page: Page, url: string, sentinelSel: string | null, 
   await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {})
   await sleep(800)
   return await page.content()
+}
+
+/**
+ * Navigate the WorkBC SPA to a search URL with a fresh boot, then poll the rendered DOM until the
+ * parsed stub count stops growing (results render lazily, so a single capture catches a partial
+ * list). Returns the parsed stubs for that term.
+ */
+async function searchTermStubs(page: Page, url: string): Promise<JobStub[]> {
+  await page.goto("about:blank").catch(() => {}) // ensure Angular re-boots and re-runs the search
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
+  await page.waitForSelector('[href*="/job-details/"]', { timeout: 30000 }).catch(() => {})
+  await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {})
+  let prev = -1
+  let stable = 0
+  let best: JobStub[] = []
+  for (let i = 0; i < 14; i++) {
+    await sleep(700)
+    const found = parseListingCards(await page.content())
+    if (found.length >= best.length) best = found
+    if (found.length === prev && found.length > 0) {
+      if (++stable >= 2) break
+    } else {
+      stable = 0
+    }
+    prev = found.length
+  }
+  return best
 }
 
 function readFixtureOr(fixturesDir: string | null, name: string): string | null {
@@ -207,9 +237,27 @@ async function main() {
     }
 
     // Phase A: search page
-    log.log({ stage: "search:start", ok: true, meta: { offline: isOffline, url: env.WORKBC_SEARCH_URL } })
-    const searchHtml = await getSearchHtml(args, workbcPage, env.WORKBC_SEARCH_URL)
-    const stubs = parseListingCards(searchHtml)
+    const terms = (args.searchTerms ?? env.WORKBC_SEARCH_TERMS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    let stubs: JobStub[]
+    if (!isOffline && terms.length > 0) {
+      // The WorkBC SPA renders only ~20 cards per query, so query each term and merge by id.
+      const byId = new Map<string, JobStub>()
+      for (const term of terms) {
+        log.log({ stage: "search:start", ok: true, meta: { term } })
+        const found = await searchTermStubs(workbcPage!, searchUrlForTerm(term))
+        for (const s of found) if (!byId.has(s.workbcId)) byId.set(s.workbcId, s)
+        console.log(`[search] term "${term}": ${found.length} stubs (running total ${byId.size})`)
+        await sleep(1200)
+      }
+      stubs = [...byId.values()]
+    } else {
+      log.log({ stage: "search:start", ok: true, meta: { offline: isOffline, url: env.WORKBC_SEARCH_URL } })
+      const searchHtml = await getSearchHtml(args, workbcPage, env.WORKBC_SEARCH_URL)
+      stubs = parseListingCards(searchHtml)
+    }
     log.log({ stage: "search:done", ok: stubs.length > 0, meta: { stubCount: stubs.length } })
     if (stubs.length === 0) {
       console.error("Hard exit: 0 listings parsed. DB not touched.")
