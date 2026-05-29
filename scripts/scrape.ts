@@ -15,6 +15,7 @@ import { normalizeEmployer } from "../lib/normalize-employer"
 import { cityMatches } from "../lib/address-match"
 import { bandFor } from "../lib/risk-band"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/scoring"
+import { verifyEmployerWeb } from "../lib/verify-employer-web"
 import { JsonlLogger } from "./logger"
 
 type Args = {
@@ -23,6 +24,7 @@ type Args = {
   limit: number | null
   reverifyEmployers: boolean
   captureFixtures: string | null
+  verifyWeb: boolean
 }
 
 function parseArgs(): Args {
@@ -32,6 +34,7 @@ function parseArgs(): Args {
     limit: null,
     reverifyEmployers: false,
     captureFixtures: null,
+    verifyWeb: true,
   }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
@@ -41,6 +44,7 @@ function parseArgs(): Args {
     else if (t === "--limit") a.limit = parseInt(argv[++i] ?? "0", 10) || null
     else if (t === "--reverify-employers") a.reverifyEmployers = true
     else if (t === "--capture-fixtures") a.captureFixtures = argv[++i] ?? null
+    else if (t === "--no-verify-web") a.verifyWeb = false
   }
   return a
 }
@@ -284,12 +288,15 @@ async function main() {
     console.log(`[detail] enriched ${enriched.length}/${limited.length}`)
 
     // Phase C: employer dedupe + checks
+    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
     const employerMap = new Map<string, EmployerRow>()
+    const repJob = new Map<string, EnrichedJob>()
     for (const e of enriched) {
       const display = e.detail.employerName ?? e.stub.employerName ?? null
       if (!display) continue
       const key = normalizeEmployer(display)
       if (!key) continue
+      if (!repJob.has(key)) repJob.set(key, e)
       if (employerMap.has(key)) continue
       employerMap.set(key, {
         nameNormalized: key,
@@ -306,6 +313,7 @@ async function main() {
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
     let newChecks = 0
     let cached = 0
+    const toVerify: string[] = []
     for (const emp of employerMap.values()) {
       const existing = await prisma.employer.findUnique({ where: { nameNormalized: emp.nameNormalized } })
       const stale =
@@ -348,11 +356,63 @@ async function main() {
       emp.checks = checks
       emp.checkedAt = new Date()
       newChecks++
+      if (args.verifyWeb && !isOffline && !args.dryRun) toVerify.push(emp.nameNormalized)
     }
     console.log(`[employers] checks: ${newChecks} new, ${cached} cached`)
 
+    let webIn = 0
+    let webOut = 0
+    let webFail = 0
+    if (toVerify.length > 0) {
+      const webLimit = pLimit(3)
+      await Promise.all(
+        toVerify.map((key) =>
+          webLimit(async () => {
+            const emp = employerMap.get(key)!
+            const rep = repJob.get(key)
+            if (!rep) return
+            const vt0 = Date.now()
+            try {
+              const out = await verifyEmployerWeb(client, {
+                employerName: emp.nameDisplay,
+                jobTitle: rep.detail.title || rep.stub.title,
+                location: rep.detail.location ?? rep.stub.location ?? null,
+                descriptionExcerpt: rep.descriptionMd.slice(0, 800),
+              })
+              emp.checks.web = out.result
+              webIn += out.usage.inputTokens
+              webOut += out.usage.outputTokens
+              log.log({
+                stage: "verify-web",
+                ok: true,
+                durationMs: Date.now() - vt0,
+                meta: {
+                  employer: emp.nameDisplay,
+                  businessMatch: out.result.businessMatch,
+                  locationMatch: out.result.locationMatch,
+                  hasJobsListing: out.result.hasJobsListing,
+                  in: out.usage.inputTokens,
+                  out: out.usage.outputTokens,
+                },
+              })
+            } catch (err) {
+              webFail++
+              emp.checks.web = null
+              log.log({
+                stage: "verify-web",
+                ok: false,
+                durationMs: Date.now() - vt0,
+                meta: { employer: emp.nameDisplay },
+                error: (err as Error).message,
+              })
+            }
+          }),
+        ),
+      )
+      console.log(`[employers] web-verified ${toVerify.length - webFail}/${toVerify.length}, ${webFail} failed`)
+    }
+
     // Phase D: scoring
-    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
     const limit = pLimit(5)
     let totalIn = 0
     let totalOut = 0
@@ -487,6 +547,7 @@ async function main() {
     console.log(`Bands: ${JSON.stringify(bands)}`)
     console.log(`Scoring failures: ${failed}`)
     console.log(`Claude tokens: in=${totalIn} out=${totalOut}`)
+    console.log(`Web-verify tokens: in=${webIn} out=${webOut}`)
     console.log(`Log: ${logPath}`)
   } finally {
     if (workbcContext) await workbcContext.close().catch(() => {})
