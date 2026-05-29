@@ -69,7 +69,14 @@ SCORING GUIDANCE:
 - ats_known_provider in flags → strong legitimacy signal (-20 to -30)
 - addressGeocoded=false OR addressMatchConfidence<0.5 → strong fraud (+15 to +25)  [false only, not null]
 - mail_physical_resume + software role → strong fraud (+20)
-- generic_email_domain + no website → strong fraud (+20)
+- EMAIL — judge ONLY from the \`generic_email_domain\` flag below, which is authoritative and fires
+  ONLY when the contact email is at a FREE consumer provider (gmail/outlook/yahoo/hotmail/aol/icloud/
+  protonmail/etc.). If it IS present → fraud (+15 to +25), stronger when websiteReachable is also false.
+  If it is ABSENT, do NOT invent any email concern. An email at the employer's OWN domain (e.g.
+  jobs@idmelon.com for "IDmelon Technologies") is NORMAL — count it as mild legitimacy, never "generic".
+  "Applies by email only" or "no website/link shown in the posting" is NOT fraud on its own — many
+  legitimate employers accept email applications and omit a website. Never label a company-domain
+  email "generic", and never penalize the mere absence of a website link in the posting text.
 - websiteReachable=false → moderate fraud (+10 to +15)  [false only, not null]
 - Vague descriptions, urgency, salary outliers, ID-upfront, fee-to-apply → fraud (+10 to +30)
 - Detailed responsibilities, named team, real benefits, recognizable employer → legitimacy (-10 to -20)
