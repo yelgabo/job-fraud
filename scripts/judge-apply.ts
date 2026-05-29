@@ -3,11 +3,25 @@
 // updates jobs + employers sequentially (no concurrent writers -> no races/deadlocks). Each
 // verdict is zod-validated; a bad one is skipped, not fatal.
 // Run: npm run judge:apply -- <verdicts.json>
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync, statSync } from "node:fs"
+import { join } from "node:path"
 import { z } from "zod"
 import { prisma } from "../lib/db"
 import { SignalsSchema, WebVerificationSchema } from "../lib/json-schemas"
 import { bandFor } from "../lib/risk-band"
+
+/** Expand args into verdict-file paths: a dir contributes its verdicts*.json files. */
+function resolveFiles(args: string[]): string[] {
+  const files: string[] = []
+  for (const a of args) {
+    if (statSync(a).isDirectory()) {
+      for (const f of readdirSync(a)) if (/verdicts.*\.json$/i.test(f)) files.push(join(a, f))
+    } else {
+      files.push(a)
+    }
+  }
+  return files
+}
 
 const VerdictSchema = z.object({
   workbcId: z.string(),
@@ -18,14 +32,18 @@ const VerdictSchema = z.object({
 })
 
 async function main() {
-  const path = process.argv[2]
-  if (!path) {
-    console.error("usage: npm run judge:apply -- <verdicts.json>")
+  const args = process.argv.slice(2)
+  if (args.length === 0) {
+    console.error("usage: npm run judge:apply -- <verdicts.json | dir> [...]")
     process.exit(1)
   }
-  const raw = JSON.parse(readFileSync(path, "utf8"))
-  const verdicts: unknown[] = Array.isArray(raw) ? raw : [raw]
-  console.log(`[judge:apply] ${verdicts.length} verdicts from ${path}`)
+  const verdicts: unknown[] = []
+  for (const f of resolveFiles(args)) {
+    const raw = JSON.parse(readFileSync(f, "utf8"))
+    if (Array.isArray(raw)) verdicts.push(...raw)
+    else verdicts.push(raw)
+  }
+  console.log(`[judge:apply] ${verdicts.length} verdicts`)
 
   let applied = 0
   let skipped = 0
