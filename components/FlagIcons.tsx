@@ -6,6 +6,8 @@ const FLAG_META: Record<string, { icon: string; label: string }> = {
   generic_email_domain: { icon: "📧", label: "Generic email domain" },
   fee_to_apply: { icon: "💸", label: "Fee to apply" },
   id_upfront: { icon: "🪪", label: "ID requested upfront" },
+  crypto_payment: { icon: "🪙", label: "Crypto payment" },
+  banking_info_upfront: { icon: "🏦", label: "Bank details upfront" },
   external_apply_unreachable: { icon: "🔗", label: "Apply link unreachable" },
   ats_known_provider: { icon: "✅", label: "Known ATS provider" },
 }

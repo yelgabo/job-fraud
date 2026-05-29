@@ -8,6 +8,7 @@ export const ChecksSchema = z
     addressGeocoded: z.boolean().nullable().optional(),
     addressMatchConfidence: z.number().nullable().optional(),
     addressResolvedTo: z.string().nullable().optional(),
+    addressMatchesCity: z.boolean().nullable().optional(),
     addressFlags: z.array(z.string()).optional(),
   })
   .passthrough()

@@ -42,6 +42,22 @@ const DETECTORS: Detector[] = [
       /\b(sin|passport|government\s*id)\b[^.]{0,40}\b(before|prior\s*to)\b[^.]{0,40}\b(interview|hire)/i,
     ],
   },
+  {
+    flag: "crypto_payment",
+    patterns: [
+      // crypto term in a *payment* context — avoids flagging legitimate blockchain/crypto roles
+      /\b(paid|payment|salary|wage|compensat\w*|deposit|reimburse\w*)\b[^.]{0,40}\b(bitcoin|btc|ethereum|crypto(currency)?|usdt|tether|stablecoin)\b/i,
+      /\b(bitcoin|btc|crypto(currency)?|usdt|tether)\b[^.]{0,30}\b(payment|salary|wage|paid|per\s+(hour|week|task))\b/i,
+    ],
+  },
+  {
+    flag: "banking_info_upfront",
+    patterns: [
+      // a posting that asks for a void cheque / bank account details before you start is a classic mule scam
+      /\bvoid(ed)?\s+che(que|ck)\b/i,
+      /\b(bank(ing)?\s+(account|details|information)|routing\s+number|sort\s+code|direct\s+deposit\s+(form|details|info))\b[^.]{0,50}\b(before|prior\s+to|upfront|to\s+(begin|start|commence)|first\s+day|immediately)\b/i,
+    ],
+  },
 ]
 
 export function detectFlags(text: string): ApplicationFlag[] {

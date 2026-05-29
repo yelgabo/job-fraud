@@ -68,6 +68,8 @@ name plausibility), defaulting toward low risk unless the text itself raises a c
 SCORING GUIDANCE:
 - ats_known_provider in flags → strong legitimacy signal (-20 to -30)
 - addressGeocoded=false OR addressMatchConfidence<0.5 → strong fraud (+15 to +25)  [false only, not null]
+- addressMatchesCity=false → moderate fraud (+10 to +20) — the address resolved to a different city than claimed; =true → mild legitimacy (-5); null → neutral
+- crypto_payment / banking_info_upfront in flags → strong fraud (+20 to +30)
 - mail_physical_resume + software role → strong fraud (+20)
 - EMAIL — judge ONLY from the \`generic_email_domain\` flag below, which is authoritative and fires
   ONLY when the contact email is at a FREE consumer provider (gmail/outlook/yahoo/hotmail/aol/icloud/

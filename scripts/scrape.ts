@@ -12,6 +12,7 @@ import { detectFlags, type ApplicationFlag } from "../lib/application-flags"
 import { probe } from "../lib/http-probe"
 import { geocode } from "../lib/geocode"
 import { normalizeEmployer } from "../lib/normalize-employer"
+import { cityMatches } from "../lib/address-match"
 import { bandFor } from "../lib/risk-band"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/scoring"
 import { JsonlLogger } from "./logger"
@@ -335,11 +336,13 @@ async function main() {
         checks.addressGeocoded = g.found
         checks.addressMatchConfidence = g.confidence
         checks.addressResolvedTo = g.displayName
+        checks.addressMatchesCity = cityMatches(emp.addressRaw, g.displayName)
         checks.addressFlags = []
       } else {
         checks.addressGeocoded = null
         checks.addressMatchConfidence = null
         checks.addressResolvedTo = null
+        checks.addressMatchesCity = null
         checks.addressFlags = []
       }
       emp.checks = checks
