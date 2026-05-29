@@ -10,6 +10,7 @@
     "db:push": "prisma db push",
     "scrape": "tsx --env-file=.env scripts/scrape.ts",
     "rescore-failed": "tsx --env-file=.env scripts/rescore-failed.ts",
+    "reverify-mail": "tsx --env-file=.env scripts/reverify-mail.ts",
     "test": "vitest run"
   },
   "dependencies": {

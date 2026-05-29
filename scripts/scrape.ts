@@ -426,6 +426,7 @@ async function main() {
                 jobTitle: rep.detail.title || rep.stub.title,
                 location: rep.detail.location ?? rep.stub.location ?? null,
                 descriptionExcerpt: rep.descriptionMd.slice(0, 800),
+                applicationText: (rep.detail.applyMethodText || "").slice(0, 600),
               })
               emp.checks.web = out.result
               webIn += out.usage.inputTokens

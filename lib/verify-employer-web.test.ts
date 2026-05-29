@@ -8,6 +8,7 @@ const VALID = {
   businessMatch: "match",
   locationMatch: "match",
   hasJobsListing: "yes",
+  applicationAddressType: "business",
   confidence: 0.9,
   summary: "Real company.",
 }
@@ -24,15 +25,38 @@ function mockClient(...responses: unknown[]) {
   return { client: { messages: { create } } as unknown as Anthropic, create }
 }
 
-const INPUT = { employerName: "Acme", jobTitle: "developer", location: "Vancouver", descriptionExcerpt: "build things" }
+const INPUT = {
+  employerName: "Acme",
+  jobTitle: "developer",
+  location: "Vancouver",
+  descriptionExcerpt: "build things",
+  applicationText: "Apply online at acme.com/careers",
+}
 
 describe("verifyEmployerWeb", () => {
   it("parses a valid verdict", async () => {
     const { client } = mockClient(toolResp(VALID))
     const out = await verifyEmployerWeb(client, INPUT)
     expect(out.result.businessMatch).toBe("match")
+    expect(out.result.applicationAddressType).toBe("business")
     expect(out.result.websiteUrl).toBe("https://acme.com")
     expect(out.usage.inputTokens).toBe(10)
+  })
+
+  it("captures a residential application-address verdict", async () => {
+    const { client } = mockClient(
+      toolResp({ ...VALID, applicationAddressType: "residential", summary: "Mail-to is a Surrey apartment." }),
+    )
+    const out = await verifyEmployerWeb(client, INPUT)
+    expect(out.result.applicationAddressType).toBe("residential")
+  })
+
+  it("defaults applicationAddressType to 'none' when the model omits it", async () => {
+    const noType = { ...VALID } as Record<string, unknown>
+    delete noType.applicationAddressType
+    const { client } = mockClient(toolResp(noType))
+    const out = await verifyEmployerWeb(client, INPUT)
+    expect(out.result.applicationAddressType).toBe("none")
   })
 
   it("retries once on invalid output then succeeds", async () => {

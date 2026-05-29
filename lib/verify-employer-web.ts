@@ -8,6 +8,7 @@ export type WebVerifyInput = {
   jobTitle: string
   location: string | null
   descriptionExcerpt: string
+  applicationText: string // the posting's "How to apply" text / mailing address, "" if none
 }
 
 export type WebVerifyOutput = {
@@ -32,6 +33,7 @@ const recordTool: Anthropic.Tool = {
       "businessMatch",
       "locationMatch",
       "hasJobsListing",
+      "applicationAddressType",
       "confidence",
       "summary",
     ],
@@ -54,6 +56,12 @@ const recordTool: Anthropic.Tool = {
         enum: ["yes", "no", "unknown"],
         description: "Does the site have a careers/jobs section at all? (bonus only - do NOT look for this exact posting)",
       },
+      applicationAddressType: {
+        type: "string",
+        enum: ["business", "residential", "po_box", "virtual", "none", "uncertain"],
+        description:
+          "Nature of the address applicants are told to MAIL materials to (from APPLICATION below). Web-search the address to judge. 'business' = a genuine commercial office (ideally the company's own). 'residential' = a house/apartment/private unit. 'po_box' = a PO box. 'virtual' = a mail-forwarding/virtual-office. 'none' = the posting gives no mailing address (applies online/email). 'uncertain' = cannot tell. A residence/po_box/virtual address — especially one that is NOT the company's real office found on their website — is a serious red flag for a professional role.",
+      },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       summary: { type: "string", description: "<= 400 chars of reasoning." },
     },
@@ -66,14 +74,17 @@ function buildPrompt(i: WebVerifyInput): string {
 EMPLOYER: ${i.employerName}
 POSTING TITLE: ${i.jobTitle}
 CLAIMED LOCATION: ${i.location ?? "(unknown)"}
+APPLICATION (how to apply / mailing address from the posting):
+${i.applicationText || "(none given)"}
 POSTING EXCERPT:
 ${i.descriptionExcerpt}
 
 Do a smell test on the COMPANY (do NOT try to find this exact posting):
-- Find the official website (not directories/aggregators). If none clearly exists, set websiteUrl="" and websiteReachable="unknown".
+- Find the official website (not directories/aggregators). If none clearly exists, set websiteUrl="" and websiteReachable="unknown". Note the company's real office address from the site/registration.
 - businessMatch: is it a REAL, substantive company that plausibly exists and could employ this role? Almost every real company hires software/IT/support roles, so a tech-enabled employer in ANY industry (ridesharing, retail, healthcare, fintech, etc.) counts as "match". Only use "mismatch" for genuine red flags: no real company found, a parked/empty/template website, a shell, impersonation of a known brand, or a clearly unrelated entity. Do NOT mark mismatch merely because the company's core industry differs from the job's function.
 - locationMatch: does the company's stated location/address agree with the claimed location?
 - hasJobsListing: does the site have a careers/jobs section at all? (a bonus legitimacy hint - do NOT search for this specific posting)
+- applicationAddressType: if the APPLICATION above gives a postal/mailing address, WEB-SEARCH that exact address and classify the KIND of place it is — business (a real commercial office, ideally the company's own), residential (a house/apartment/private unit), po_box, or virtual (mail-forwarding). A residence/PO box/virtual office — ESPECIALLY one that is not the company's real office you found above — is a serious red flag for a professional role. If the posting gives no mailing address, use "none".
 Use "uncertain"/"unknown" when you genuinely cannot tell. Then call record_web_verification.`
 }
 

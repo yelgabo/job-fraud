@@ -9,6 +9,12 @@ export const WebVerificationSchema = z.object({
   businessMatch: z.enum(["match", "mismatch", "uncertain"]),
   locationMatch: z.enum(["match", "mismatch", "uncertain"]),
   hasJobsListing: z.enum(["yes", "no", "unknown"]),
+  // Nature of the address applicants are told to mail materials to. A residence / PO box /
+  // virtual mailbox (especially one unrelated to the company's real office) is a strong fraud
+  // signal for a professional role. "none" = the posting has no mailing address (applies online).
+  applicationAddressType: z
+    .enum(["business", "residential", "po_box", "virtual", "none", "uncertain"])
+    .default("none"),
   confidence: z.number().min(0).max(1),
   summary: z.string(),
 })

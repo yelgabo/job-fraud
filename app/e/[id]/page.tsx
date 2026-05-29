@@ -115,6 +115,14 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
             {checks.web.hasJobsListing === "yes" && (
               <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">has careers page</span>
             )}
+            {["residential", "po_box", "virtual"].includes(checks.web.applicationAddressType ?? "") && (
+              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                ⚠ mail-to: {(checks.web.applicationAddressType ?? "").replace("_", " ")} address
+              </span>
+            )}
+            {checks.web.applicationAddressType === "business" && (
+              <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">business mailing address</span>
+            )}
           </div>
           <p className="mt-2 text-xs text-zinc-500">
             {checks.web.summary} (confidence {checks.web.confidence.toFixed(2)})
