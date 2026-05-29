@@ -14,18 +14,23 @@ entire category of fraud signals is inert. The live scrape on 2026-05-29 confirm
 20/20 employers had no website and no geocoded address.
 
 We want to recover that signal by discovering the employer's real web presence ourselves
-and cross-checking the posting against it.
+and sanity-checking the company against the posting.
 
 ## Goal
 
-For each unique employer, **full cross-check**:
+For each unique employer, once we find their website, run a **smell test / vibe check** on
+the company — NOT a strict per-posting match:
 
 1. Find the employer's official website.
-2. Confirm it's a real business whose line of work plausibly matches the posting.
-3. Find the employer's careers page and determine whether **this specific posting**
-   appears there.
+2. Judge whether it's a real, substantive business whose industry/company info plausibly
+   matches the employer name and the posting's field.
+3. Check whether the company info / location / address on the site corroborates the posting's
+   claimed location.
+4. **Bonus:** if the site has a careers/jobs section (any active hiring presence), count that
+   as a mild non-fraud signal. We do NOT try to locate this exact posting on their site — that
+   strict cross-check is explicitly out of scope for now (too brittle).
 
-These become deterministic-ish signals that feed the existing Claude fraud score.
+These become signals that feed the existing Claude fraud score.
 
 ## Decisions (resolved during brainstorm)
 
@@ -47,6 +52,9 @@ These become deterministic-ish signals that feed the existing Claude fraud score
    independent of this.
 5. **Failure posture**: any transport/parse failure (after one retry) leaves the web fields
    `null` — neutral, never fabricated. Mirrors `lib/scoring.ts`.
+6. **Scope reduction (post-approval):** dropped the strict "is THIS posting on their careers
+   page" cross-check. Replaced with a company smell test + a boolean bonus for the mere
+   existence of a careers/jobs section.
 
 ## Architecture
 
@@ -78,9 +86,9 @@ export type WebVerifyInput = {
 export type WebVerification = {
   websiteUrl: string | null
   websiteReachable: boolean | null
-  businessMatch: "match" | "mismatch" | "uncertain"
-  postingFound: "found" | "not_found" | "uncertain"
-  postingUrl: string | null
+  businessMatch: "match" | "mismatch" | "uncertain"      // real company whose field matches the posting
+  locationMatch: "match" | "mismatch" | "uncertain"      // site's company info/address agrees with claimed location
+  hasJobsListing: boolean | null                          // careers/jobs section exists (bonus legitimacy)
   confidence: number            // 0..1
   summary: string               // short prose, <= ~400 chars
 }
@@ -100,12 +108,13 @@ export async function verifyEmployerWeb(
     implementation time).
   - custom `record_web_verification` tool whose `input_schema` matches `WebVerification`.
 - `tool_choice: { type: "auto" }` — cannot force the custom tool, because the model must be
-  free to call `web_search` first. Prompt explicitly instructs: search, read the official
-  site + careers page, then call `record_web_verification`.
+  free to call `web_search` first. Prompt instructs: search for the official site, judge
+  whether it's a real business matching this employer/posting, check whether the company's
+  stated location/address agrees with the posting, note whether a careers/jobs section exists,
+  then call `record_web_verification`. Explicitly tell it NOT to hunt for this exact posting.
 - Parse the `record_web_verification` tool_use block with a zod schema; if absent or invalid,
   retry once after 2s; second failure throws `WebVerifyError`.
-- Returns usage so the pipeline can log/aggregate tokens (web search is billed separately;
-  log the count of web-search uses if the API surfaces it).
+- Returns usage so the pipeline can log/aggregate tokens.
 
 ## Pipeline wiring (`scripts/scrape.ts`)
 
@@ -120,22 +129,22 @@ export async function verifyEmployerWeb(
   web-verification calls to collect promises and `await` them with the limiter so the 3-way
   concurrency is real (geocode stays sequential under its mutex; probes stay as-is).
 - Log one JSONL line per employer verification: `{ employer, stage: "verify-web", ok,
-  durationMs, meta: { businessMatch, postingFound, in, out } }`.
+  durationMs, meta: { businessMatch, locationMatch, hasJobsListing, in, out } }`.
 
 ## Scoring integration (`lib/scoring.ts`)
 
 `checks` already serializes into the "EMPLOYER VERIFICATION (deterministic — trust these)"
 block. Add guidance lines:
 
-- `web.postingFound == "found"` → strong legitimacy (−15 to −25)
-- `web.businessMatch == "mismatch"` → strong fraud (+20 to +30)
-- `web.postingFound == "not_found"` AND `web.businessMatch == "match"` → mild fraud (+5 to +10)
-  (the company is real but this exact posting isn't on their site — weakly suspicious; many
-  legitimate employers post only to WorkBC, so keep it mild)
-- `web.websiteUrl` present AND `web.websiteReachable == true` AND `web.businessMatch == "match"`
-  → legitimacy (−10)
+- `web.businessMatch == "mismatch"` → strong fraud (+20 to +30) — the site is not a real
+  company matching this employer/role.
+- `web.businessMatch == "match"` → legitimacy (−10 to −20).
+- `web.locationMatch == "mismatch"` → moderate fraud (+10 to +15); `"match"` → mild
+  legitimacy (−5).
+- `web.hasJobsListing == true` → mild legitimacy bonus (−5 to −10). `false` → neutral
+  (NOT a penalty — many real employers post only to WorkBC).
 - any `web` field `null` / `"uncertain"` → strictly neutral (consistent with the existing
-  null-vs-false rule)
+  null-vs-false rule).
 
 ## Schema (`lib/json-schemas.ts`)
 
@@ -148,9 +157,9 @@ Extend `ChecksSchema` with an optional, nullable `web` object matching `WebVerif
 Add a "Web verification" card next to the existing Verification card:
 
 - Website: `websiteUrl` as a link + reachable badge.
-- Business match: badge — green "matches", red "mismatch", gray "uncertain".
-- Posting found: badge — green "found on careers page" (link to `postingUrl`), amber
-  "not found", gray "uncertain".
+- Business match: badge — green "real / matches", red "mismatch", gray "uncertain".
+- Location match: badge — green "location agrees", red "location mismatch", gray "uncertain".
+- Careers section: green "has a careers/jobs page" when `hasJobsListing == true`, else muted.
 - Confidence (0–1) and the `summary` prose.
 - Absent `web` (older rows / skipped) → "not checked".
 
@@ -174,22 +183,23 @@ Add a "Web verification" card next to the existing Verification card:
 
 ## Out of scope (deferred)
 
+- **Locating this exact posting on the employer's careers page** (strict cross-check) — only a
+  boolean "careers section exists" bonus for now.
 - Verifying employers that are hidden (no name) — skipped.
 - Caching web results separately from the rest of the employer check (they share the same
   `checkedAt` freshness window).
-- Following the discovered website to also re-derive a postal address for geocoding (could be a
-  future enhancement: feed `websiteUrl` back into geocoding/contact extraction).
-- Persisting raw web-search transcripts/citations (we store only the structured verdict +
-  `postingUrl`).
+- Following the discovered website to re-derive a postal address for geocoding (possible future
+  enhancement: feed `websiteUrl` back into geocoding/contact extraction).
+- Persisting raw web-search transcripts/citations (we store only the structured verdict).
 
 ## Acceptance
 
 - [ ] `verifyEmployerWeb` returns a validated `WebVerification`; retries once; throws
       `WebVerifyError` on double failure; unit-tested with a mocked SDK.
 - [ ] A live scrape (verification on) populates `checks.web` for named employers, with at
-      least some `businessMatch != "uncertain"` and some `postingFound` resolved.
+      least some `businessMatch != "uncertain"`.
 - [ ] `--no-verify-web`, `--dry-run`, and `--fixtures` all skip the web call.
-- [ ] Scoring reflects the new signals (a confirmed careers-page posting lowers risk; a
-      business mismatch raises it).
+- [ ] Scoring reflects the new signals (a real, matching company lowers risk; a business
+      mismatch raises it; a careers section is a small bonus; absence is never penalized).
 - [ ] `app/e/[id]` renders the Web verification card; `npm test` and `npm run build` pass.
 - [ ] End-of-run summary reports web-verification token usage separately.
