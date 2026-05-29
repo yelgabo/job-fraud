@@ -4,13 +4,25 @@ import { SignalsSchema, type Signal } from "./json-schemas"
 
 const MODEL = "claude-haiku-4-5-20251001"
 
+function tryParseJson(v: unknown): unknown {
+  if (typeof v !== "string") return v
+  try {
+    return JSON.parse(v)
+  } catch {
+    return v
+  }
+}
+
 // Note: no `riskBand` here — the band is derived deterministically from `fraudScore`
 // via bandFor() in the pipeline. Asking the model for it added no value and was a
 // source of malformed tool calls (the model leaked XML tags into the enum value).
+// `signals` is preprocessed because the model sometimes emits the array as a JSON STRING
+// in the tool call (a tool-use quirk); at temperature 0 the retry would fail identically,
+// so we parse the string back into an array before validating.
 const ToolResultSchema = z.object({
   fraudScore: z.number().int().min(0).max(100),
   reasoning: z.string().min(1),
-  signals: SignalsSchema,
+  signals: z.preprocess(tryParseJson, SignalsSchema),
 })
 
 export type ScoreResult = z.infer<typeof ToolResultSchema>
@@ -121,7 +133,7 @@ export type ScoreOutput = {
 async function callOnce(client: Anthropic, input: ScoreInput): Promise<ScoreOutput> {
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 2000,
     temperature: 0, // deterministic scoring — minimizes run-to-run drift on borderline postings
 
     tools: [tool],

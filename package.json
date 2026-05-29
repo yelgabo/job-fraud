@@ -9,6 +9,7 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "scrape": "tsx --env-file=.env scripts/scrape.ts",
+    "rescore-failed": "tsx --env-file=.env scripts/rescore-failed.ts",
     "test": "vitest run"
   },
   "dependencies": {
