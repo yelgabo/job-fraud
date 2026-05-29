@@ -41,7 +41,8 @@ const recordTool: Anthropic.Tool = {
       businessMatch: {
         type: "string",
         enum: ["match", "mismatch", "uncertain"],
-        description: "Is this a real, substantive business whose field matches the employer name + posting?",
+        description:
+          "Is this a REAL, substantive company that plausibly exists and could employ this role? 'match' = a genuine company (any industry — companies hire software/IT/support/etc. roles regardless of their core business). 'mismatch' ONLY for genuine red flags: no real company found, a parked/empty/template site, a shell, impersonation of a known brand, or a clearly unrelated entity. Do NOT mark mismatch just because the company's core industry differs from the job's function.",
       },
       locationMatch: {
         type: "string",
@@ -70,7 +71,7 @@ ${i.descriptionExcerpt}
 
 Do a smell test on the COMPANY (do NOT try to find this exact posting):
 - Find the official website (not directories/aggregators). If none clearly exists, set websiteUrl="" and websiteReachable="unknown".
-- businessMatch: is it a real, substantive business whose industry/about info plausibly matches the employer name and this role?
+- businessMatch: is it a REAL, substantive company that plausibly exists and could employ this role? Almost every real company hires software/IT/support roles, so a tech-enabled employer in ANY industry (ridesharing, retail, healthcare, fintech, etc.) counts as "match". Only use "mismatch" for genuine red flags: no real company found, a parked/empty/template website, a shell, impersonation of a known brand, or a clearly unrelated entity. Do NOT mark mismatch merely because the company's core industry differs from the job's function.
 - locationMatch: does the company's stated location/address agree with the claimed location?
 - hasJobsListing: does the site have a careers/jobs section at all? (a bonus legitimacy hint - do NOT search for this specific posting)
 Use "uncertain"/"unknown" when you genuinely cannot tell. Then call record_web_verification.`
