@@ -53,14 +53,46 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             {job.salary ? ` · ${job.salary}` : ""}
           </p>
         </div>
-        <a
-          href={job.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-        >
-          View on WorkBC ↗
-        </a>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {job.externalApplyUrl ? (
+              <>
+                <a
+                  href={job.externalApplyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={job.externalApplyHost ?? undefined}
+                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                >
+                  Apply ↗
+                </a>
+                <a
+                  href={job.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+                >
+                  WorkBC listing ↗
+                </a>
+              </>
+            ) : (
+              <a
+                href={job.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+              >
+                View on WorkBC ↗
+              </a>
+            )}
+          </div>
+          {job.externalApplyHost && (
+            <p className="text-xs text-zinc-400">
+              applies via {job.externalApplyHost}
+              {job.atsProvider && job.atsProvider !== "unknown" ? ` (${job.atsProvider})` : ""}
+            </p>
+          )}
+        </div>
       </header>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5">
