@@ -42,6 +42,10 @@ async function main() {
       })
       const checks = { ...((rep.employer!.checks as Record<string, unknown>) ?? {}), web: out.result }
       await prisma.employer.update({ where: { id: employerId }, data: { checks: checks as never } })
+      // Append the raw web_search audit trail (separate table; not read by prod pages).
+      await prisma.employerWebSearchLog.create({
+        data: { employerId, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
+      })
       console.log(
         `\n${rep.employer!.nameDisplay}: applicationAddressType=${out.result.applicationAddressType} | ${out.result.summary.slice(0, 120)}`,
       )

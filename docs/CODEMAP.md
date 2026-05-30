@@ -35,7 +35,8 @@ docs/         specs, plans, runbook
 
 **Evaluation (AI)**
 - `verify-employer-web.ts` — `verifyEmployerWeb()`: one Claude call per company using the `web_search`
-  tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType, websiteUrl, …}`.
+  tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType, websiteUrl, …}`. Also
+  returns `searchLog` (the raw `web_search` queries + result blocks) for the audit trail.
 - `scoring.ts` — `scoreJob()`: Claude call (no web) that turns the employer verdict + a posting's
   flags/NOC/apply fields into `{fraudScore, reasoning, signals}`. Holds the scoring rubric/prompt
   (`temperature: 0`). `makeFailedResult()` for failures.
@@ -80,8 +81,11 @@ docs/         specs, plans, runbook
 - `ScoreChip.tsx` — colored risk-score badge. `FlagIcons.tsx` — application-flag chips with tooltips.
 
 ## `prisma/`
-- `schema.prisma` — `Employer` and `Job` models. Job scoring fields are nullable (`null` = pending);
-  `scoredAt` marks judged.
+- `schema.prisma` — `Employer`, `Job`, and `EmployerWebSearchLog` models. Job scoring fields are
+  nullable (`null` = pending); `scoredAt` marks judged. `EmployerWebSearchLog` is an append-only
+  audit trail of the raw `web_search` activity per employer verification (one row per run, incl.
+  `encrypted_content` blocks) — written by `judge`/`reverify-mail`, kept out of `Employer.checks` so
+  prod pages don't load it; intended for a separate non-prod audit UI.
 
 ## Config & meta
 - `package.json` — scripts (`scrape`, `judge`, `judge:fetch/apply`, `rescore-failed`,

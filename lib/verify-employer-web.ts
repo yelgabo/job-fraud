@@ -11,12 +11,39 @@ export type WebVerifyInput = {
   applicationText: string // the posting's "How to apply" text / mailing address, "" if none
 }
 
+// Audit trail of the server-side web_search activity behind a verification. `queries` is the
+// list of searches Claude issued (quick-scan convenience); `blocks` is the raw, verbatim
+// server_tool_use(web_search) + web_search_tool_result content blocks (incl. each result's opaque
+// encrypted_content), so a downstream audit tool can show exactly what Claude consulted.
+export type SearchLog = {
+  queries: string[]
+  blocks: unknown[]
+}
+
 export type WebVerifyOutput = {
   result: WebVerification
   usage: { inputTokens: number; outputTokens: number }
+  searchLog: SearchLog
 }
 
 export class WebVerifyError extends Error {}
+
+// The web_search server-tool content blocks aren't in the SDK's typed ContentBlock union at this
+// version, so we read them structurally by their `type` string.
+function extractSearchLog(content: unknown[]): SearchLog {
+  const queries: string[] = []
+  const blocks: unknown[] = []
+  for (const raw of content) {
+    const b = raw as { type?: string; name?: string; input?: { query?: unknown } }
+    if (b?.type === "server_tool_use" && b.name === "web_search") {
+      blocks.push(raw)
+      if (typeof b.input?.query === "string") queries.push(b.input.query)
+    } else if (b?.type === "web_search_tool_result") {
+      blocks.push(raw)
+    }
+  }
+  return { queries, blocks }
+}
 
 // Server-side web search tool. Confirm the exact `type` version string against the installed
 // @anthropic-ai/sdk at implementation time (e.g. "web_search_20250305").
@@ -105,6 +132,7 @@ async function callOnce(client: Anthropic, input: WebVerifyInput): Promise<WebVe
   return {
     result: parsed.data,
     usage: { inputTokens: resp.usage.input_tokens, outputTokens: resp.usage.output_tokens },
+    searchLog: extractSearchLog(resp.content),
   }
 }
 
