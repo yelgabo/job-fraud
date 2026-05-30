@@ -4,6 +4,7 @@ import { webEnv } from "../lib/env"
 import type { JobStub } from "../lib/scrape-workbc"
 import { classifyHost, isKnownAts } from "../lib/ats-registry"
 import { detectFlags } from "../lib/application-flags"
+import { parseNocGroup, categoryForNoc } from "../lib/job-category"
 import { normalizeEmployer } from "../lib/normalize-employer"
 import { searchJobsApi, fetchJobDetailApi } from "../lib/workbc-api"
 import { JsonlLogger } from "./logger"
@@ -120,6 +121,7 @@ async function main() {
                 .update({ where: { id: employerId }, data: { addressRaw: detail.addressRaw ?? undefined, applicationUrl: externalApplyUrl ?? undefined } })
                 .catch(() => {})
             }
+            const { nocCode, nocGroup } = parseNocGroup(detail.nocGroup)
             const fields = {
               employerId,
               title: detail.title || stub.title,
@@ -133,6 +135,9 @@ async function main() {
               atsProvider,
               externalApplyOk: null,
               applicationFlags: appFlags as never,
+              nocCode,
+              nocGroup,
+              category: categoryForNoc(nocCode),
             }
             await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update: fields })
             written++

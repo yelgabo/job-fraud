@@ -16,6 +16,7 @@
     "rescore-failed": "tsx --env-file=.env scripts/rescore-failed.ts",
     "reverify-mail": "tsx --env-file=.env scripts/reverify-mail.ts",
     "rescan-impersonation": "tsx --env-file=.env scripts/rescan-impersonation.ts",
+    "backfill-categories": "tsx --env-file=.env scripts/backfill-categories.ts",
     "test": "vitest run"
   },
   "dependencies": {

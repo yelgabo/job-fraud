@@ -17,6 +17,7 @@ export type DetailFields = {
   applyUrl: string | null
   applyMethodText: string
   descriptionMd: string
+  nocGroup: string | null
 }
 
 function decodeHtml(s: string): string {
@@ -195,5 +196,6 @@ export function parseDetail(html: string): DetailFields {
     applyUrl,
     applyMethodText,
     descriptionMd,
+    nocGroup: null, // legacy HTML parser doesn't extract NOC; the JSON API path does
   }
 }

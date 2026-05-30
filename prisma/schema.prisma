@@ -50,6 +50,11 @@ model Job {
   atsProvider       String?
   externalApplyOk   Boolean?
   applicationFlags  Json      @default("[]")
+  // NOC occupation classification (from WorkBC) + derived coarse job-type bucket for filtering
+  // and analysis. nocCode/nocGroup are kept raw so finer breakdowns stay possible.
+  nocCode           String?
+  nocGroup          String?
+  category          String?
   // Scoring fields are null until the `judge` phase evaluates the posting.
   fraudScore        Int?
   riskBand          String?
@@ -60,4 +65,5 @@ model Job {
 
   @@index([riskBand, fraudScore])
   @@index([scoredAt])
+  @@index([category])
 }

@@ -158,6 +158,7 @@ export async function fetchJobDetailApi(jobId: string): Promise<DetailFields | n
     applyUrl: item.ApplyWebsite || null,
     applyMethodText,
     descriptionMd,
+    nocGroup: item.NocGroup?.trim() || null,
   }
 }
 

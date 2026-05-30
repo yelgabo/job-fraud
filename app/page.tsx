@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { parseFlags } from "@/lib/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { FlagIcons } from "@/components/FlagIcons"
+import { CATEGORIES } from "@/lib/job-category"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
@@ -20,30 +21,50 @@ function tabClass(active: boolean) {
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ band?: string }>
+  searchParams: Promise<{ band?: string; cat?: string }>
 }) {
-  const { band } = await searchParams
+  const { band, cat } = await searchParams
   const active: BandTab = (BANDS as readonly string[]).includes(band ?? "")
     ? (band as BandTab)
     : "all"
+  const activeCat: string = (CATEGORIES as readonly string[]).includes(cat ?? "") ? (cat as string) : "all"
 
-  const [grouped, total, agg, rows] = await Promise.all([
-    prisma.job.groupBy({ by: ["riskBand"], _count: true, where: { scoredAt: { not: null } } }),
-    prisma.job.count({ where: { scoredAt: { not: null } } }),
+  // Only judged postings; each dimension's counts reflect the OTHER active filter.
+  const base = { scoredAt: { not: null as never } }
+  const bandWhere = active === "all" ? {} : { riskBand: active }
+  const catWhere = activeCat === "all" ? {} : { category: activeCat }
+
+  const [grouped, catGrouped, total, agg, rows] = await Promise.all([
+    prisma.job.groupBy({ by: ["riskBand"], _count: true, where: { ...base, ...catWhere } }),
+    prisma.job.groupBy({ by: ["category"], _count: true, where: { ...base, ...bandWhere } }),
+    prisma.job.count({ where: base }),
     prisma.job.aggregate({ _max: { scrapedAt: true } }),
     prisma.job.findMany({
-      // Only show judged postings; pending (unscored) ones are hidden until evaluated.
-      where: active === "all" ? { scoredAt: { not: null } } : { riskBand: active },
+      where: { ...base, ...bandWhere, ...catWhere },
       orderBy: [{ fraudScore: "desc" }, { title: "asc" }],
       include: { employer: true },
     }),
   ])
 
-  const counts: Record<string, number> = { all: total }
+  const counts: Record<string, number> = { all: 0 }
   for (const g of grouped) if (g.riskBand) counts[g.riskBand] = g._count
+  counts.all = grouped.reduce((n, g) => n + g._count, 0)
+
+  const catCounts: Record<string, number> = {}
+  for (const g of catGrouped) if (g.category) catCounts[g.category] = g._count
+  const catAll = catGrouped.reduce((n, g) => n + g._count, 0)
 
   const scored = (counts.high ?? 0) + (counts.medium ?? 0) + (counts.low ?? 0)
   const lastScraped = agg._max.scrapedAt
+
+  // Build a href preserving the other active filter.
+  const hrefFor = (nextBand: BandTab, nextCat: string) => {
+    const p = new URLSearchParams()
+    if (nextBand !== "all") p.set("band", nextBand)
+    if (nextCat !== "all") p.set("cat", nextCat)
+    const q = p.toString()
+    return q ? `/?${q}` : "/"
+  }
 
   return (
     <div>
@@ -55,11 +76,23 @@ export default async function HomePage({
         </p>
       </div>
 
-      <nav className="mb-5 flex flex-wrap gap-2">
+      <nav className="mb-3 flex flex-wrap gap-2">
         {BANDS.map((b) => (
-          <Link key={b} href={b === "all" ? "/" : `/?band=${b}`} className={tabClass(b === active)}>
+          <Link key={b} href={hrefFor(b, activeCat)} className={tabClass(b === active)}>
             {b[0].toUpperCase() + b.slice(1)}
             <span className="ml-1.5 text-xs opacity-70">{counts[b] ?? 0}</span>
+          </Link>
+        ))}
+      </nav>
+
+      <nav className="mb-5 flex flex-wrap gap-2">
+        <Link href={hrefFor(active, "all")} className={tabClass(activeCat === "all")}>
+          All types<span className="ml-1.5 text-xs opacity-70">{catAll}</span>
+        </Link>
+        {CATEGORIES.filter((c) => (catCounts[c] ?? 0) > 0 || c === activeCat).map((c) => (
+          <Link key={c} href={hrefFor(active, c)} className={tabClass(c === activeCat)}>
+            {c}
+            <span className="ml-1.5 text-xs opacity-70">{catCounts[c] ?? 0}</span>
           </Link>
         ))}
       </nav>
@@ -68,7 +101,7 @@ export default async function HomePage({
         <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center text-zinc-500">
           {total === 0
             ? "No postings yet. Run the scraper (npm run scrape) to populate the database."
-            : "No postings in this risk band."}
+            : "No postings match this filter."}
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
