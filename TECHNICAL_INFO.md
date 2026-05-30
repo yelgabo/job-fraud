@@ -9,28 +9,35 @@ scraping). **Live:** https://job-fraud-production.up.railway.app
 
 ## Architecture
 
-The two heavy phases — **scrape** (collect) and **judge** (evaluate) — are decoupled local CLI jobs;
-the deployed web app only reads the database (it never runs the pipeline or holds an API key).
+Two heavy phases — **scrape** and **judge** — are decoupled local CLI jobs that share one Postgres
+database. The deployed web app only reads that database; it never runs the pipeline or holds an API
+key. The overall flow:
 
 ```
-PHASE 1 — scrape (collect, cheap, pure HTTP — scripts/scrape.ts)
-  WorkBC search API  ──▶ stubs (employer, city, salary)         lib/workbc-api.ts
-  WorkBC detail API  ──▶ per-job NOC, apply URL/email, address  (concurrent, --concurrency)
-  deterministic flags (mail/email/crypto/banking/ATS…)          lib/application-flags.ts
-  ──▶ UPSERT raw postings as "pending" (scoredAt = null)         (accumulates; no TRUNCATE)
-
-PHASE 2 — judge (evaluate — scripts/judge.ts, deduped + single-writer)
-  Stage 1: verify each DISTINCT employer once (Claude web_search) lib/verify-employer-web.ts
-           → employer.checks.web {businessMatch, locationMatch, applicationAddressType, …}
-  Stage 2: score each job (Claude, no web) reusing the employer verdict + the posting's
-           own flags/NOC/apply fields                            lib/scoring.ts
-  ──▶ update job {fraudScore, riskBand, reasoning, signals, scoredAt}
-
-WEB APP (read-only) — app/  : / (risk tabs) · /j/[id] · /e/[id] · /companies
+scrape ──▶ pending postings ──▶ judge ──▶ rated postings ──▶ web app (read-only)
 ```
 
-Risk band derives from the score (`lib/risk-band.ts`): `low <30`, `medium 30–69`, `high ≥70`,
-`unknown` for scoring failures. The UI shows only judged postings (`scoredAt != null`).
+**Phase 1 — scrape** (collect; cheap, pure HTTP) · `scripts/scrape.ts`
+
+- Fetch postings from WorkBC's JSON APIs — search + per-job detail (`lib/workbc-api.ts`),
+  concurrently (`--concurrency`).
+- Run deterministic flag detectors over the text (`lib/application-flags.ts`).
+- Upsert each posting as **pending** (`scoredAt = null`). Re-runs accumulate; nothing is wiped.
+
+**Phase 2 — judge** (evaluate; deduped, single DB writer) · `scripts/judge.ts`
+
+- *Stage 1 — verify each distinct employer once.* Claude's `web_search` tool researches the company
+  (`lib/verify-employer-web.ts`); the verdict (`businessMatch`, `locationMatch`,
+  `applicationAddressType`, …) is cached on the employer and reused by all its postings.
+- *Stage 2 — score each posting.* A cheap Claude call (no web search) combines the employer verdict
+  with the posting's own flags / NOC / apply fields (`lib/scoring.ts`) → `fraudScore`, `riskBand`,
+  `reasoning`, `signals`, `scoredAt`.
+
+**Web app** (read-only) · `app/` — `/` risk-band tabs · `/j/[id]` posting · `/e/[id]` employer ·
+`/companies` by-company list.
+
+Risk band derives from the score (`lib/risk-band.ts`): **low** `<30`, **medium** `30–69`, **high**
+`≥70`, **unknown** for scoring failures. The UI shows only judged postings (`scoredAt` set).
 
 ## Data sources (what we gather, and how)
 
