@@ -1,7 +1,7 @@
 # Technical info
 
 Developer/operator documentation for the Job Fraud Scanner. For the plain-language overview see
-[README.md](README.md).
+[README.md](README.md); for a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
 
 **Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-4-5`, incl. the
 `web_search` tool) · zod · p-limit · Vitest. Data comes from WorkBC's JSON APIs (no browser/HTML
