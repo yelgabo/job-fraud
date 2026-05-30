@@ -12,6 +12,7 @@ import { parseFlags } from "../lib/json-schemas"
 import { verifyEmployerWeb } from "../lib/verify-employer-web"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/scoring"
 import { resolveApplyHost } from "../lib/resolve-impersonation"
+import { isBillingError } from "../lib/anthropic-errors"
 import { bandFor } from "../lib/risk-band"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
@@ -66,6 +67,12 @@ async function main() {
   })
   console.log(`[judge] verifying ${toVerify.length} employers (of ${byEmployer.size} distinct)`)
 
+  // Tripped by an out-of-credit billing error (a 400, not a retryable 429). Once set, queued tasks
+  // no-op and the run aborts after the stage — so we never mass-write "unknown" on an empty wallet.
+  let billingAbort = false
+  const ABORT_MSG =
+    "Anthropic API credit exhausted (billing error). Jobs scored so far are saved; the rest remain pending. Top up at console.anthropic.com → Billing, then re-run `npm run judge`."
+
   let vDone = 0
   let vFail = 0
   let webIn = 0
@@ -74,6 +81,7 @@ async function main() {
   await Promise.all(
     toVerify.map(([employerId, list]) =>
       vLimit(async () => {
+        if (billingAbort) return
         const rep = list[0]
         try {
           const out = await verifyEmployerWeb(client, {
@@ -92,13 +100,15 @@ async function main() {
             data: { employerId, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
           })
           empChecks.set(employerId, checks)
-        } catch {
+        } catch (e) {
+          if (isBillingError(e)) { billingAbort = true; return }
           vFail++
         }
         if (++vDone % 50 === 0) console.log(`[verify] ${vDone}/${toVerify.length} employers`)
       }),
     ),
   )
+  if (billingAbort) throw new Error(ABORT_MSG)
   console.log(`[judge] employer verify done: ${toVerify.length - vFail} ok, ${vFail} failed`)
 
   // --- Stage 2: score each job (no web; reuses employer verdict + job fields) ---
@@ -112,6 +122,7 @@ async function main() {
   await Promise.all(
     jobs.map((job) =>
       sLimit(async () => {
+        if (billingAbort) return
         // Brand-impersonation pre-check: if the apply URL routes to a different company than the
         // claimed employer and a web-check confirms it, this re-attributes the posting + writes a
         // HIGH score itself — so skip normal scoring for that job.
@@ -123,8 +134,9 @@ async function main() {
             if (++sDone % 200 === 0) console.log(`[score] ${sDone}/${jobs.length}`)
             return
           }
-        } catch {
-          // web-check failed — fall through to normal scoring
+        } catch (e) {
+          if (isBillingError(e)) { billingAbort = true; return }
+          // other web-check failure — fall through to normal scoring
         }
         const input: ScoreInput = {
           title: job.title,
@@ -145,6 +157,7 @@ async function main() {
           totalOut += out.usage.outputTokens
           result = out.result
         } catch (err) {
+          if (isBillingError(err)) { billingAbort = true; return } // leave pending, don't mark unknown
           sFail++
           result = makeFailedResult((err as Error).message)
         }
@@ -158,6 +171,7 @@ async function main() {
       }),
     ),
   )
+  if (billingAbort) throw new Error(ABORT_MSG)
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
