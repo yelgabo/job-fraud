@@ -3,9 +3,25 @@ name: judge-postings
 description: Evaluate pending (unjudged) job-fraud postings by dispatching parallel fraud-detection agents and applying their verdicts as the single DB writer. Use when there are pending postings in the job-fraud DB to score, or on a schedule after scraping. Decoupled from scraping — scrape collects, this judges.
 ---
 
-# Judge postings (Model B — agent-orchestrated)
+# Judge postings
 
-Scraping only collects raw postings (`scoredAt` null = pending). This skill **judges** them:
+Scraping only collects raw postings (`scoredAt` null = pending). Judging evaluates them.
+
+## Fast path (recommended): deduped Node judge
+
+`npm run judge -- [--limit N] [--rejudge] [--emp-concurrency 4] [--score-concurrency 8]`
+
+`scripts/judge.ts` is a single-process (single DB writer, no races) evaluator that **dedups by
+employer**: Stage 1 web-verifies each DISTINCT pending employer once (`verifyEmployerWeb`) →
+`employer.checks.web`; Stage 2 scores each pending job (`scoreJob`, no web search) reusing that
+verdict + the posting's own flags/NOC/apply fields. Far cheaper/faster at scale than per-job
+agents (e.g. ~1,046 employer web-searches for 2,425 jobs instead of 2,425). Use this for bulk and
+for scheduled runs. The agent-orchestrated flow below is an optional "deep per-posting" alternative.
+
+## Deep path (optional): Model B — agent-orchestrated
+
+This judges via dispatched fraud-detection agents (richer per-posting investigation, no employer
+dedup — more expensive). Use for a small, high-scrutiny subset.
 the orchestrating session fetches pending postings, dispatches parallel fraud-detection agents
 (each web-investigates its batch), then applies their verdicts as the **single DB writer**
 (agents never write the DB → no races/deadlocks). Safe to run repeatedly or on a schedule.
