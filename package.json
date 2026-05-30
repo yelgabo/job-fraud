@@ -10,6 +10,7 @@
     "db:push": "prisma db push",
     "scrape": "tsx --env-file=.env scripts/scrape.ts",
     "judge": "tsx --env-file=.env scripts/judge.ts",
+    "compare-judge": "tsx --env-file=.env scripts/compare-judge.ts",
     "judge:fetch": "tsx --env-file=.env scripts/judge-fetch.ts",
     "judge:apply": "tsx --env-file=.env scripts/judge-apply.ts",
     "rescore-failed": "tsx --env-file=.env scripts/rescore-failed.ts",
