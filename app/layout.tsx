@@ -12,11 +12,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen flex flex-col">
         <header className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto max-w-5xl px-4 py-4">
+          <div className="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-4 px-4 py-4">
             <Link href="/" className="text-lg font-semibold tracking-tight text-zinc-900">
               🛡️ Job Fraud Scanner
             </Link>
-            <span className="ml-2 text-sm text-zinc-500">WorkBC software postings</span>
+            <nav className="flex gap-3 text-sm">
+              <Link href="/" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+                Postings
+              </Link>
+              <Link href="/companies" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+                Companies
+              </Link>
+            </nav>
           </div>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>

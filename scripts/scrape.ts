@@ -1,3 +1,4 @@
+import pLimit from "p-limit"
 import { prisma } from "../lib/db"
 import { webEnv } from "../lib/env"
 import type { JobStub } from "../lib/scrape-workbc"
@@ -11,21 +12,20 @@ import { JsonlLogger } from "./logger"
 // the old SPA HTML scrape returned stale/duplicated detail DOM (hash-route changes don't reload),
 // corrupting hundreds of postings. Each posting is upserted as RAW/pending (no AI). Judge separately.
 
-type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean }
+type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number }
 
 function parseArgs(): Args {
-  const a: Args = { limit: null, searchTerms: null, dryRun: false }
+  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6 }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]
     if (t === "--limit") a.limit = parseInt(argv[++i] ?? "0", 10) || null
     else if (t === "--search-terms") a.searchTerms = argv[++i] ?? null
     else if (t === "--dry-run") a.dryRun = true
+    else if (t === "--concurrency") a.concurrency = Math.max(1, parseInt(argv[++i] ?? "6", 10) || 6)
   }
   return a
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function main() {
   const args = parseArgs()
@@ -59,81 +59,89 @@ async function main() {
     }
     console.log(`[search] processing ${stubs.length} stubs`)
 
-    // Phase B: per-job detail (WorkBC JSON API) + deterministic flags + incremental upsert
+    // Phase A.5: pre-upsert employer identities from the (reliable) search stubs, sequentially.
+    // Doing this first means the parallel job-upserts below never race on the employer unique key.
     const empIdCache = new Map<string, string>()
+    if (!args.dryRun) {
+      for (const stub of stubs) {
+        const name = stub.employerName
+        if (!name) continue
+        const key = normalizeEmployer(name)
+        if (!key || empIdCache.has(key)) continue
+        const row = await prisma.employer.upsert({
+          where: { nameNormalized: key },
+          create: { nameNormalized: key, nameDisplay: name },
+          update: { nameDisplay: name },
+        })
+        empIdCache.set(key, row.id)
+      }
+      console.log(`[employers] ${empIdCache.size} unique employers pre-registered`)
+    }
+
+    // Phase B: per-job detail (WorkBC JSON API) + flags + upsert, run with bounded concurrency.
+    const limit = pLimit(args.concurrency)
     let written = 0
     let detailFail = 0
-    for (const stub of stubs) {
-      const dt0 = Date.now()
-      let detail
-      try {
-        detail = await fetchJobDetailApi(stub.workbcId)
-      } catch (e) {
-        detail = null
-        log.log({ workbcId: stub.workbcId, stage: "detail", ok: false, error: (e as Error).message })
-      }
-      if (!detail) {
-        detailFail++
-        await sleep(120)
-        continue
-      }
-
-      const appFlags = detectFlags(detail.applyMethodText + "\n" + detail.descriptionMd)
-      let externalApplyUrl: string | null = null
-      let externalApplyHost: string | null = null
-      let atsProvider: string | null = null
-      if (detail.applyUrl) {
-        try {
-          const u = new URL(detail.applyUrl)
-          if (!/workbc\.ca$/i.test(u.hostname)) {
-            externalApplyUrl = detail.applyUrl
-            externalApplyHost = u.hostname
-            atsProvider = classifyHost(u.hostname)
-            if (isKnownAts(atsProvider)) appFlags.push({ flag: "ats_known_provider", evidence: u.hostname })
+    let done = 0
+    await Promise.all(
+      stubs.map((stub) =>
+        limit(async () => {
+          const dt0 = Date.now()
+          const detail = await fetchJobDetailApi(stub.workbcId).catch(() => null)
+          if (!detail) {
+            detailFail++
+            log.log({ workbcId: stub.workbcId, stage: "detail", ok: false, error: "fetch_failed" })
+            return
           }
-        } catch {
-          // not a URL
-        }
-      }
-
-      if (!args.dryRun) {
-        const display = detail.employerName ?? stub.employerName ?? null
-        let employerId: string | null = null
-        if (display) {
-          const key = normalizeEmployer(display)
-          if (key) {
-            employerId = empIdCache.get(key) ?? null
-            if (!employerId) {
-              const row = await prisma.employer.upsert({
-                where: { nameNormalized: key },
-                create: { nameNormalized: key, nameDisplay: display, applicationUrl: externalApplyUrl, addressRaw: detail.addressRaw },
-                update: { nameDisplay: display, applicationUrl: externalApplyUrl ?? undefined, addressRaw: detail.addressRaw ?? undefined },
-              })
-              employerId = row.id
-              empIdCache.set(key, employerId)
+          const appFlags = detectFlags(detail.applyMethodText + "\n" + detail.descriptionMd)
+          let externalApplyUrl: string | null = null
+          let externalApplyHost: string | null = null
+          let atsProvider: string | null = null
+          if (detail.applyUrl) {
+            try {
+              const u = new URL(detail.applyUrl)
+              if (!/workbc\.ca$/i.test(u.hostname)) {
+                externalApplyUrl = detail.applyUrl
+                externalApplyHost = u.hostname
+                atsProvider = classifyHost(u.hostname)
+                if (isKnownAts(atsProvider)) appFlags.push({ flag: "ats_known_provider", evidence: u.hostname })
+              }
+            } catch {
+              // not a URL
             }
           }
-        }
-        const fields = {
-          employerId,
-          title: detail.title || stub.title,
-          location: detail.location ?? stub.location ?? null,
-          salary: detail.salary,
-          postedAt: detail.postedAt,
-          sourceUrl: stub.sourceUrl,
-          descriptionMd: detail.descriptionMd,
-          externalApplyUrl,
-          externalApplyHost,
-          atsProvider,
-          externalApplyOk: null,
-          applicationFlags: appFlags as never,
-        }
-        await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update: fields })
-        written++
-      }
-      log.log({ workbcId: stub.workbcId, stage: "detail", ok: true, durationMs: Date.now() - dt0, meta: { flagCount: appFlags.length, ats: atsProvider } })
-      await sleep(120) // be polite to the WorkBC API
-    }
+
+          if (!args.dryRun) {
+            const name = stub.employerName ?? detail.employerName
+            const employerId = name ? empIdCache.get(normalizeEmployer(name)) ?? null : null
+            // enrich the employer with detail-derived fields (same-row update — safe under concurrency)
+            if (employerId && (detail.addressRaw || externalApplyUrl)) {
+              await prisma.employer
+                .update({ where: { id: employerId }, data: { addressRaw: detail.addressRaw ?? undefined, applicationUrl: externalApplyUrl ?? undefined } })
+                .catch(() => {})
+            }
+            const fields = {
+              employerId,
+              title: detail.title || stub.title,
+              location: detail.location ?? stub.location ?? null,
+              salary: detail.salary,
+              postedAt: detail.postedAt,
+              sourceUrl: stub.sourceUrl,
+              descriptionMd: detail.descriptionMd,
+              externalApplyUrl,
+              externalApplyHost,
+              atsProvider,
+              externalApplyOk: null,
+              applicationFlags: appFlags as never,
+            }
+            await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update: fields })
+            written++
+          }
+          log.log({ workbcId: stub.workbcId, stage: "detail", ok: true, durationMs: Date.now() - dt0, meta: { flagCount: appFlags.length, ats: atsProvider } })
+          if (++done % 100 === 0) console.log(`[detail] ${done}/${stubs.length} processed`)
+        }),
+      ),
+    )
 
     console.log(`\n=== SCRAPE SUMMARY ===`)
     console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
