@@ -29,8 +29,9 @@ export type WebVerifyOutput = {
 export class WebVerifyError extends Error {}
 
 // The web_search server-tool content blocks aren't in the SDK's typed ContentBlock union at this
-// version, so we read them structurally by their `type` string.
-function extractSearchLog(content: unknown[]): SearchLog {
+// version, so we read them structurally by their `type` string. Exported so other web_search
+// callers (e.g. the impersonation check) capture the same audit trail.
+export function extractSearchLog(content: unknown[]): SearchLog {
   const queries: string[] = []
   const blocks: unknown[] = []
   for (const raw of content) {

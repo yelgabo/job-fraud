@@ -11,6 +11,7 @@ import { loadScrapeEnv } from "../lib/env"
 import { parseFlags } from "../lib/json-schemas"
 import { verifyEmployerWeb } from "../lib/verify-employer-web"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/scoring"
+import { resolveApplyHost } from "../lib/resolve-impersonation"
 import { bandFor } from "../lib/risk-band"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
@@ -103,6 +104,7 @@ async function main() {
   // --- Stage 2: score each job (no web; reuses employer verdict + job fields) ---
   let sDone = 0
   let sFail = 0
+  let impostors = 0
   let totalIn = 0
   let totalOut = 0
   const bands: Record<string, number> = {}
@@ -110,6 +112,20 @@ async function main() {
   await Promise.all(
     jobs.map((job) =>
       sLimit(async () => {
+        // Brand-impersonation pre-check: if the apply URL routes to a different company than the
+        // claimed employer and a web-check confirms it, this re-attributes the posting + writes a
+        // HIGH score itself — so skip normal scoring for that job.
+        try {
+          const outcome = await resolveApplyHost(client, job, job.employer?.nameDisplay ?? null)
+          if (outcome.kind === "impersonation") {
+            impostors++
+            bands["high"] = (bands["high"] ?? 0) + 1
+            if (++sDone % 200 === 0) console.log(`[score] ${sDone}/${jobs.length}`)
+            return
+          }
+        } catch {
+          // web-check failed — fall through to normal scoring
+        }
         const input: ScoreInput = {
           title: job.title,
           employerDisplay: job.employer?.nameDisplay ?? null,
@@ -145,7 +161,7 @@ async function main() {
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers verified: ${toVerify.length - vFail}/${toVerify.length} | jobs scored: ${jobs.length - sFail} (${sFail} failed)`)
+  console.log(`Employers verified: ${toVerify.length - vFail}/${toVerify.length} | jobs scored: ${jobs.length - sFail} (${sFail} failed) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(`Web-verify tokens: in=${webIn} out=${webOut} | scoring tokens: in=${totalIn} out=${totalOut}`)
   await prisma.$disconnect()

@@ -10,6 +10,8 @@ const FLAG_META: Record<string, { icon: string; label: string }> = {
   banking_info_upfront: { icon: "🏦", label: "Bank details upfront" },
   external_apply_unreachable: { icon: "🔗", label: "Apply link unreachable" },
   ats_known_provider: { icon: "✅", label: "Known ATS provider" },
+  apply_host_mismatch: { icon: "🎭", label: "Brand impersonation (apply link → different company)" },
+  apply_host_mismatch_review: { icon: "❓", label: "Apply link company unclear — review" },
 }
 
 export function FlagIcons({ flags }: { flags: ApplicationFlag[] }) {
