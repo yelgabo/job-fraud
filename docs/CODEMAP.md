@@ -1,7 +1,7 @@
 # Codebase map
 
 A file-by-file guide to the repo. For the architecture/data-flow overview see
-[TECHNICAL_INFO.md](TECHNICAL_INFO.md); for the plain-language overview see [README.md](README.md).
+[TECHNICAL_INFO.md](TECHNICAL_INFO.md); for the plain-language overview see [README.md](../README.md).
 
 **Start here:** `scripts/scrape.ts` (collect) → `scripts/judge.ts` (evaluate) → `app/` (display).
 Shared logic lives in `lib/`.

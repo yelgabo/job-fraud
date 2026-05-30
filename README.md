@@ -83,4 +83,4 @@ have already been reviewed.
 ---
 
 *Developer setup, methodology, and the exact rating rules: see
-[TECHNICAL_INFO.md](TECHNICAL_INFO.md).*
+[docs/TECHNICAL_INFO.md](docs/TECHNICAL_INFO.md).*

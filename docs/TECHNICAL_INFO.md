@@ -1,7 +1,7 @@
 # Technical info
 
 Developer/operator documentation for the Job Fraud Scanner. For the plain-language overview see
-[README.md](README.md); for a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
+[README.md](../README.md); for a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
 
 **Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-4-5`, incl. the
 `web_search` tool) · zod · p-limit · Vitest. Data comes from WorkBC's JSON APIs (no browser/HTML
@@ -122,7 +122,7 @@ skill (`.claude/skills/`) for repeatable/scheduled runs.
 **Helpers:** `npm run rescore-failed` (re-score `unknown`-band rows) · `npm run compare-judge`
 (read-only A/B of deduped vs agent scoring) · **agent "deep" path:** `npm run judge:fetch` dumps
 pending into per-batch files for dispatched fraud agents, `npm run judge:apply <dir>` validates +
-applies their verdicts (single writer) — see `docs/judge-runbook.md`.
+applies their verdicts (single writer) — see `judge-runbook.md`.
 
 ## Adding an application-flag detector
 
