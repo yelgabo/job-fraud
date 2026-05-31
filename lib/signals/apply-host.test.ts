@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { extractAtsTenant, tenantEmployerMatch } from "./apply-host"
+import { extractAtsTenant, tenantEmployerMatch, allApplyHostsMatch } from "./apply-host"
 
 describe("extractAtsTenant", () => {
   it("pulls the Workday tenant from the subdomain", () => {
@@ -68,5 +68,39 @@ describe("tenantEmployerMatch", () => {
     expect(tenantEmployerMatch("Remitly", "https://www.example.com/careers").result).toBe("no-tenant")
     expect(tenantEmployerMatch(null, "https://relx.wd3.myworkdayjobs.com/x").result).toBe("no-tenant")
     expect(tenantEmployerMatch("Remitly", null).result).toBe("no-tenant")
+  })
+})
+
+describe("allApplyHostsMatch (tier-skip eligibility)", () => {
+  it("true only when every posting applies via the employer's own matching ATS", () => {
+    expect(
+      allApplyHostsMatch("Remitly", [
+        "https://remitly.wd5.myworkdayjobs.com/a",
+        "https://remitly.wd5.myworkdayjobs.com/b",
+      ]),
+    ).toBe(true)
+  })
+
+  it("false if any posting is email/mail/phone/no-ATS (needs web-verify)", () => {
+    expect(
+      allApplyHostsMatch("Remitly", ["https://remitly.wd5.myworkdayjobs.com/a", null]),
+    ).toBe(false)
+    expect(
+      allApplyHostsMatch("Acme Care", ["mailto:jobs@gmail.com"]),
+    ).toBe(false)
+  })
+
+  it("false if any posting routes to a different company (impersonation territory)", () => {
+    expect(
+      allApplyHostsMatch("Remitly", [
+        "https://remitly.wd5.myworkdayjobs.com/a",
+        "https://relx.wd3.myworkdayjobs.com/x",
+      ]),
+    ).toBe(false)
+  })
+
+  it("false for no postings or no employer name", () => {
+    expect(allApplyHostsMatch("Remitly", [])).toBe(false)
+    expect(allApplyHostsMatch(null, ["https://remitly.wd5.myworkdayjobs.com/a"])).toBe(false)
   })
 })

@@ -129,3 +129,22 @@ export function tenantEmployerMatch(employerName: string | null, applyUrl: strin
   const match = looksRelated(employerName, t.tenant)
   return { result: match ? "match" : "mismatch", provider: t.provider, tenant: t.tenant }
 }
+
+// True iff the employer has at least one posting and EVERY posting applies via an ATS tenant that
+// matches the employer — i.e. the company is self-evidently real (it applies through its own
+// hiring system) and no posting needs a web search. Used by the judge to skip web-verification for
+// these employers. Any email/mail/phone/no-ATS posting ("no-tenant") or impersonation ("mismatch")
+// makes this false, so those employers still get verified.
+export function allApplyHostsMatch(employerName: string | null, applyUrls: Array<string | null>): boolean {
+  if (!employerName || applyUrls.length === 0) return false
+  return applyUrls.every((u) => tenantEmployerMatch(employerName, u).result === "match")
+}
+
+// The first matching ATS provider among an employer's postings (for the presumed-verdict summary).
+export function matchedProvider(employerName: string | null, applyUrls: Array<string | null>): string | null {
+  for (const u of applyUrls) {
+    const m = tenantEmployerMatch(employerName, u)
+    if (m.result === "match") return m.provider ?? null
+  }
+  return null
+}

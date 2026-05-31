@@ -8,7 +8,8 @@ import pLimit from "p-limit"
 import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
-import { parseFlags } from "../lib/shared/json-schemas"
+import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
+import { allApplyHostsMatch, matchedProvider } from "../lib/signals/apply-host"
 import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/ai/scoring"
 import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
@@ -61,11 +62,48 @@ async function main() {
   const empChecks = new Map<string, Record<string, unknown>>()
   for (const [id, list] of byEmployer) empChecks.set(id, (list[0].employer?.checks as Record<string, unknown>) ?? {})
 
-  const toVerify = [...byEmployer.entries()].filter(([, list]) => {
-    const web = (list[0].employer?.checks as Record<string, unknown> | undefined)?.web
-    return args.rejudge || !web
+  // --- Tiered verification ---
+  // An employer whose pending postings ALL apply via its OWN matching ATS tenant is self-evidently a
+  // real company (it applies through its own hiring system) — presume legit with a deterministic
+  // verdict and skip the (expensive) web search. Everyone else (email/mail/phone/no-ATS, or a
+  // tenant≠employer mismatch) gets web-verified, since that's where the risk lives. A cached
+  // "ats-tenant-match" verdict is upgraded to a real web-verify if a NEW non-matching posting appears.
+  type Decision = { id: string; list: typeof jobs; action: "web" | "presume" | "reuse" }
+  const decisions: Decision[] = [...byEmployer.entries()].map(([id, list]) => {
+    const employerName = list[0].employer?.nameDisplay ?? null
+    const allMatch = allApplyHostsMatch(employerName, list.map((j) => j.externalApplyUrl))
+    const web = (list[0].employer?.checks as { web?: WebVerification } | undefined)?.web
+    let action: Decision["action"]
+    if (args.rejudge) action = "web"
+    else if (web) action = web.source === "ats-tenant-match" && !allMatch ? "web" : "reuse"
+    else action = allMatch ? "presume" : "web"
+    return { id, list, action }
   })
-  console.log(`[judge] verifying ${toVerify.length} employers (of ${byEmployer.size} distinct)`)
+  const toWebVerify = decisions.filter((d) => d.action === "web")
+  const toPresume = decisions.filter((d) => d.action === "presume")
+  console.log(
+    `[judge] employers: ${byEmployer.size} distinct | web-verify ${toWebVerify.length} | presume-legit (ATS match) ${toPresume.length} | reuse cached ${decisions.length - toWebVerify.length - toPresume.length}`,
+  )
+
+  // Presumed-legit employers: deterministic verdict, no API call, no audit-log row.
+  for (const d of toPresume) {
+    const employerName = d.list[0].employer?.nameDisplay ?? null
+    const provider = matchedProvider(employerName, d.list.map((j) => j.externalApplyUrl)) ?? "ATS"
+    const verdict: WebVerification = {
+      websiteUrl: null,
+      websiteReachable: "unknown",
+      businessMatch: "match",
+      locationMatch: "uncertain",
+      hasJobsListing: "unknown",
+      applicationAddressType: "none",
+      confidence: 0.8,
+      summary: `Presumed legitimate without web search: all postings apply via the company's own matching ${provider} tenant.`,
+      source: "ats-tenant-match",
+    }
+    const checks = { ...((d.list[0].employer?.checks as Record<string, unknown>) ?? {}), web: verdict }
+    await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
+    empChecks.set(d.id, checks)
+  }
 
   // Tripped by an out-of-credit billing error (a 400, not a retryable 429). Once set, queued tasks
   // no-op and the run aborts after the stage — so we never mass-write "unknown" on an empty wallet.
@@ -79,10 +117,10 @@ async function main() {
   let webOut = 0
   const vLimit = pLimit(args.empConcurrency)
   await Promise.all(
-    toVerify.map(([employerId, list]) =>
+    toWebVerify.map((d) =>
       vLimit(async () => {
         if (billingAbort) return
-        const rep = list[0]
+        const rep = d.list[0]
         try {
           const out = await verifyEmployerWeb(client, {
             employerName: rep.employer!.nameDisplay,
@@ -94,22 +132,22 @@ async function main() {
           webIn += out.usage.inputTokens
           webOut += out.usage.outputTokens
           const checks = { ...((rep.employer!.checks as Record<string, unknown>) ?? {}), web: out.result }
-          await prisma.employer.update({ where: { id: employerId }, data: { checks: checks as never, checkedAt: new Date() } })
+          await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
           // Append the raw web_search audit trail (separate table; not read by prod pages).
           await prisma.employerWebSearchLog.create({
-            data: { employerId, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
+            data: { employerId: d.id, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
           })
-          empChecks.set(employerId, checks)
+          empChecks.set(d.id, checks)
         } catch (e) {
           if (isBillingError(e)) { billingAbort = true; return }
           vFail++
         }
-        if (++vDone % 50 === 0) console.log(`[verify] ${vDone}/${toVerify.length} employers`)
+        if (++vDone % 50 === 0) console.log(`[verify] ${vDone}/${toWebVerify.length} employers`)
       }),
     ),
   )
   if (billingAbort) throw new Error(ABORT_MSG)
-  console.log(`[judge] employer verify done: ${toVerify.length - vFail} ok, ${vFail} failed`)
+  console.log(`[judge] employer verify done: ${toWebVerify.length - vFail} ok, ${vFail} failed | ${toPresume.length} presumed legit (no web search)`)
 
   // --- Stage 2: score each job (no web; reuses employer verdict + job fields) ---
   let sDone = 0
@@ -175,7 +213,7 @@ async function main() {
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers verified: ${toVerify.length - vFail}/${toVerify.length} | jobs scored: ${jobs.length - sFail} (${sFail} failed) | brand-impersonation re-attributed: ${impostors}`)
+  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} failed) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(`Web-verify tokens: in=${webIn} out=${webOut} | scoring tokens: in=${totalIn} out=${totalOut}`)
   await prisma.$disconnect()

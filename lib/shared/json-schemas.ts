@@ -17,6 +17,10 @@ export const WebVerificationSchema = z.object({
     .default("none"),
   confidence: z.number().min(0).max(1),
   summary: z.string(),
+  // How the verdict was produced. Absent/"web" = a real web_search verification; "ats-tenant-match"
+  // = a deterministic presumption (all the employer's postings apply via its own matching ATS tenant,
+  // so we skipped the web search). Lets the judge re-verify if a later non-matching posting appears.
+  source: z.enum(["web", "ats-tenant-match"]).optional(),
 })
 
 export type WebVerification = z.infer<typeof WebVerificationSchema>
