@@ -2,12 +2,12 @@
 // (re-attribution + deterministic high score) when a posting is confirmed to impersonate a brand.
 // Shared by scripts/rescan-impersonation.ts (corpus sweep) and scripts/judge.ts (ongoing).
 import type Anthropic from "@anthropic-ai/sdk"
-import { prisma } from "./db"
-import { normalizeEmployer } from "./signals/normalize-employer"
-import { tenantEmployerMatch } from "./signals/apply-host"
+import { prisma } from "../db"
+import { normalizeEmployer } from "../signals/normalize-employer"
+import { tenantEmployerMatch } from "../signals/apply-host"
 import { checkImpersonation, type ImpersonationResult } from "./check-impersonation"
-import { parseFlags } from "./shared/json-schemas"
-import { bandFor } from "./shared/risk-band"
+import { parseFlags } from "../shared/json-schemas"
+import { bandFor } from "../shared/risk-band"
 
 export type JobForCheck = {
   workbcId: string

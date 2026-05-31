@@ -6,8 +6,8 @@ import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags } from "../lib/shared/json-schemas"
-import { verifyEmployerWeb } from "../lib/verify-employer-web"
-import { scoreJob, type ScoreInput } from "../lib/scoring"
+import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
+import { scoreJob, type ScoreInput } from "../lib/ai/scoring"
 import { bandFor } from "../lib/shared/risk-band"
 
 async function main() {

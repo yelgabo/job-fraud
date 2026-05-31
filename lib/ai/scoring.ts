@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
-import { SignalsSchema, type Signal } from "./shared/json-schemas"
+import { SignalsSchema, type Signal } from "../shared/json-schemas"
 
 const MODEL = "claude-haiku-4-5-20251001"
 

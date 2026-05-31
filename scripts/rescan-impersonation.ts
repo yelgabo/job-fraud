@@ -9,7 +9,7 @@ import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { normalizeEmployer } from "../lib/signals/normalize-employer"
 import { tenantEmployerMatch } from "../lib/signals/apply-host"
-import { resolveApplyHost } from "../lib/resolve-impersonation"
+import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run")
