@@ -37,7 +37,8 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `apply-host.ts` — `extractAtsTenant()` pulls the ATS tenant slug (e.g. `relx` from
   `relx.wd3.myworkdayjobs.com`); `tenantEmployerMatch()` compares it to the claimed employer (acronym/
   prefix pre-clear so UBC/SCI/etc. skip the check) → `match | mismatch | no-tenant`. Pre-filter for
-  brand impersonation.
+  brand impersonation. `allApplyHostsMatch()` (every posting applies via the employer's own matching
+  tenant) drives the judge's tier-skip of the web search.
 - `application-flags.ts` — `detectFlags()`: regex detectors over apply text/description
   (`mail_physical_resume`, `generic_email_domain`, `crypto_payment`, `banking_info_upfront`,
   `fee_to_apply`, `id_upfront`, `whatsapp_telegram_only`). Each returns matched `evidence`.
@@ -82,9 +83,12 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `scripts/` — CLI entry points
 
 - `scrape.ts` — **Phase 1 (collect).** API search + detail + flags + NOC category + ATS classify →
-  upsert pending postings. Flags: `--search-terms`, `--limit`, `--concurrency`, `--dry-run`.
-- `judge.ts` — **Phase 2 (evaluate), deduped.** Verify each distinct employer once, run the apply-host
-  impersonation pre-check per job, then score each job. Fails fast on an out-of-credit error (leaves
+  upsert pending postings. Flags: `--search-terms`, `--limit`, `--concurrency`, `--dry-run`,
+  `--skip-existing` (alias `--new-only`: daily incremental — fetch detail only for new `workbcId`s).
+- `judge.ts` — **Phase 2 (evaluate), deduped + tiered.** Verify each distinct employer once — but
+  *skip* the web search for employers whose postings all apply via their own matching ATS tenant
+  (presumed legit, `source=ats-tenant-match`); web-verify only the rest. Then run the apply-host
+  impersonation pre-check per job and score each job. Fails fast on an out-of-credit error (leaves
   jobs pending). Flags: `--limit`, `--rejudge`, `--emp-concurrency`, `--score-concurrency`.
   *(Preferred judge.)*
 - `judge-fetch.ts` / `judge-apply.ts` — the optional **agent** judge path: fetch dumps pending into
