@@ -13,10 +13,10 @@ import { JsonlLogger } from "./logger"
 // the old SPA HTML scrape returned stale/duplicated detail DOM (hash-route changes don't reload),
 // corrupting hundreds of postings. Each posting is upserted as RAW/pending (no AI). Judge separately.
 
-type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number }
+type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean }
 
 function parseArgs(): Args {
-  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6 }
+  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]
@@ -24,6 +24,9 @@ function parseArgs(): Args {
     else if (t === "--search-terms") a.searchTerms = argv[++i] ?? null
     else if (t === "--dry-run") a.dryRun = true
     else if (t === "--concurrency") a.concurrency = Math.max(1, parseInt(argv[++i] ?? "6", 10) || 6)
+    // --skip-existing (alias --new-only): the daily incremental mode — only fetch detail for
+    // postings not already in the DB, so a re-run does work only for genuinely new jobs.
+    else if (t === "--skip-existing" || t === "--new-only") a.skipExisting = true
   }
   return a
 }
@@ -51,7 +54,7 @@ async function main() {
       console.log(`[search] "${term}": ${found.length} stubs (running total ${byId.size})`)
       if (byId.size >= target) break
     }
-    const stubs = [...byId.values()].slice(0, target)
+    let stubs = [...byId.values()].slice(0, target)
     log.log({ stage: "search:done", ok: stubs.length > 0, meta: { stubCount: stubs.length } })
     if (stubs.length === 0) {
       console.error("Hard exit: 0 listings found. DB not touched.")
@@ -59,6 +62,22 @@ async function main() {
       return
     }
     console.log(`[search] processing ${stubs.length} stubs`)
+
+    // Incremental mode: drop postings already in the DB so we only fetch detail for new ones.
+    if (args.skipExisting && !args.dryRun) {
+      const existing = await prisma.job.findMany({
+        where: { workbcId: { in: stubs.map((s) => s.workbcId) } },
+        select: { workbcId: true },
+      })
+      const known = new Set(existing.map((e) => e.workbcId))
+      const before = stubs.length
+      stubs = stubs.filter((s) => !known.has(s.workbcId))
+      console.log(`[scrape] --skip-existing: ${known.size} already in DB, ${stubs.length} new to fetch (of ${before})`)
+      if (stubs.length === 0) {
+        console.log("[scrape] nothing new to collect — done.")
+        return
+      }
+    }
 
     // Phase A.5: pre-upsert employer identities from the (reliable) search stubs, sequentially.
     // Doing this first means the parallel job-upserts below never race on the employer unique key.
