@@ -8,7 +8,7 @@ A file-by-file guide to the repo. For the system-architecture overview see
 Shared logic lives in `lib/`.
 
 ```
-lib/          core logic (data fetch, flags, scoring, categories, schema, db)
+lib/          core logic — workbc/ signals/ ai/ shared/ + db·env·utils at root
 scripts/      CLI entry points (scrape, judge, helpers)
 app/          Next.js web app (read-only views)
 components/   shared React UI
@@ -17,21 +17,27 @@ docs/         architecture, technical info, runbook, specs/plans
 .claude/      the judge-postings skill
 ```
 
-## `lib/` — core logic
+## `lib/` — core logic (grouped by runtime / SDK boundary)
 
-**Data acquisition**
+Root files (`db.ts`, `env.ts`, `utils.ts`) are cross-cutting plumbing imported everywhere; the four
+subfolders split the rest by concern. **No web-app code imports `lib/ai/`** — all `@anthropic-ai/sdk`
+usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so the app can import it.
+
+**`lib/workbc/` — WorkBC data layer**
 - `workbc-api.ts` — WorkBC JSON API client. `searchJobsApi()` (paged keyword search → job stubs) and
   `fetchJobDetailApi()` (per-job detail → NOC group, salary, apply URL/email, mailing address). The
   data source for the whole pipeline.
 - `scrape-workbc.ts` — `JobStub` / `DetailFields` types (used everywhere). Also holds the old HTML
   parsers `parseListingCards` / `parseDetail` — **no longer used by the pipeline** (kept only for
   their tests; superseded by `workbc-api.ts`).
+
+**`lib/signals/` — deterministic signals (no AI)**
 - `ats-registry.ts` — `classifyHost()`: maps an apply-URL host to a known ATS (Workday, Greenhouse,
   Lever, BambooHR, …) → the `ats_known_provider` legitimacy signal.
-- `apply-host.ts` — deterministic apply-URL analysis: `extractAtsTenant()` pulls the ATS tenant slug
-  (e.g. `relx` from `relx.wd3.myworkdayjobs.com`); `tenantEmployerMatch()` compares it to the claimed
-  employer (with an acronym/prefix pre-clear so UBC/SCI/etc. skip the check) → `match | mismatch |
-  no-tenant`. The cheap pre-filter for brand impersonation.
+- `apply-host.ts` — `extractAtsTenant()` pulls the ATS tenant slug (e.g. `relx` from
+  `relx.wd3.myworkdayjobs.com`); `tenantEmployerMatch()` compares it to the claimed employer (acronym/
+  prefix pre-clear so UBC/SCI/etc. skip the check) → `match | mismatch | no-tenant`. Pre-filter for
+  brand impersonation.
 - `application-flags.ts` — `detectFlags()`: regex detectors over apply text/description
   (`mail_physical_resume`, `generic_email_domain`, `crypto_payment`, `banking_info_upfront`,
   `fee_to_apply`, `id_upfront`, `whatsapp_telegram_only`). Each returns matched `evidence`.
@@ -42,11 +48,10 @@ docs/         architecture, technical info, runbook, specs/plans
   Admin/Finance, Healthcare, Skilled Trades & Construction, Care, Other); `parseNocGroup()` /
   `nocFromDescription()` extract the code. Drives the `?cat=` filter and the `/analysis` page.
 
-**Evaluation (AI)**
+**`lib/ai/` — Claude evaluation (all `@anthropic-ai/sdk` usage lives here)**
 - `verify-employer-web.ts` — `verifyEmployerWeb()`: one Claude (`haiku-4-5`) call per company using
   the `web_search` tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType,
-  websiteUrl, …}`. Also returns `searchLog` (raw `web_search` queries + result blocks) for the audit
-  trail; exports `extractSearchLog`.
+  websiteUrl, …}`. Also returns `searchLog` (raw queries + result blocks); exports `extractSearchLog`.
 - `check-impersonation.ts` — `checkImpersonation()`: on a tenant≠employer mismatch, a Claude
   **(`opus-4-8`)** + `web_search` call classifies the relationship `same | affiliate | impersonation
   | uncertain` and names the real company (stronger model — corporate-genealogy synthesis).
@@ -56,22 +61,23 @@ docs/         architecture, technical info, runbook, specs/plans
 - `scoring.ts` — `scoreJob()`: Claude call (no web) that turns the employer verdict + a posting's
   flags/NOC/apply fields into `{fraudScore, reasoning, signals}`. Holds the scoring rubric/prompt
   (`temperature: 0`). `makeFailedResult()` for failures.
-- `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
 
-**Data plumbing**
+**`lib/shared/` — cross-cutting (web + CLI), SDK-free**
 - `json-schemas.ts` — zod schemas + parsers for the Prisma `Json` columns (`ChecksSchema`,
-  `WebVerificationSchema`, `SignalsSchema`, `parseFlags`/`parseChecks`/`parseSignals`). SDK-free, so
-  the web app can import it without pulling the Anthropic SDK.
+  `WebVerificationSchema`, `SignalsSchema`, `parseFlags`/`parseChecks`/`parseSignals`). **Must stay
+  free of the Anthropic SDK** so the web app can import it.
+- `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
 - `anthropic-errors.ts` — `isBillingError()`: detects the out-of-credit 400 (not a retryable 429) so
   the judge fails fast — leaving jobs **pending** instead of mass-writing `unknown`.
+
+**`lib/` root — plumbing (imported by web + CLIs)**
 - `db.ts` — Prisma client singleton.
 - `env.ts` — zod-validated env (`webEnv` for the app; `loadScrapeEnv()` adds `ANTHROPIC_API_KEY` for
   scrape/judge; `AUDIT_TOKEN` optional, gates `/audit`) + `searchUrlForTerm()`.
 - `utils.ts` — `cn()` classname helper for the UI.
 
-**Legacy (from the old Playwright pipeline — not imported anywhere now; safe to delete)**
-- `geocode.ts` (Nominatim), `http-probe.ts` (website reachability), `scrape-external.ts` (external
-  apply-page text), `address-match.ts` (`cityMatches`). Their `*.test.ts` are the only references.
+_(The old Playwright-era modules — `geocode`, `http-probe`, `scrape-external`, `address-match` — were
+removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)_
 
 ## `scripts/` — CLI entry points
 
