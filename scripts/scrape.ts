@@ -1,12 +1,12 @@
 import pLimit from "p-limit"
 import { prisma } from "../lib/db"
 import { webEnv } from "../lib/env"
-import type { JobStub } from "../lib/scrape-workbc"
+import type { JobStub } from "../lib/workbc/scrape-workbc"
 import { classifyHost, isKnownAts } from "../lib/ats-registry"
 import { detectFlags } from "../lib/application-flags"
 import { parseNocGroup, categoryForNoc } from "../lib/job-category"
 import { normalizeEmployer } from "../lib/normalize-employer"
-import { searchJobsApi, fetchJobDetailApi } from "../lib/workbc-api"
+import { searchJobsApi, fetchJobDetailApi } from "../lib/workbc/workbc-api"
 import { JsonlLogger } from "./logger"
 
 // SCRAPE = collect only, pure HTTP via the WorkBC JSON APIs (search + GetJobDetail). No Playwright:
