@@ -3,8 +3,8 @@
 // Shared by scripts/rescan-impersonation.ts (corpus sweep) and scripts/judge.ts (ongoing).
 import type Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "./db"
-import { normalizeEmployer } from "./normalize-employer"
-import { tenantEmployerMatch } from "./apply-host"
+import { normalizeEmployer } from "./signals/normalize-employer"
+import { tenantEmployerMatch } from "./signals/apply-host"
 import { checkImpersonation, type ImpersonationResult } from "./check-impersonation"
 import { parseFlags } from "./json-schemas"
 import { bandFor } from "./risk-band"

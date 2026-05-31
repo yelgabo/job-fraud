@@ -3,7 +3,7 @@
 // after changing the category mapping in lib/job-category.ts.
 // Run: npm run backfill-categories
 import { prisma } from "../lib/db"
-import { nocFromDescription } from "../lib/job-category"
+import { nocFromDescription } from "../lib/signals/job-category"
 
 async function main() {
   const jobs = await prisma.job.findMany({ select: { workbcId: true, descriptionMd: true } })

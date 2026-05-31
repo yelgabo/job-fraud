@@ -7,8 +7,8 @@ import pLimit from "p-limit"
 import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
-import { normalizeEmployer } from "../lib/normalize-employer"
-import { tenantEmployerMatch } from "../lib/apply-host"
+import { normalizeEmployer } from "../lib/signals/normalize-employer"
+import { tenantEmployerMatch } from "../lib/signals/apply-host"
 import { resolveApplyHost } from "../lib/resolve-impersonation"
 
 async function main() {

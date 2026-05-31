@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db"
 import { parseFlags } from "@/lib/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { FlagIcons } from "@/components/FlagIcons"
-import { CATEGORIES } from "@/lib/job-category"
+import { CATEGORIES } from "@/lib/signals/job-category"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"

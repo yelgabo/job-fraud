@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/json-schemas"
-import { CATEGORIES } from "@/lib/job-category"
+import { CATEGORIES } from "@/lib/signals/job-category"
 
 export const dynamic = "force-dynamic"
 
