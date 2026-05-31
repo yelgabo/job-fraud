@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { prisma } from "@/lib/db"
-import { parseChecks } from "@/lib/json-schemas"
+import { parseChecks } from "@/lib/shared/json-schemas"
 import { requireAuditToken } from "./guard"
 
 export const dynamic = "force-dynamic"

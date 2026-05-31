@@ -1,4 +1,4 @@
-import type { ApplicationFlag } from "@/lib/json-schemas"
+import type { ApplicationFlag } from "@/lib/shared/json-schemas"
 
 const FLAG_META: Record<string, { icon: string; label: string }> = {
   mail_physical_resume: { icon: "✉️", label: "Apply by physical mail" },

@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { prisma } from "@/lib/db"
-import { parseFlags } from "@/lib/json-schemas"
+import { parseFlags } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { FlagIcons } from "@/components/FlagIcons"
 import { CATEGORIES } from "@/lib/signals/job-category"

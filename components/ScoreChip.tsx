@@ -1,4 +1,4 @@
-import { bandFor, type RiskBand } from "@/lib/risk-band"
+import { bandFor, type RiskBand } from "@/lib/shared/risk-band"
 import { cn } from "@/lib/utils"
 
 const BAND_STYLE: Record<RiskBand, string> = {

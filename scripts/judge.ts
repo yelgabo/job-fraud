@@ -8,12 +8,12 @@ import pLimit from "p-limit"
 import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
-import { parseFlags } from "../lib/json-schemas"
+import { parseFlags } from "../lib/shared/json-schemas"
 import { verifyEmployerWeb } from "../lib/verify-employer-web"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/scoring"
 import { resolveApplyHost } from "../lib/resolve-impersonation"
-import { isBillingError } from "../lib/anthropic-errors"
-import { bandFor } from "../lib/risk-band"
+import { isBillingError } from "../lib/shared/anthropic-errors"
+import { bandFor } from "../lib/shared/risk-band"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
 function parseArgs(): Args {

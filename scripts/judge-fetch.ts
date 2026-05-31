@@ -5,7 +5,7 @@
 import { writeFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { prisma } from "../lib/db"
-import { parseFlags } from "../lib/json-schemas"
+import { parseFlags } from "../lib/shared/json-schemas"
 
 async function main() {
   const argv = process.argv.slice(2)

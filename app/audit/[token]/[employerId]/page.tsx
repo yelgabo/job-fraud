@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
-import { parseChecks } from "@/lib/json-schemas"
+import { parseChecks } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { requireAuditToken } from "../guard"
 

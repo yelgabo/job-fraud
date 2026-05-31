@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { prisma } from "@/lib/db"
-import { parseChecks } from "@/lib/json-schemas"
+import { parseChecks } from "@/lib/shared/json-schemas"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"

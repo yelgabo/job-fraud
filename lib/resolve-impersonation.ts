@@ -6,8 +6,8 @@ import { prisma } from "./db"
 import { normalizeEmployer } from "./signals/normalize-employer"
 import { tenantEmployerMatch } from "./signals/apply-host"
 import { checkImpersonation, type ImpersonationResult } from "./check-impersonation"
-import { parseFlags } from "./json-schemas"
-import { bandFor } from "./risk-band"
+import { parseFlags } from "./shared/json-schemas"
+import { bandFor } from "./shared/risk-band"
 
 export type JobForCheck = {
   workbcId: string

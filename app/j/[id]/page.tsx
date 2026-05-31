@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
-import { parseFlags, parseSignals, parseChecks } from "@/lib/json-schemas"
+import { parseFlags, parseSignals, parseChecks } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { FlagIcons } from "@/components/FlagIcons"
 import { cn } from "@/lib/utils"

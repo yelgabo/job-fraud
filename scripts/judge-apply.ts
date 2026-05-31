@@ -7,8 +7,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { z } from "zod"
 import { prisma } from "../lib/db"
-import { SignalsSchema, WebVerificationSchema } from "../lib/json-schemas"
-import { bandFor } from "../lib/risk-band"
+import { SignalsSchema, WebVerificationSchema } from "../lib/shared/json-schemas"
+import { bandFor } from "../lib/shared/risk-band"
 
 /** Expand args into verdict-file paths: a dir contributes its verdicts*.json files. */
 function resolveFiles(args: string[]): string[] {
