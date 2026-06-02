@@ -84,7 +84,8 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 
 - `scrape.ts` — **Phase 1 (collect).** API search + detail + flags + NOC category + ATS classify →
   upsert pending postings. Flags: `--search-terms`, `--limit`, `--concurrency`, `--dry-run`,
-  `--skip-existing` (alias `--new-only`: daily incremental — fetch detail only for new `workbcId`s).
+  `--skip-existing` (alias `--new-only`: fetch detail only for new `workbcId`s), `--recent day|week`
+  (ask WorkBC server-side for only recently-posted jobs — the cheap daily path).
 - `judge.ts` — **Phase 2 (evaluate), deduped + tiered.** Verify each distinct employer once — but
   *skip* the web search for employers whose postings all apply via their own matching ATS tenant
   (presumed legit, `source=ats-tenant-match`); web-verify only the rest. Then run the apply-host

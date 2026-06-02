@@ -13,10 +13,10 @@ import { JsonlLogger } from "./logger"
 // the old SPA HTML scrape returned stale/duplicated detail DOM (hash-route changes don't reload),
 // corrupting hundreds of postings. Each posting is upserted as RAW/pending (no AI). Judge separately.
 
-type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean }
+type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean; recent: number }
 
 function parseArgs(): Args {
-  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false }
+  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false, recent: 0 }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]
@@ -27,6 +27,14 @@ function parseArgs(): Args {
     // --skip-existing (alias --new-only): the daily incremental mode — only fetch detail for
     // postings not already in the DB, so a re-run does work only for genuinely new jobs.
     else if (t === "--skip-existing" || t === "--new-only") a.skipExisting = true
+    // --recent [day|week]: ask WorkBC server-side for only recently-posted jobs (SearchDateSelection
+    // 1≈last day / 2≈last week). Bare --recent = day. The cheap way to fetch incremental changes.
+    else if (t === "--recent") {
+      const v = argv[i + 1]
+      if (v === "day") { a.recent = 1; i++ }
+      else if (v === "week") { a.recent = 2; i++ }
+      else a.recent = 1
+    }
   }
   return a
 }
@@ -43,12 +51,18 @@ async function main() {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-    const target = args.limit ?? 50
+    // --recent windows are small (tens–hundreds); default the cap high so it exhausts the whole
+    // window across all terms rather than stopping at the normal 50.
+    const target = args.limit ?? (args.recent ? 2000 : 50)
+    if (args.recent) console.log(`[scrape] --recent: only postings from the last ${args.recent === 1 ? "day" : "week"}`)
     const byId = new Map<string, JobStub>()
     for (const term of terms) {
       log.log({ stage: "search:start", ok: true, meta: { term } })
-      const found = await searchJobsApi(term, target, (pg, total, count) =>
-        console.log(`[search] "${term}" page ${pg}: ${total} collected / ${count} total results`),
+      const found = await searchJobsApi(
+        term,
+        target,
+        (pg, total, count) => console.log(`[search] "${term}" page ${pg}: ${total} collected / ${count} total results`),
+        args.recent,
       )
       for (const s of found) if (!byId.has(s.workbcId)) byId.set(s.workbcId, s)
       console.log(`[search] "${term}": ${found.length} stubs (running total ${byId.size})`)

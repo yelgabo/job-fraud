@@ -23,7 +23,7 @@ type JobSearchResponse = {
   pageSize: number
 }
 
-function searchBody(keyword: string, page: number) {
+function searchBody(keyword: string, page: number, dateSelection: number) {
   return {
     Page: page,
     PageSize: String(PAGE_SIZE),
@@ -31,7 +31,8 @@ function searchBody(keyword: string, page: number) {
     SalaryMax: "",
     Keyword: keyword,
     SearchInField: "all",
-    SearchDateSelection: 0,
+    // Posted-date window (empirically: 0 = any time, 1 ≈ last day, 2 ≈ last week).
+    SearchDateSelection: dateSelection,
     SearchJobEducationLevel: [],
     SalaryType: 4,
     SearchLocationDistance: -1,
@@ -58,11 +59,11 @@ export function apiJobToStub(j: ApiJob): JobStub {
   }
 }
 
-async function fetchPage(keyword: string, page: number): Promise<JobSearchResponse> {
+async function fetchPage(keyword: string, page: number, dateSelection: number): Promise<JobSearchResponse> {
   const resp = await fetch(JOB_SEARCH_API, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(searchBody(keyword, page)),
+    body: JSON.stringify(searchBody(keyword, page, dateSelection)),
   })
   if (!resp.ok) throw new Error(`JobSearch API ${resp.status} for "${keyword}" page ${page}`)
   return (await resp.json()) as JobSearchResponse
@@ -170,12 +171,13 @@ export async function searchJobsApi(
   keyword: string,
   limit: number,
   onPage?: (page: number, total: number, count: number) => void,
+  dateSelection = 0, // WorkBC posted-date window: 0 = any, 1 ≈ last day, 2 ≈ last week
 ): Promise<JobStub[]> {
   const byId = new Map<string, JobStub>()
   let page = 1
   let count = Infinity
   while (byId.size < limit && (page - 1) * PAGE_SIZE < count) {
-    const res = await fetchPage(keyword, page)
+    const res = await fetchPage(keyword, page, dateSelection)
     count = res.count
     for (const j of res.result) {
       const stub = apiJobToStub(j)

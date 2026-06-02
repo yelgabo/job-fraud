@@ -123,15 +123,18 @@ unlinked `/audit/<token>` internal pages — unset ⇒ they 404.
 **Scrape (collect):**
 ```bash
 npm run scrape -- --search-terms "software engineer,software" --limit 500 --concurrency 6
-npm run scrape -- --search-terms "software engineer,software" --skip-existing   # daily: new jobs only
+npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing   # daily refresh
 npm run scrape -- --dry-run          # collect without writing
 ```
 `--search-terms` (default `"software engineer"`) merged + de-duped by job id; `--limit N` caps;
 `--concurrency N` parallel detail fetches (default 6). Re-running upserts (refreshes scraped fields,
-preserves prior judgment) so a corpus grows across runs. **`--skip-existing`** (alias `--new-only`) is
-the daily incremental mode — drops `workbcId`s already in the DB and fetches detail only for new
-postings; pair with `npm run judge` (which judges only pending postings and web-verifies only
-employers that need it) for a cheap daily refresh.
+preserves prior judgment) so a corpus grows across runs. **`--recent day|week`** asks WorkBC
+server-side (`SearchDateSelection`) for only postings from the last day/week, so the daily run pulls a
+few dozen–hundred recent stubs instead of paging the whole feed (`--recent` defaults its cap high
+enough to exhaust the small window). **`--skip-existing`** (alias `--new-only`) then drops
+`workbcId`s already in the DB so only genuinely new postings are fetched. The recommended daily
+command combines both, then `npm run judge` (which judges only pending postings and web-verifies only
+the employers that need it) — a cheap incremental refresh.
 
 **Judge (evaluate) — deduped, recommended:**
 ```bash
