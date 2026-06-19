@@ -6,22 +6,25 @@ import { classifyHost, isKnownAts } from "../lib/signals/ats-registry"
 import { detectFlags } from "../lib/signals/application-flags"
 import { parseNocGroup, categoryForNoc } from "../lib/signals/job-category"
 import { normalizeEmployer } from "../lib/signals/normalize-employer"
-import { searchJobsApi, fetchJobDetailApi } from "../lib/workbc/workbc-api"
+import { searchJobsApi, fetchJobDetailApi, cityLocation } from "../lib/workbc/workbc-api"
 import { JsonlLogger } from "./logger"
 
 // SCRAPE = collect only, pure HTTP via the WorkBC JSON APIs (search + GetJobDetail). No Playwright:
 // the old SPA HTML scrape returned stale/duplicated detail DOM (hash-route changes don't reload),
 // corrupting hundreds of postings. Each posting is upserted as RAW/pending (no AI). Judge separately.
 
-type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean; recent: number }
+type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean; recent: number; locations: string | null }
 
 function parseArgs(): Args {
-  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false, recent: 0 }
+  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false, recent: 0, locations: null }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]
     if (t === "--limit") a.limit = parseInt(argv[++i] ?? "0", 10) || null
     else if (t === "--search-terms") a.searchTerms = argv[++i] ?? null
+    // --location "Victoria" (or "Victoria,Saanich"): WorkBC server-side city filter. Combine with an
+    // empty --search-terms "" to collect EVERY posting in that city regardless of keyword/category.
+    else if (t === "--location") a.locations = argv[++i] ?? null
     else if (t === "--dry-run") a.dryRun = true
     else if (t === "--concurrency") a.concurrency = Math.max(1, parseInt(argv[++i] ?? "6", 10) || 6)
     // --skip-existing (alias --new-only): the daily incremental mode — only fetch detail for
@@ -47,13 +50,21 @@ async function main() {
 
   try {
     // Phase A: search (WorkBC JSON API)
-    const terms = (args.searchTerms ?? webEnv.WORKBC_SEARCH_TERMS ?? "software engineer")
+    const locations = (args.locations ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
+      .map(cityLocation)
+    // With a location filter, an empty keyword means "every posting in this city". Without a location,
+    // an empty keyword would pull all 27k BC jobs, so we keep the software-engineer default there.
+    const rawTerms = args.searchTerms ?? webEnv.WORKBC_SEARCH_TERMS ?? (locations.length ? "" : "software engineer")
+    const terms = rawTerms.split(",").map((s) => s.trim()).filter(Boolean)
+    // A location-only run (empty keyword) still needs one search pass — use a single blank keyword.
+    if (terms.length === 0 && locations.length) terms.push("")
     // --recent windows are small (tens–hundreds); default the cap high so it exhausts the whole
-    // window across all terms rather than stopping at the normal 50.
-    const target = args.limit ?? (args.recent ? 2000 : 50)
+    // window across all terms rather than stopping at the normal 50. A city sweep can be large too.
+    const target = args.limit ?? (args.recent || locations.length ? 5000 : 50)
+    if (locations.length) console.log(`[scrape] --location: ${locations.map((l) => l.City).join(", ")}`)
     if (args.recent) console.log(`[scrape] --recent: only postings from the last ${args.recent === 1 ? "day" : "week"}`)
     const byId = new Map<string, JobStub>()
     for (const term of terms) {
@@ -63,6 +74,7 @@ async function main() {
         target,
         (pg, total, count) => console.log(`[search] "${term}" page ${pg}: ${total} collected / ${count} total results`),
         args.recent,
+        locations,
       )
       for (const s of found) if (!byId.has(s.workbcId)) byId.set(s.workbcId, s)
       console.log(`[search] "${term}": ${found.length} stubs (running total ${byId.size})`)

@@ -8,6 +8,15 @@ const JOB_SEARCH_API =
 
 const PAGE_SIZE = 50
 
+// WorkBC's SearchLocations entries are {City, Postal, Region} objects (the SPA's eP class). A
+// City-only entry with SearchLocationDistance -1 filters to that city (verified: Victoria → 1430).
+export type WorkbcLocation = { City: string; Postal: string; Region: string }
+
+/** Build a City-only WorkBC location filter (Postal/Region left blank = exact-city match). */
+export function cityLocation(city: string): WorkbcLocation {
+  return { City: city, Postal: "", Region: "" }
+}
+
 type ApiJob = {
   JobId: string
   Title: string
@@ -23,7 +32,7 @@ type JobSearchResponse = {
   pageSize: number
 }
 
-function searchBody(keyword: string, page: number, dateSelection: number) {
+function searchBody(keyword: string, page: number, dateSelection: number, locations: WorkbcLocation[] = []) {
   return {
     Page: page,
     PageSize: String(PAGE_SIZE),
@@ -35,8 +44,9 @@ function searchBody(keyword: string, page: number, dateSelection: number) {
     SearchDateSelection: dateSelection,
     SearchJobEducationLevel: [],
     SalaryType: 4,
+    // -1 = exact-city match when SearchLocations is set (the SPA sends -1 for a single city pin).
     SearchLocationDistance: -1,
-    SearchLocations: [],
+    SearchLocations: locations,
     SearchSalaryConditions: [],
     SortOrder: 11,
     SearchIndustry: [],
@@ -59,11 +69,11 @@ export function apiJobToStub(j: ApiJob): JobStub {
   }
 }
 
-async function fetchPage(keyword: string, page: number, dateSelection: number): Promise<JobSearchResponse> {
+async function fetchPage(keyword: string, page: number, dateSelection: number, locations: WorkbcLocation[]): Promise<JobSearchResponse> {
   const resp = await fetch(JOB_SEARCH_API, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(searchBody(keyword, page, dateSelection)),
+    body: JSON.stringify(searchBody(keyword, page, dateSelection, locations)),
   })
   if (!resp.ok) throw new Error(`JobSearch API ${resp.status} for "${keyword}" page ${page}`)
   return (await resp.json()) as JobSearchResponse
@@ -172,12 +182,13 @@ export async function searchJobsApi(
   limit: number,
   onPage?: (page: number, total: number, count: number) => void,
   dateSelection = 0, // WorkBC posted-date window: 0 = any, 1 ≈ last day, 2 ≈ last week
+  locations: WorkbcLocation[] = [], // optional city filter (e.g. [cityLocation("Victoria")])
 ): Promise<JobStub[]> {
   const byId = new Map<string, JobStub>()
   let page = 1
   let count = Infinity
   while (byId.size < limit && (page - 1) * PAGE_SIZE < count) {
-    const res = await fetchPage(keyword, page, dateSelection)
+    const res = await fetchPage(keyword, page, dateSelection, locations)
     count = res.count
     for (const j of res.result) {
       const stub = apiJobToStub(j)
