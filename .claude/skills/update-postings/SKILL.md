@@ -15,8 +15,10 @@ update**. Run from the `job-fraud` project directory; `.env` needs only `DATABAS
 1. **Scrape (never needs an API key).**
    - Last update <24h ago: `npm run scrape -- --recent day --skip-existing`
    - Within the last week: `npm run scrape -- --recent week --skip-existing`
-   - Older/unknown: `npm run scrape -- --skip-existing` (full sweep; `--recent week` would
-     miss anything posted before the window)
+   - Older/unknown: `npm run scrape -- --limit 5000 --skip-existing` (pages through ALL
+     results for the search terms; `--recent week` would miss anything posted before the
+     window). The explicit `--limit` matters: without `--recent`/`--location` the stub cap
+     defaults to 50, which only skims the newest page.
 
    `--skip-existing` detail-fetches only workbcIds not already in the DB; new rows land with
    `scoredAt` null (= pending).
