@@ -18,6 +18,14 @@ update**. Run from the `job-fraud` project directory; `.env` needs only `DATABAS
 
 ## Procedure
 
+0. **Drain the review queue** (owner flags from the /audit admin pages, `JudgeRequest` table).
+   - `kind: "rerun"` rows need no action here — flagging already cleared the job's `scoredAt`,
+     so step 3's normal judging covers them. Stamp `resolvedAt` after the posting is re-scored.
+   - `kind: "deep"` rows: for each, dispatch ONE fraud-analyst agent (judge-postings prompt)
+     with just that posting, appending the request's `note` as "Owner context: <note>" so the
+     agent investigates the owner's concern. Apply via `judge:apply`, then stamp `resolvedAt`.
+   - Query/stamp with `npx tsx --env-file=.env -e` one-liners on `prisma.judgeRequest`.
+
 1. **Scrape (never needs an API key).**
    - Last update <24h ago: `npm run scrape -- --recent day --skip-existing`
    - Within the last week: `npm run scrape -- --recent week --skip-existing`

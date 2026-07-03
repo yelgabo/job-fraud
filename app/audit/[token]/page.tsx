@@ -29,6 +29,16 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
       (b.webSearchLogs[0]?.capturedAt.getTime() ?? 0) - (a.webSearchLogs[0]?.capturedAt.getTime() ?? 0),
   )
 
+  const openRequests = await prisma.judgeRequest.findMany({
+    where: { resolvedAt: null },
+    orderBy: { createdAt: "desc" },
+  })
+  const requestJobs = await prisma.job.findMany({
+    where: { workbcId: { in: openRequests.map((r) => r.workbcId) } },
+    select: { workbcId: true, title: true },
+  })
+  const titleFor = new Map(requestJobs.map((j) => [j.workbcId, j.title]))
+
   return (
     <div className="space-y-6">
       <header>
@@ -36,9 +46,33 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
         <p className="mt-1 text-sm text-zinc-500">
           Raw <code className="rounded bg-zinc-100 px-1">web_search</code> activity captured behind each
           employer verification. Internal tool — unlinked, not for public use. {employers.length} employers
-          with a captured trail.
+          with a captured trail. To review a posting, open{" "}
+          <code className="rounded bg-zinc-100 px-1">/audit/&lt;token&gt;/j/&lt;workbcId&gt;</code>.
         </p>
       </header>
+
+      <section className="rounded-lg border-2 border-amber-300 bg-amber-50 p-5">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-700">
+          Review queue ({openRequests.length} open)
+        </h2>
+        {openRequests.length === 0 ? (
+          <p className="text-sm text-amber-700/60">
+            No open re-judge requests. Flag postings from their admin pages.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {openRequests.map((r) => (
+              <li key={r.id} className="rounded bg-white px-3 py-2 text-sm">
+                <span className="mr-2 font-semibold text-amber-800">{r.kind}</span>
+                <Link href={`/audit/${token}/j/${r.workbcId}`} className="text-zinc-900 hover:underline">
+                  {titleFor.get(r.workbcId) ?? r.workbcId}
+                </Link>
+                {r.note ? <span className="ml-2 text-zinc-500">— “{r.note}”</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">

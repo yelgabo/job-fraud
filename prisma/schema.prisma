@@ -67,3 +67,28 @@ model Job {
   @@index([scoredAt])
   @@index([category])
 }
+
+// Owner comments on a posting, shown only on the token-gated /audit admin mirror. Append-only.
+model ReviewNote {
+  id        String   @id @default(cuid())
+  workbcId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([workbcId, createdAt])
+}
+
+// Owner flags asking for a posting to be re-evaluated. kind "rerun" = normal re-judge on the
+// next update (scoredAt is cleared immediately when the flag is created); kind "deep" = queued
+// for a per-posting agent investigation, with `note` passed to the agent as owner context.
+// resolvedAt is stamped by the update run that services the request.
+model JudgeRequest {
+  id         String    @id @default(cuid())
+  workbcId   String
+  kind       String // "rerun" | "deep"
+  note       String?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([resolvedAt, createdAt])
+}
