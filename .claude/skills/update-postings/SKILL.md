@@ -5,7 +5,13 @@ description: Use when the user asks to update, refresh, or sync the job-fraud da
 
 # Update postings (scrape → judge loop)
 
-Full data refresh = incremental scrape, then judge everything pending, until 0 pending. The
+Full data refresh = incremental scrape, then judge everything pending, until 0 pending.
+**Judging follows scraping automatically — one user request covers the whole loop.** Do not
+stop to ask whether to judge, which judge path to use, or whether the pending count is "too
+big": pick the path by the key predicate in step 2 and run waves until drained. Scale is not
+a stop condition — a larger pending count just means more waves, and applying verdicts after
+every wave means progress is never lost if the session is interrupted. Report cost/count
+when done, not as a question before starting. The
 deployed site reads the production DB live — **no deploy or push is ever needed for a data
 update**. Run from the `job-fraud` project directory; `.env` needs only `DATABASE_URL`
 (Railway public proxy URL) for the keyless path.
