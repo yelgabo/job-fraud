@@ -58,35 +58,20 @@ much of the corpus is never seen at all. Choose it with that in mind.
    npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing  # city pass
    ```
 
-   The two passes collect different postings, so both are needed. `scripts/scrape.ts:60`
-   applies the default search term `"software engineer"` **only when no `--location` is
-   given**; passing a location empties the term instead, so the city pass pulls every posting
-   in those cities regardless of title. Measured on 2026-07-28: the term pass added **42** new
-   postings, the city pass added **411**. Running only the term pass loses roughly ninety
-   percent of a refresh.
-
-   The explicit `--search-terms ""` on the city pass is not optional boilerplate: a
-   `WORKBC_SEARCH_TERMS` value in `.env` outranks the empty-keyword default, so without the
-   flag the city pass silently becomes a keyword-filtered search, with no warning in the
-   scrape output.
-
-   `--location` takes a comma-separated list (`"Victoria,Saanich"`) if the sweep should cover
-   more cities; keep the `--search-terms ""` with it either way.
-
-   The explicit `--limit` matters: without `--recent` or `--location` the stub cap defaults to
-   50, which only skims the newest page.
+   The two passes collect different postings (the city pass is by far the larger), so both
+   are needed. Run the commands exactly as written: every flag above is load-bearing,
+   including the explicit `--search-terms ""` on the city pass and the explicit `--limit`.
+   `docs/TECHNICAL_INFO.md` ("Commands") owns the scrape contract - what each pass covers,
+   flag semantics, cap defaults, and the `WORKBC_SEARCH_TERMS` precedence trap that makes
+   the empty `--search-terms ""` mandatory.
 
    Cheaper incremental variants, when the last full refresh is recent and the goal is just to
    top up (run each as both passes too, city pass still with `--search-terms ""`):
    - Last update <24h ago: add `--recent day`
    - Within the last week: add `--recent week`
 
-   `--recent` asks WorkBC server-side for recently-posted jobs only, so it misses anything
-   posted before the window; a catch-up or an unknown-age gap needs the plain `--limit 5000`
-   form above.
-
-   `--skip-existing` detail-fetches only workbcIds not already in the DB; new rows land with
-   `scoredAt` null (= pending).
+   `--recent` only sees postings from its window, so a catch-up or an unknown-age gap needs
+   the plain `--limit 5000` form above.
 
 2. **Pick the judge path by one predicate: is `ANTHROPIC_API_KEY` set in `.env`?** AGENTS.md
    ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see
