@@ -21,31 +21,31 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
 
 **Phase 1 — scrape** (collect; cheap, pure HTTP) · `scripts/scrape.ts`
 
-- Fetch postings from WorkBC's JSON APIs — search + per-job detail (`lib/workbc-api.ts`),
+- Fetch postings from WorkBC's JSON APIs — search + per-job detail (`lib/workbc/workbc-api.ts`),
   concurrently (`--concurrency`).
-- Run deterministic flag detectors over the text (`lib/application-flags.ts`).
+- Run deterministic flag detectors over the text (`lib/signals/application-flags.ts`).
 - Upsert each posting as **pending** (`scoredAt = null`). Re-runs accumulate; nothing is wiped.
 
 **Phase 2 — judge** (evaluate; deduped, single DB writer) · `scripts/judge.ts`
 
 - *Stage 1 — verify each distinct employer once (tiered).* Claude's `web_search` tool researches the
-  company (`lib/verify-employer-web.ts`); the verdict (`businessMatch`, `locationMatch`,
+  company (`lib/ai/verify-employer-web.ts`); the verdict (`businessMatch`, `locationMatch`,
   `applicationAddressType`, …) is cached on the employer and reused by all its postings. **Tiering
   (cost):** an employer whose pending postings *all* apply via its own matching ATS tenant
-  (`lib/apply-host.ts` `allApplyHostsMatch`) is presumed legit with a deterministic verdict
+  (`lib/signals/apply-host.ts` `allApplyHostsMatch`) is presumed legit with a deterministic verdict
   (`businessMatch=match`, `source=ats-tenant-match`) and **skips the web search**; web-verify is spent
   only on employers with an email/mail/phone/no-ATS or tenant-mismatch posting. A cached presumption
   is upgraded to a real web-verify if a new non-matching posting later appears.
 - *Stage 1.5 — brand-impersonation pre-check.* For each posting, if its apply URL routes to a
-  different company's ATS tenant than the claimed employer (`lib/apply-host.ts`), a Claude
-  (`opus-4-8`) `web_search` call (`lib/check-impersonation.ts`) classifies the relationship
+  different company's ATS tenant than the claimed employer (`lib/signals/apply-host.ts`), a Claude
+  (`opus-4-8`) `web_search` call (`lib/ai/check-impersonation.ts`) classifies the relationship
   (`same`/`affiliate`/`impersonation`/`uncertain`); a confirmed impersonation is re-attributed to the
-  real company and scored HIGH (`lib/resolve-impersonation.ts`).
+  real company and scored HIGH (`lib/ai/resolve-impersonation.ts`).
 - *Stage 2 — score each posting.* A cheap Claude call (no web search) combines the employer verdict
-  with the posting's own flags / NOC / apply fields (`lib/scoring.ts`) → `fraudScore`, `riskBand`,
+  with the posting's own flags / NOC / apply fields (`lib/ai/scoring.ts`) → `fraudScore`, `riskBand`,
   `reasoning`, `signals`, `scoredAt`.
 
-An out-of-credit billing error aborts the run (`lib/anthropic-errors.ts`) leaving jobs **pending**,
+An out-of-credit billing error aborts the run (`lib/shared/anthropic-errors.ts`) leaving jobs **pending**,
 rather than mass-writing `unknown`.
 
 **Web app** (read-only) · `app/` — `/` risk-band tabs × job-type category chips × posted-date windows
@@ -54,7 +54,7 @@ rather than mass-writing `unknown`.
 `/analysis` elevated-risk rate by category (by company / by posting) · `/audit/<token>` internal
 web-search audit (token-gated, unlinked).
 
-Risk band derives from the score (`lib/risk-band.ts`): **low** `<30`, **medium** `30–69`, **high**
+Risk band derives from the score (`lib/shared/risk-band.ts`): **low** `<30`, **medium** `30–69`, **high**
 `≥70`, **unknown** for scoring failures. The UI shows only judged postings (`scoredAt` set).
 
 All three filter dimensions are composed in one place, `lib/shared/postings-filter.ts`: each
@@ -66,7 +66,7 @@ posted date the employer published (`lib/shared/posted-date.ts`).
 
 ## Data sources (what we gather, and how)
 
-1. **Posting facts — WorkBC JSON APIs** (`lib/workbc-api.ts`). Search API
+1. **Posting facts — WorkBC JSON APIs** (`lib/workbc/workbc-api.ts`). Search API
    (`POST /api/Search/JobSearch`) → employer, title, city, salary. Per-job
    `GET /api/Search/GetJobDetail?jobId=` → NOC occupation code, salary, apply method
    (`ApplyWebsite`/`ApplyEmailAddress`/`ApplyPhoneNumber`), and structured mailing address
@@ -76,20 +76,20 @@ posted date the employer published (`lib/shared/posted-date.ts`).
      *previous* job's DOM — one posting's description/NOC/address got stamped onto ~273 others,
      producing bogus "impersonation" verdicts. Switching to the JSON API removed Playwright and the
      entire failure mode.
-2. **Deterministic flags** (`lib/application-flags.ts`) — regex detectors over apply text +
+2. **Deterministic flags** (`lib/signals/application-flags.ts`) — regex detectors over apply text +
    description, each emitting matched `evidence`: `mail_physical_resume`, `generic_email_domain`
    (free providers only), `crypto_payment`, `banking_info_upfront`, `fee_to_apply`, `id_upfront`,
-   `whatsapp_telegram_only`; plus pipeline-derived `ats_known_provider` (`lib/ats-registry.ts`),
-   `apply_host_mismatch` (brand impersonation — apply URL routes to a different company, `lib/apply-host.ts`),
-   and the NOC-derived job-type `category` (`lib/job-category.ts`).
-3. **Employer web verification** (`lib/verify-employer-web.ts`) — once per company, Claude's
+   `whatsapp_telegram_only`; plus pipeline-derived `ats_known_provider` (`lib/signals/ats-registry.ts`),
+   `apply_host_mismatch` (brand impersonation — apply URL routes to a different company, `lib/signals/apply-host.ts`),
+   and the NOC-derived job-type `category` (`lib/signals/job-category.ts`).
+3. **Employer web verification** (`lib/ai/verify-employer-web.ts`) — once per company, Claude's
    `web_search` tool returns `businessMatch`, `locationMatch`, `hasJobsListing`,
    `applicationAddressType` (`business|residential|po_box|virtual|none|uncertain`), `websiteUrl`,
    `confidence`, `summary`. Cached on the employer and reused across its postings.
 
 ## Scoring logic
 
-Claude (`lib/scoring.ts`, `temperature: 0`) outputs `fraudScore` 0–100 plus `signals[]`, each
+Claude (`lib/ai/scoring.ts`, `temperature: 0`) outputs `fraudScore` 0–100 plus `signals[]`, each
 weighted **−30 (legitimacy) … +30 (fraud)** with cited evidence.
 
 | Signal | Weight |
@@ -108,7 +108,7 @@ Two invariants: a check that is `null`/`unknown` is **strictly neutral** (missin
 penalized), and `mismatch` means "not a real company" — **not** "the company's industry differs from
 the role" (a ridesharing firm hiring a developer is a match). A failed scoring call → `unknown` band,
 never a fabricated score. A **confirmed brand impersonation** (apply URL routes to an unrelated
-company) bypasses the scoring model and is written deterministically as HIGH (`lib/resolve-impersonation.ts`).
+company) bypasses the scoring model and is written deterministically as HIGH (`lib/ai/resolve-impersonation.ts`).
 
 ## Setup
 
@@ -215,9 +215,9 @@ agents, `npm run judge:apply <dir>` validates + applies their verdicts (single w
 
 ## Adding an application-flag detector
 
-Edit `lib/application-flags.ts` — add a `{flag, patterns}` entry to `DETECTORS` (matched text →
+Edit `lib/signals/application-flags.ts` — add a `{flag, patterns}` entry to `DETECTORS` (matched text →
 `evidence`). Add a label/icon in `components/FlagIcons.tsx` and a case in
-`lib/application-flags.test.ts`. The scoring prompt (`lib/scoring.ts`) reads the flags array, so new
+`lib/signals/application-flags.test.ts`. The scoring prompt (`lib/ai/scoring.ts`) reads the flags array, so new
 flags feed the score automatically.
 
 ## Testing & deploy
