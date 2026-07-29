@@ -207,8 +207,8 @@ never guesses a date, and the site shows those postings as `~date (est. from scr
 **Helpers:** `npm run rescore-failed` (re-score `unknown`-band rows) · `npm run reverify-mail`
 (re-verify mail-address employers) · `npm run rescan-impersonation` (corpus sweep for apply-host≠employer
 brand impersonation) · `npm run backfill-categories` (fill `nocCode`/`nocGroup`/`category` from stored
-descriptions — pure parse, no API) · `npm run backfill-posted-date` (fill `postedDate` from `postedAt`
-- pure parse, no API, dry run by default) · `npm run compare-judge` (read-only A/B of deduped vs agent scoring) ·
+descriptions — pure parse, no API) · `npm run backfill-posted-date` (fill `postedDate` from `postedAt` -
+pure parse, no API, dry run by default) · `npm run compare-judge` (read-only A/B of deduped vs agent scoring) ·
 **agent "deep" path:** `npm run judge:fetch` dumps pending into per-batch files for dispatched fraud
 agents, `npm run judge:apply <dir>` validates + applies their verdicts (single writer) — see
 `judge-runbook.md`.
