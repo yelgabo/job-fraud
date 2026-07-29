@@ -30,26 +30,25 @@ Run from the `job-fraud` project directory.
 
 ## Procedure
 
-1. **Fetch pending.** Run `npm run judge:fetch -- --limit N --batch-size 15` (omit `--limit` for
-   all pending). It does the batching itself: it writes `logs/judge-<ts>/batch-001.json`,
-   `batch-002.json`, … and prints `DIR=<dir> BATCHES=<n>`. If it reports 0 pending, stop — nothing
+1. **Fetch pending.** Run `npm run judge:fetch -- --limit N` (omit `--limit` for all pending).
+   It writes `logs/pending-<ts>.json` and prints the path + count. If count is 0, stop — nothing
    to judge.
 
-2. **Dispatch one `general-purpose` agent per batch file, all in a single message** (so they run
+2. **Read** the pending file and split it into batches of **~12-15 postings**.
+
+3. **Dispatch one `general-purpose` agent per batch, all in a single message** (so they run
    concurrently — a "few at a time" wave is fine for large sets; e.g. 5-8 agents per wave).
-   Give each agent the **Agent prompt** below followed by its batch file's JSON. Each agent returns
-   a JSON array of verdicts. Do NOT let agents write to the database.
+   Give each agent the **Agent prompt** below followed by its batch as JSON. Each agent returns a
+   JSON array of verdicts. Do NOT let agents write to the database.
 
-3. **Write each agent's verdict array** to `verdicts-<n>.json` **inside the batch dir**. A
-   directory argument picks up every `verdicts*.json` in it and ignores the `batch-*.json` inputs,
-   so there is nothing to merge.
+4. **Assemble** every agent's verdict array into one combined JSON array and `Write` it to
+   `logs/verdicts-<ts>.json`.
 
-4. **Apply (single writer).** Run `npm run judge:apply -- logs/judge-<ts>/`. It zod-validates each
-   verdict and updates the job (`fraudScore`, `riskBand`, `reasoning`, `signals`, `scoredAt`) and
-   the employer's `checks.web`; invalid verdicts are skipped, not fatal. `riskBand` is derived from
-   `fraudScore`, never taken from the verdict.
+5. **Apply (single writer).** Run `npm run judge:apply -- logs/verdicts-<ts>.json`. It zod-
+   validates each verdict and updates the job (`fraudScore`, `riskBand`, `reasoning`, `signals`,
+   `scoredAt`) and the employer's `checks.web`; invalid verdicts are skipped, not fatal.
 
-5. For large corpora (e.g. 500), repeat steps 1-4 in waves until `judge:fetch` reports 0 pending.
+6. For large corpora (e.g. 500), repeat steps 1-5 in waves until `judge:fetch` returns 0 pending.
 
 ## Verdict shape (one object per posting; agents return a JSON array of these)
 
@@ -74,10 +73,7 @@ Run from the `job-fraud` project directory.
 
 Enums — `websiteReachable`/`hasJobsListing`: `yes|no|unknown`; `businessMatch`/`locationMatch`:
 `match|mismatch|uncertain`; `applicationAddressType`: `business|residential|po_box|virtual|none|uncertain`.
-`fraudScore` 0-100; `signals[].weight` -30..+30. `web` is optional but expected when an employer name
-exists — and it is all-or-nothing: a partial `web` object fails validation and the **whole verdict is
-skipped**, leaving that posting pending. Field-by-field requirements: `AGENTS.md`, "The keyless judge
-path".
+`fraudScore` 0-100; `signals[].weight` -30..+30. `web` is optional but expected when an employer name exists.
 
 ## Agent prompt (paste, then append the batch JSON)
 
