@@ -29,7 +29,7 @@ and is the **single DB writer** (helpers never touch the DB → no races).
    the employer's `checks.web`. `riskBand` is derived from `fraudScore`, not taken from the verdict.
    Skips invalid verdicts without aborting the run; those postings simply stay pending.
 5. **Loop.** Re-run `judge:fetch` until it reports `0 pending`. Re-judge anytime by clearing
-   `scoredAt` (or just re-running helpers and re-applying — apply overwrites).
+   `scoredAt` (or just re-running helpers and re-applying; apply overwrites).
 
 ## Verdict shape (what each agent returns, one per posting)
 
