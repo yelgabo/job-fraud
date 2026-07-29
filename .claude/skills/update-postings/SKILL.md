@@ -19,7 +19,11 @@ update**. Run from the `job-fraud` project directory.
 
 `.env` is gitignored, so a fresh clone or a new worktree does not have one. Create it
 (`cp .env.example .env`) and set `DATABASE_URL`. For the keyless path that is the only
-variable needed.
+variable needed, so **delete or comment out the `ANTHROPIC_API_KEY` line that
+`.env.example` ships**. It carries an uncommented `sk-ant-...` placeholder, which answers
+step 2's predicate "yes" and routes the run down the keyed path; the placeholder passes
+validation, and the 401 it earns is not treated as a billing error, so the run mass-writes
+failed verdicts over the pending queue.
 
 Get the value from Railway:
 
@@ -51,8 +55,8 @@ much of the corpus is never seen at all. Choose it with that in mind.
 1. **Scrape (never needs an API key). A full refresh is TWO passes, not one.**
 
    ```bash
-   npm run scrape -- --limit 5000 --skip-existing                          # term pass
-   npm run scrape -- --location "Victoria" --limit 5000 --skip-existing    # city pass
+   npm run scrape -- --limit 5000 --skip-existing                                          # term pass
+   npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing  # city pass
    ```
 
    The two passes collect different postings, so both are needed. `scripts/scrape.ts:60`
@@ -62,14 +66,19 @@ much of the corpus is never seen at all. Choose it with that in mind.
    postings, the city pass added **411**. Running only the term pass loses roughly ninety
    percent of a refresh.
 
+   The explicit `--search-terms ""` on the city pass is not optional boilerplate: a
+   `WORKBC_SEARCH_TERMS` value in `.env` outranks the empty-keyword default, so without the
+   flag the city pass silently becomes a keyword-filtered search, with no warning in the
+   scrape output.
+
    `--location` takes a comma-separated list (`"Victoria,Saanich"`) if the sweep should cover
-   more cities.
+   more cities; keep the `--search-terms ""` with it either way.
 
    The explicit `--limit` matters: without `--recent` or `--location` the stub cap defaults to
    50, which only skims the newest page.
 
    Cheaper incremental variants, when the last full refresh is recent and the goal is just to
-   top up (run each as both passes too):
+   top up (run each as both passes too, city pass still with `--search-terms ""`):
    - Last update <24h ago: add `--recent day`
    - Within the last week: add `--recent week`
 
@@ -80,7 +89,10 @@ much of the corpus is never seen at all. Choose it with that in mind.
    `--skip-existing` detail-fetches only workbcIds not already in the DB; new rows land with
    `scoredAt` null (= pending).
 
-2. **Pick the judge path by one predicate — is `ANTHROPIC_API_KEY` set in `.env`?**
+2. **Pick the judge path by one predicate — is `ANTHROPIC_API_KEY` set in `.env` to a real
+   key?** A freshly copied `.env` still carries `.env.example`'s `sk-ant-...` placeholder,
+   which counts as "set" but is not a real key; clear that line before answering (see
+   Credentials).
    - **Key present:** `npm run judge` (fast path: dedups by employer, single process).
    - **No key (keyless agent flow):** use the **judge-postings** skill's agent-orchestrated
      path. `npm run judge:fetch -- --batch-size 15` writes `logs/judge-<ts>/batch-*.json`.
