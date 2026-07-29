@@ -90,11 +90,8 @@ Each batch file is a JSON array of:
 **Step 2 - judge.** Dispatch one agent per batch file, several in one message so they run
 concurrently. The agent prompt to use verbatim is in `.claude/skills/judge-postings/SKILL.md`
 ("Agent prompt"); do not improvise one, it encodes the rubric. Agents never touch the database.
-`docs/judge-runbook.md` is the longer-form version of these four steps, but it is stale on the
-handoff mechanics: it describes `judge:fetch` writing a single `logs/pending-<ts>.json` and
-assembling one `verdicts.json`, whereas `scripts/judge-fetch.ts` writes a `logs/judge-<ts>/`
-directory of `batch-NNN.json` files. The steps above and `scripts/judge-fetch.ts` are
-authoritative; read the runbook for the surrounding narrative only.
+`docs/judge-runbook.md` explains *why* the path is shaped this way; the steps, file names and flags
+are owned here and by `scripts/judge-fetch.ts`.
 
 **Step 3 - apply (the single DB writer).**
 

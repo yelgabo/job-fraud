@@ -44,6 +44,49 @@ describe("WebVerificationSchema", () => {
   })
 })
 
+// AGENTS.md ("The keyless judge path") tells agents that once a `web` object is present it is
+// almost entirely required, and that a partial one makes judge:apply skip the whole verdict.
+// These cases pin that claim to the schema so the doc cannot drift away from it silently.
+describe("WebVerificationSchema field requiredness (as documented in AGENTS.md)", () => {
+  const full = {
+    websiteUrl: "https://acme.com",
+    websiteReachable: "yes",
+    businessMatch: "match",
+    locationMatch: "match",
+    hasJobsListing: "yes",
+    applicationAddressType: "business",
+    confidence: 0.85,
+    summary: "reachable, matches",
+  }
+
+  it.each([
+    "websiteUrl",
+    "websiteReachable",
+    "businessMatch",
+    "locationMatch",
+    "hasJobsListing",
+    "confidence",
+    "summary",
+  ])("rejects a web object missing %s", (field) => {
+    const partial: Record<string, unknown> = { ...full }
+    delete partial[field]
+    expect(WebVerificationSchema.safeParse(partial).success).toBe(false)
+  })
+
+  it("accepts a null websiteUrl (required but nullable)", () => {
+    const v = WebVerificationSchema.parse({ ...full, websiteUrl: null })
+    expect(v.websiteUrl).toBeNull()
+  })
+
+  it("defaults applicationAddressType to none and leaves source optional", () => {
+    const partial: Record<string, unknown> = { ...full }
+    delete partial.applicationAddressType
+    const v = WebVerificationSchema.parse(partial)
+    expect(v.applicationAddressType).toBe("none")
+    expect(v.source).toBeUndefined()
+  })
+})
+
 describe("ChecksSchema.web", () => {
   it("accepts web present, null, or absent", () => {
     expect(parseChecks({}).web).toBeUndefined()

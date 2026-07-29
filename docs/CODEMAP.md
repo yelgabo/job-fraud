@@ -14,7 +14,7 @@ app/          Next.js web app (read-only views)
 components/   shared React UI
 prisma/       database schema
 docs/         architecture, technical info, runbook, specs/plans
-.claude/      the judge-postings skill
+.claude/      skills — judge-postings, update-postings
 ```
 
 ## `lib/` — core logic (grouped by runtime / SDK boundary)
@@ -137,7 +137,11 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.
 - `railway.json` — Railway deploy (RAILPACK; `prisma db push` then `next start`).
 - `.env.example` — required env vars.
+- `AGENTS.md` (with `CLAUDE.md` a symlink to it) — agent notes: the hazards this repo's docs don't
+  warn about (public repo, prod-writing scripts, deploy and `db push` risks).
 - `__fixtures__/` — saved WorkBC HTML (only used by the legacy parser tests).
 - `docs/` — `ARCHITECTURE.md` (system overview), `TECHNICAL_INFO.md` (stack/setup/rubric), this
-  `CODEMAP.md`, `judge-runbook.md` (agent judge steps) + `superpowers/{specs,plans}/` (design history).
-- `.claude/skills/judge-postings/SKILL.md` — repeatable/schedulable judging skill.
+  `CODEMAP.md`, `judge-runbook.md` (why the agent judge path is shaped as it is; the steps live in
+  `AGENTS.md`) + `superpowers/{specs,plans}/` (design history).
+- `.claude/skills/` — `judge-postings/SKILL.md` (repeatable/schedulable judging, incl. the verbatim
+  agent prompt) and `update-postings/SKILL.md` (the whole scrape-then-judge refresh loop).

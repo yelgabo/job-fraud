@@ -171,4 +171,7 @@ npm run build     # prisma generate + next build (full type-check)
 GitHub-connected Railway service (`railway.json`, RAILPACK; start = `prisma db push` then
 `next start`). Web service needs only `DATABASE_URL` (reference to the Postgres service). Refresh
 prod data by running `scrape`/`judge` locally against the same DB — the site reads it live. If
-GitHub auto-deploy doesn't pick up a push, `railway up --detach` forces a deploy.
+GitHub auto-deploy doesn't pick up a push, `railway up --service job-fraud --detach` forces a
+deploy. Always name the service: the Railway project hosts other apps too, so a bare `railway up`
+can deploy this code onto one of them (see [AGENTS.md](../AGENTS.md), "Deploying: the wrong-service
+hazard").
