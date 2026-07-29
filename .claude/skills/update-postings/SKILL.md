@@ -54,39 +54,29 @@ much of the corpus is never seen at all. Choose it with that in mind.
 1. **Scrape (never needs an API key). A full refresh is TWO passes, not one.**
 
    ```bash
-   npm run scrape -- --limit 5000 --skip-existing                                          # term pass
-   npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing  # city pass
+   npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing  # term pass
+   npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing       # city pass
    ```
 
-   The two passes collect different postings, so both are needed. `scripts/scrape.ts:60`
-   applies the default search term `"software engineer"` **only when no `--location` is
-   given**; passing a location empties the term instead, so the city pass pulls every posting
-   in those cities regardless of title. Measured on 2026-07-28: the term pass added **42** new
-   postings, the city pass added **411**. Running only the term pass loses roughly ninety
-   percent of a refresh.
+   The two passes collect different postings (the city pass is by far the larger), so both
+   are needed. Run the commands exactly as written: every flag above is load-bearing,
+   including the explicit `--search-terms` on both passes (the pinned keywords on the term
+   pass, the empty `--search-terms ""` on the city pass) and the explicit `--limit`.
+   `docs/TECHNICAL_INFO.md` ("Commands") owns the scrape contract - what each pass covers,
+   flag semantics, cap defaults, both term-pass variants, and the `WORKBC_SEARCH_TERMS`
+   precedence trap that makes the explicit `--search-terms` mandatory on both passes.
 
-   The explicit `--search-terms ""` on the city pass is not optional boilerplate: a
-   `WORKBC_SEARCH_TERMS` value in `.env` outranks the empty-keyword default, so without the
-   flag the city pass silently becomes a keyword-filtered search, with no warning in the
-   scrape output.
+   The term pass above is the routine weekly incremental variant, and it is the one this
+   update flow uses. `--recent week` only sees postings from its one-week window, so after a
+   gap longer than a week, or a gap of unknown age, run the full-depth catch-up variant
+   instead:
 
-   `--location` takes a comma-separated list (`"Victoria,Saanich"`) if the sweep should cover
-   more cities; keep the `--search-terms ""` with it either way.
+   ```bash
+   npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing  # term pass, catch-up
+   ```
 
-   The explicit `--limit` matters: without `--recent` or `--location` the stub cap defaults to
-   50, which only skims the newest page.
-
-   Cheaper incremental variants, when the last full refresh is recent and the goal is just to
-   top up (run each as both passes too, city pass still with `--search-terms ""`):
-   - Last update <24h ago: add `--recent day`
-   - Within the last week: add `--recent week`
-
-   `--recent` asks WorkBC server-side for recently-posted jobs only, so it misses anything
-   posted before the window; a catch-up or an unknown-age gap needs the plain `--limit 5000`
-   form above.
-
-   `--skip-existing` detail-fetches only workbcIds not already in the DB; new rows land with
-   `scoredAt` null (= pending).
+   When the last update was under 24h ago, `--recent day` is a cheaper top-up on either pass
+   (city pass still with `--search-terms ""`).
 
 2. **Pick the judge path by one predicate: is `ANTHROPIC_API_KEY` set in `.env`?** AGENTS.md
    ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see

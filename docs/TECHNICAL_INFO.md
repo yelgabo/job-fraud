@@ -133,14 +133,19 @@ the run down the keyed path where every call 401s and the postings are written a
 ## Commands
 
 **Scrape (collect).** A refresh is **two passes**, and both are intended. The *term pass* looks for
-tech postings across all of BC by keyword. The *city pass* sweeps every occupation in one city, not
+tech postings across all of BC by keyword; it comes in two variants, a routine weekly form and a
+full-depth catch-up form, both below. The *city pass* sweeps every occupation in one city, not
 just tech, which is deliberate: fraud patterns are not confined to tech listings. The city pass is by
 far the larger of the two. On the most recent real run the term pass collected 42 new postings and the
 city pass collected 411, so running only the term pass gets you roughly a tenth of a refresh.
 
 ```bash
-# Pass 1 - term pass: recent tech postings across BC.
+# Pass 1 - term pass, routine form: tech postings across BC from the last week.
 npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing
+
+# Pass 1 - term pass, catch-up form: full-depth paging for after a gap longer than a week, or a gap
+# of unknown age. Deliberately chosen on 2026-07-28, when 13 days had passed since the last refresh.
+npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing
 
 # Pass 2 - city pass: every occupation in Victoria, keyword filter explicitly disabled.
 npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing
@@ -177,7 +182,9 @@ Re-running upserts (refreshes scraped fields, preserves prior judgment) so a cor
 > `"software engineer"`) (`scripts/scrape.ts`). So the env var **outranks** the empty city default: on
 > a machine where `WORKBC_SEARCH_TERMS` is set in `.env`, a city pass that omits `--search-terms`
 > silently narrows to those keywords and quietly misses most of the city. Always pass
-> `--search-terms ""` explicitly on the city pass.
+> `--search-terms ""` explicitly on the city pass. The term pass has the same exposure: the env var
+> also outranks the `"software engineer"` default, which is why both term-pass variants above pin
+> `--search-terms "software engineer,software"` explicitly.
 
 **Judge (evaluate) — deduped, recommended:**
 ```bash
