@@ -166,7 +166,7 @@ already linked to the project, verify with:
 
 ```bash
 railway status                 # which project, environment and service this directory is linked to
-railway service list --json    # every service in the project
+railway service list --json    # every service in the linked environment
 ```
 
 `railway up` deploys to the **linked** service (`railway up --help`: "-s, --service <SERVICE>
