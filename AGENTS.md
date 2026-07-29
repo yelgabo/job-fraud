@@ -90,7 +90,11 @@ Each batch file is a JSON array of:
 **Step 2 - judge.** Dispatch one agent per batch file, several in one message so they run
 concurrently. The agent prompt to use verbatim is in `.claude/skills/judge-postings/SKILL.md`
 ("Agent prompt"); do not improvise one, it encodes the rubric. Agents never touch the database.
-`docs/judge-runbook.md` is the longer-form version of these four steps.
+`docs/judge-runbook.md` is the longer-form version of these four steps, but it is stale on the
+handoff mechanics: it describes `judge:fetch` writing a single `logs/pending-<ts>.json` and
+assembling one `verdicts.json`, whereas `scripts/judge-fetch.ts` writes a `logs/judge-<ts>/`
+directory of `batch-NNN.json` files. The steps above and `scripts/judge-fetch.ts` are
+authoritative; read the runbook for the surrounding narrative only.
 
 **Step 3 - apply (the single DB writer).**
 
@@ -159,10 +163,8 @@ scoring, `claude-opus-4-8` for the impersonation check. Grep `const MODEL` in `l
 
 ## Deploying: the wrong-service hazard
 
-Railway project `compassionate-charisma` hosts **ten services in the `production` environment**:
-six apps - `job-fraud`, `cocodessert`, `anki-srs`, `claude-sync`, `nuggies`, `kimbo` - plus three
-Postgres instances (`Postgres`, `Postgres-t4uu`, `Postgres-W9v4`) and a `Redis`. From a directory
-already linked to the project, verify with:
+The Railway project that hosts this site also hosts **several other apps and databases** alongside
+the `job-fraud` service. From a directory already linked to the project, verify with:
 
 ```bash
 railway status                 # which project, environment and service this directory is linked to
@@ -174,7 +176,7 @@ Service to deploy to (defaults to linked service)"). The link is stored per abso
 `~/.railway/config.json`, **not** in the repo - there is no `.railway/` here. So the main checkout
 is linked to the `job-fraud` service, but a git worktree, a fresh clone, or any other path is not,
 and a `railway link` there can attach the project without a service. In that state a bare
-`railway up` can push this code onto `cocodessert` or `kimbo`.
+`railway up` can push this code onto one of the other apps in the project.
 
 **Always name the service explicitly:**
 
