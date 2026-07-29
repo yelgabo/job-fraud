@@ -19,11 +19,10 @@ update**. Run from the `job-fraud` project directory.
 
 `.env` is gitignored, so a fresh clone or a new worktree does not have one. Create it
 (`cp .env.example .env`) and set `DATABASE_URL`. For the keyless path that is the only
-variable needed, so **delete or comment out the `ANTHROPIC_API_KEY` line that
-`.env.example` ships**. It carries an uncommented `sk-ant-...` placeholder, which answers
-step 2's predicate "yes" and routes the run down the keyed path; the placeholder passes
-validation, and the 401 it earns is not treated as a billing error, so the run mass-writes
-failed verdicts over the pending queue.
+variable needed: `.env.example` ships `ANTHROPIC_API_KEY` commented out, so **leave it
+commented, and do not paste a placeholder or a stale key in to fill the line**. Any non-empty
+value routes the run down the keyed path. AGENTS.md ("The keyless judge path") owns the
+predicate and what a bad key does to the pending queue.
 
 Get the value from Railway:
 
@@ -89,9 +88,8 @@ much of the corpus is never seen at all. Choose it with that in mind.
    `--skip-existing` detail-fetches only workbcIds not already in the DB; new rows land with
    `scoredAt` null (= pending).
 
-2. **Pick the judge path by one predicate — is `ANTHROPIC_API_KEY` set in `.env` to a real
-   key?** A freshly copied `.env` still carries `.env.example`'s `sk-ant-...` placeholder,
-   which counts as "set" but is not a real key; clear that line before answering (see
+2. **Pick the judge path by one predicate: is `ANTHROPIC_API_KEY` set in `.env`?** AGENTS.md
+   ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see
    Credentials).
    - **Key present:** `npm run judge` (fast path: dedups by employer, single process).
    - **No key (keyless agent flow):** use the **judge-postings** skill's agent-orchestrated
