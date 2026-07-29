@@ -48,13 +48,21 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
 An out-of-credit billing error aborts the run (`lib/anthropic-errors.ts`) leaving jobs **pending**,
 rather than mass-writing `unknown`.
 
-**Web app** (read-only) · `app/` — `/` risk-band tabs × job-type category chips · `/j/[id]` posting
-(with an Apply link to the real apply URL) · `/e/[id]` employer · `/companies` by-company list ·
+**Web app** (read-only) · `app/` — `/` risk-band tabs × job-type category chips × posted-date windows
+(any / 7 / 30 / 90 days, `?posted=`) · `/j/[id]` posting (with an Apply link to the real apply URL) ·
+`/e/[id]` employer · `/companies` by-company list ·
 `/analysis` elevated-risk rate by category (by company / by posting) · `/audit/<token>` internal
 web-search audit (token-gated, unlinked).
 
 Risk band derives from the score (`lib/risk-band.ts`): **low** `<30`, **medium** `30–69`, **high**
 `≥70`, **unknown** for scoring failures. The UI shows only judged postings (`scoredAt` set).
+
+All three filter dimensions are composed in one place, `lib/shared/postings-filter.ts`: each
+dimension's tab counts apply the *other two* filters and not itself, which is what makes the tab
+numbers equal the rows listed underneath them. The posted-date window compares the indexed
+`Job.postedDate`, and falls back to `scrapedAt` for postings whose raw `postedAt` did not parse, so a
+window never silently drops rows. Those rows are shown as `~date (est. from scrape)` rather than as a
+posted date the employer published (`lib/shared/posted-date.ts`).
 
 ## Data sources (what we gather, and how)
 
@@ -181,10 +189,26 @@ Single-process (one DB writer → no races); web-verifies each distinct employer
 per-job scoring. ~1 web search per company instead of per posting. Wrapped by the `judge-postings`
 skill (`.claude/skills/`) for repeatable/scheduled runs.
 
+**Backfill the posted-date column.** `Job.postedDate` is parsed from the raw `Job.postedAt` string;
+run this after any change to the parser, or once after the column is first added. Pure parse, no API
+calls, re-runnable, and the raw string is never touched. **The default is a dry run** that reports what
+it would change and writes nothing:
+
+```bash
+npm run backfill-posted-date                    # dry run: counts + unparseable samples
+npm run backfill-posted-date -- --limit 100     # dry-run a sample of rows
+npm run backfill-posted-date -- --samples 50    # print more unparseable raw values
+npm run backfill-posted-date -- --apply         # write (publishes immediately, no deploy)
+```
+
+Rows whose raw value is missing, ambiguous or junk keep `postedDate = null` on purpose: the parser
+never guesses a date, and the site shows those postings as `~date (est. from scrape)`.
+
 **Helpers:** `npm run rescore-failed` (re-score `unknown`-band rows) · `npm run reverify-mail`
 (re-verify mail-address employers) · `npm run rescan-impersonation` (corpus sweep for apply-host≠employer
 brand impersonation) · `npm run backfill-categories` (fill `nocCode`/`nocGroup`/`category` from stored
-descriptions — pure parse, no API) · `npm run compare-judge` (read-only A/B of deduped vs agent scoring) ·
+descriptions — pure parse, no API) · `npm run backfill-posted-date` (fill `postedDate` from `postedAt` -
+pure parse, no API, dry run by default) · `npm run compare-judge` (read-only A/B of deduped vs agent scoring) ·
 **agent "deep" path:** `npm run judge:fetch` dumps pending into per-batch files for dispatched fraud
 agents, `npm run judge:apply <dir>` validates + applies their verdicts (single writer) — see
 `judge-runbook.md`.

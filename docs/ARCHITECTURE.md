@@ -76,7 +76,9 @@ pipeline). One process writes at a time → no race conditions.
 
 ## 5. Phase ③ Web app (read-only)
 
-- **Postings** list with risk-band tabs **×** job-type category filters.
+- **Postings** list with risk-band tabs **×** job-type category filters **×** posted-date windows
+  (any / 7 / 30 / 90 days). Each dimension's tab counts are computed against the other two, so the
+  numbers always match the rows listed (`lib/shared/postings-filter.ts`).
 - **Company** pages (risk mix, web-verdict, its postings).
 - **Analysis** — elevated-risk rate by job type, *by company* and *by posting*.
 - **Audit** (internal, token-gated) — the raw web-search trail behind every verdict.
@@ -85,14 +87,16 @@ pipeline). One process writes at a time → no race conditions.
 
 - **Employer** — canonical company + cached web-verdict (`checks.web`).
 - **Job** — posting facts, deterministic flags, NOC/category, ATS, and the AI score / band /
-  reasoning / signals (nullable until judged).
+  reasoning / signals (nullable until judged). Posted date is stored twice: `postedAt` is the raw
+  string each producer wrote, `postedDate` is the parsed, indexed date the posted-date filter uses
+  (null when the raw value is missing, ambiguous or junk).
 - **EmployerWebSearchLog** — append-only audit trail of every web search behind a verdict.
 
 ## 7. Tech stack
 
 Next.js 15 (App Router, server components) · Prisma + PostgreSQL (Railway) · Claude
 (`haiku-4-5` for bulk, `opus-4-8` for impersonation reasoning, with the server-side `web_search`
-tool) · zod (validation) · p-limit (concurrency) · Vitest (65 tests).
+tool) · zod (validation) · p-limit (concurrency) · Vitest (119 tests).
 
 ## 8. Why it's built this way (talking points)
 

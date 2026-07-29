@@ -68,6 +68,19 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `WebVerificationSchema`, `SignalsSchema`, `parseFlags`/`parseChecks`/`parseSignals`). **Must stay
   free of the Anthropic SDK** so the web app can import it.
 - `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
+- `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
+  both producer formats (the JSON API's ISO prefix and the HTML fallback's free text) and mapping
+  anything ambiguous or junk to null. `effectivePostedDate()` / `formatPostedDate()` pick the date the
+  UI shows, falling back to `scrapedAt` and marking it `~date (est. from scrape)` so an estimate is
+  never mistaken for a published posted date.
+- `postings-filter.ts` - where-clause composition for the postings list: `BANDS`, `POSTED_WINDOWS`,
+  `parseBand()` / `parsePostedWindow()`, and `buildPostingsQuery()`, which builds the row query plus
+  one count clause per dimension. **Each dimension's counts apply the other two filters and not
+  itself**, which is what keeps the tab numbers equal to the rows listed. Adding a fourth filter
+  dimension means changing this one function, not the page.
+- `posted-date-backfill.ts` - the pure half of `scripts/backfill-posted-date.ts`: `parseBackfillArgs()`
+  (dry run unless `--apply`), `planBackfill()` (what a run would change, without a DB) and
+  `groupWrites()` (collapse writes into one `updateMany` per distinct date).
 - `anthropic-errors.ts` — `isBillingError()`: detects the out-of-credit 400 (not a retryable 429) so
   the judge fails fast — leaving jobs **pending** instead of mass-writing `unknown`.
 
@@ -107,13 +120,18 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   each distinct pair, re-attribute + HIGH-score confirmed brand impersonations. `npm run rescan-impersonation`.
 - `backfill-categories.ts` — fill `nocCode`/`nocGroup`/`category` from each posting's stored
   description (pure parse, no API calls, re-runnable). `npm run backfill-categories`.
+- `backfill-posted-date.ts` - fill `postedDate` by parsing the raw `postedAt` string (pure parse, no
+  API calls, re-runnable, raw string untouched). **Dry run is the default**; `--apply` writes, and
+  `--limit` / `--samples` scope the report. `npm run backfill-posted-date`. Logic in
+  `lib/shared/posted-date-backfill.ts`.
 - `logger.ts` — `JsonlLogger` (per-run JSONL logs under `logs/`).
 
 ## `app/` — web app (Next.js, read-only, server components)
 
 - `layout.tsx` — shell + header nav (Postings / Companies / Analysis).
-- `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`), table of judged
-  postings.
+- `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`) × posted-date
+  windows (`?posted=`: `any` / `7` / `30` / `90`), table of judged postings with each row's posted
+  date. Every clause comes from `lib/shared/postings-filter.ts`; the page only renders.
 - `j/[id]/page.tsx` — one posting: verdict, weighted signals, evidence, + a primary **Apply ↗** link
   to the real apply URL (host shown) when the posting routes externally.
 - `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings.
@@ -132,14 +150,18 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `prisma/`
 - `schema.prisma` — `Employer`, `Job`, and `EmployerWebSearchLog` models. Job scoring fields are
   nullable (`null` = pending); `scoredAt` marks judged. Job also carries `nocCode`/`nocGroup`/`category`
-  (NOC occupation + derived job-type bucket; `category` indexed). `EmployerWebSearchLog` is an
+  (NOC occupation + derived job-type bucket; `category` indexed) and a **pair** of posted-date fields:
+  the raw `postedAt String?` exactly as the producer wrote it (still what the judge prompt sees) plus
+  `postedDate DateTime?`, indexed, parsed from it and null when the raw value is unusable. Filter on
+  `postedDate`, never on `postedAt` strings. `EmployerWebSearchLog` is an
   append-only audit trail of the raw `web_search` activity per verification (incl. `encrypted_content`
   blocks) — kept out of `Employer.checks` so prod pages don't load it; surfaced by the token-gated
   `/audit` pages.
 
 ## Config & meta
 - `package.json` — scripts (`scrape`, `judge`, `judge:fetch/apply`, `rescore-failed`, `reverify-mail`,
-  `compare-judge`, `rescan-impersonation`, `backfill-categories`, `dev`, `build`, `test`) + deps.
+  `compare-judge`, `rescan-impersonation`, `backfill-categories`, `backfill-posted-date`, `dev`,
+  `build`, `test`) + deps.
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.
 - `railway.json` — Railway deploy (RAILPACK; `prisma db push` then `next start`).
 - `.env.example` — required env vars.
