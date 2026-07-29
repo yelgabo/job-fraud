@@ -17,6 +17,7 @@
     "reverify-mail": "tsx --env-file=.env scripts/reverify-mail.ts",
     "rescan-impersonation": "tsx --env-file=.env scripts/rescan-impersonation.ts",
     "backfill-categories": "tsx --env-file=.env scripts/backfill-categories.ts",
+    "backfill-posted-date": "tsx --env-file=.env scripts/backfill-posted-date.ts",
     "test": "vitest run"
   },
   "dependencies": {

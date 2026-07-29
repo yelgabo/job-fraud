@@ -42,7 +42,14 @@ model Job {
   title             String
   location          String?
   salary            String?
-  postedAt           String?
+  // Raw posted date as the producer wrote it (ISO prefix from the JSON API, free text from the
+  // HTML fallback). Kept verbatim because the judge prompt shows it to the model.
+  postedAt          String?
+  // `postedAt` parsed into a real date, or null when it is missing/ambiguous/junk. Indexed: this
+  // is what the site's `?posted=` window filter compares against. Populated at scrape time and by
+  // `npm run backfill-posted-date`; parser in lib/shared/posted-date.ts. Never compare postedAt
+  // strings instead.
+  postedDate        DateTime?
   sourceUrl         String
   descriptionMd     String
   externalApplyUrl  String?
@@ -66,6 +73,7 @@ model Job {
   @@index([riskBand, fraudScore])
   @@index([scoredAt])
   @@index([category])
+  @@index([postedDate])
 }
 
 // Owner comments on a posting, shown only on the token-gated /audit admin mirror. Append-only.

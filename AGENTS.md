@@ -43,6 +43,7 @@ speculatively to "see what happens".
 | `npm run compare-judge` | Read-only against the DB, but it still makes live Anthropic web-search + scoring calls for a hard-coded list of companies in `scripts/compare-judge.ts`. |
 | `npm run judge:apply` | The single DB writer for the agent path. Overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`scoredAt` and the employer's `checks.web`. No LLM cost, but it publishes verdicts. |
 | `npm run backfill-categories` | No API calls, but it updates **every** Job row. |
+| `npm run backfill-posted-date` | No API calls, and it touches no published judgement (only `Job.postedDate`, which drives the site's date filter), but `--apply` can update **every** Job row. Dry run is the default: a bare run reports counts and writes nothing. |
 | `npm run judge:fetch` | The only genuinely safe one: read-only, writes files under `logs/` and nothing else. |
 
 A judge run that hits an out-of-credit billing error aborts on purpose and leaves postings
