@@ -1,24 +1,35 @@
 # Judge runbook (Model B — agent-orchestrated)
 
 Evaluation is decoupled from scraping. `scrape` only collects raw postings (score fields null =
-pending). **Judging** is run by an orchestrating Claude Code session that dispatches parallel
-fraud-detection agents and is the **single DB writer** (agents never touch the DB → no races).
+pending). **Judging** is owned by a single worker that fans out parallel fraud-detection helpers
+and is the **single DB writer** (helpers never touch the DB → no races).
 
 ## Steps
 
-1. **Fetch pending** → `npm run judge:fetch -- --limit N` → writes `logs/pending-<ts>.json`
-   (array of `{workbcId, title, employer, location, salary, postedAt, atsProvider,
-   externalApplyOk, flags[], descriptionExcerpt}`).
-2. **Dispatch agents (parallel).** Split the pending array into batches of ~10-15. Dispatch one
-   `general-purpose` agent per batch *in a single message* (so they run concurrently). Give each
-   the agent prompt below + its batch JSON. Each agent web-searches and returns a JSON array of
-   verdicts.
-3. **Assemble** all agents' verdict arrays into one `verdicts.json`.
-4. **Apply (single writer)** → `npm run judge:apply -- verdicts.json`. Validates each verdict
+1. **Fetch pending** → `npm run judge:fetch -- --limit N [--batch-size B]`. The script does the
+   batching itself: it writes a timestamped directory `logs/judge-<ts>/` containing
+   `batch-001.json`, `batch-002.json`, ... at `--batch-size` postings each (default `15`), then
+   prints `DIR=<dir> BATCHES=<n>`. `--limit N` caps how many pending postings are dumped; omit it
+   for all pending. Each batch file is an array of `{workbcId, title, employer, location, salary,
+   postedAt, atsProvider, externalApplyOk, flags[], descriptionExcerpt}`. Nothing is written to the
+   database. If `BATCHES=0`, stop, there is nothing to judge.
+2. **Fan out helpers (parallel).** One worker owns the whole judging run: it does the fetch, spawns
+   its own helper agents (one per `batch-NNN.json` file, dispatched together so they run
+   concurrently), collects their verdicts, and runs apply itself. Do not hand the batches off to
+   separate top-level sessions; a single owning worker is what makes the run survive a restart and
+   stay visible while it is in flight. Give each helper the agent prompt below plus the contents of
+   its batch file. Each helper web-searches and returns a JSON array of verdicts. Helpers never
+   write to the database.
+3. **Assemble.** Write each helper's returned array as `verdicts-<n>.json` **inside the batch
+   directory** (`logs/judge-<ts>/`). No manual merging into one file is needed.
+4. **Apply (single writer)** → `npm run judge:apply -- logs/judge-<ts>/`. The argument may be a
+   file or a directory, and several may be passed at once; a directory contributes every file in it
+   matching `/verdicts.*\.json$/i`, so the `batch-*.json` inputs are ignored. Validates each verdict
    (zod) and updates the job (`fraudScore`, `riskBand`, `reasoning`, `signals`, `scoredAt`) plus
-   the employer's `checks.web`. Skips invalid verdicts without aborting the batch.
-5. Re-judge anytime by clearing `scoredAt` (or just re-running agents and re-applying — apply
-   overwrites).
+   the employer's `checks.web`. `riskBand` is derived from `fraudScore`, not taken from the verdict.
+   Skips invalid verdicts without aborting the run; those postings simply stay pending.
+5. **Loop.** Re-run `judge:fetch` until it reports `0 pending`. Re-judge anytime by clearing
+   `scoredAt` (or just re-running helpers and re-applying — apply overwrites).
 
 ## Verdict shape (what each agent returns, one per posting)
 
