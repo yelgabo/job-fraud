@@ -131,7 +131,13 @@ Verdict shape (authoritative schemas: `scripts/judge-apply.ts` + `lib/shared/jso
 `web` optional; when present it overwrites the employer's cached `checks.web`, so a careless verdict
 poisons every other posting by that employer. Enums: `websiteReachable`/`hasJobsListing`
 `yes|no|unknown`; `businessMatch`/`locationMatch` `match|mismatch|uncertain`;
-`applicationAddressType` `business|residential|po_box|virtual|none|uncertain`.
+`applicationAddressType` `business|residential|po_box|virtual|none|uncertain`. Once a `web` object
+is present, `WebVerificationSchema` in `lib/shared/json-schemas.ts` requires nearly all of it:
+`websiteReachable`, `businessMatch`, `locationMatch`, `hasJobsListing`, `confidence` and `summary`
+are all required, `websiteUrl` is required but nullable, only `applicationAddressType` has a
+default (`"none"`) and only `source` is optional. A partial `web` object fails zod in
+`scripts/judge-apply.ts`, so the whole verdict is logged and skipped and the posting silently stays
+pending.
 
 **Step 4 - loop.** Re-run `judge:fetch` until it reports `0 pending`.
 
@@ -153,13 +159,14 @@ scoring, `claude-opus-4-8` for the impersonation check. Grep `const MODEL` in `l
 
 ## Deploying: the wrong-service hazard
 
-Railway project `compassionate-charisma` (`270b9771-1a6c-48ea-9f22-d1f6a84fa31f`) hosts **ten
-services in the `production` environment**: six apps - `job-fraud`, `cocodessert`, `anki-srs`,
-`claude-sync`, `nuggies`, `kimbo` - plus three Postgres instances (`Postgres`, `Postgres-t4uu`,
-`Postgres-W9v4`) and a `Redis`. Verify with:
+Railway project `compassionate-charisma` hosts **ten services in the `production` environment**:
+six apps - `job-fraud`, `cocodessert`, `anki-srs`, `claude-sync`, `nuggies`, `kimbo` - plus three
+Postgres instances (`Postgres`, `Postgres-t4uu`, `Postgres-W9v4`) and a `Redis`. From a directory
+already linked to the project, verify with:
 
 ```bash
-railway service list -p 270b9771-1a6c-48ea-9f22-d1f6a84fa31f -e production --json
+railway status                 # which project, environment and service this directory is linked to
+railway service list --json    # every service in the project
 ```
 
 `railway up` deploys to the **linked** service (`railway up --help`: "-s, --service <SERVICE>
@@ -248,8 +255,8 @@ page; `prisma/schema.prisma` and `app/audit/` are authoritative.
 
 ## Repository state
 
-Last commit 2026-07-03; the project has been idle since. There is no CI configuration in the repo
-(no `.github/`), so nothing runs automatically on push except the Railway deploy.
+There is no CI configuration in the repo (no `.github/`), so nothing runs automatically on push
+except the Railway deploy.
 
 ## Maintaining this file
 
