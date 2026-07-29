@@ -22,9 +22,11 @@ for scheduled runs. The agent-orchestrated flow below is an optional "deep per-p
 
 This judges via dispatched fraud-detection agents (richer per-posting investigation, no employer
 dedup — more expensive). Use for a small, high-scrutiny subset.
-the orchestrating session fetches pending postings, dispatches parallel fraud-detection agents
-(each web-investigates its batch), then applies their verdicts as the **single DB writer**
-(agents never write the DB → no races/deadlocks). Safe to run repeatedly or on a schedule.
+One worker owns the whole judging run: it fetches the pending postings, fans out its own helper
+agents (each web-investigates its batch), collects their verdicts, and applies them itself as the
+**single DB writer** (helpers never write the DB → no races/deadlocks). Do not hand the batches off
+to separate top-level sessions; the single owning worker is what makes the run survive a restart
+and stay visible while it is in flight. Safe to run repeatedly or on a schedule.
 
 Run from the `job-fraud` project directory.
 
@@ -38,14 +40,17 @@ Run from the `job-fraud` project directory.
 2. **Read** the `batch-NNN.json` files in that directory. Each is already a batch array; do not
    re-split them.
 
-3. **Dispatch one agent per batch file, all in a single message** (so they run concurrently — a
-   "few at a time" wave is fine for large sets; e.g. 5-8 agents per wave).
-   Give each agent the **Agent prompt** below followed by its batch as JSON. Each agent returns a
-   JSON array of verdicts. Do NOT let agents write to the database.
+3. **Fan out helpers (parallel).** The worker that ran the fetch dispatches one helper agent per
+   batch file, all in a single message so they run concurrently; a "few at a time" wave is fine for
+   large sets, e.g. 5-8 helpers per wave. The parallelism is the same as before, only the ownership
+   differs: the owning worker spawns the helpers and stays with the run instead of handing batches
+   to separate top-level sessions.
+   Give each helper the **Agent prompt** below followed by its batch as JSON. Each helper returns a
+   JSON array of verdicts. Do NOT let helpers write to the database.
 
-4. **Assemble.** `Write` each agent's returned verdict array as `verdicts-<n>.json` **inside the
-   same `logs/judge-<ts>/` directory**. Merging everything into one file is optional, the apply
-   step takes a directory.
+4. **Assemble.** The owning worker `Write`s each helper's returned verdict array as
+   `verdicts-<n>.json` **inside the same `logs/judge-<ts>/` directory**. Merging everything into
+   one file is optional, the apply step takes a directory.
 
 5. **Apply (single writer).** Run `npm run judge:apply -- logs/judge-<ts>/`. The argument may be a
    verdicts file or a directory, and several may be passed at once; a directory contributes every
@@ -116,6 +121,7 @@ postings from unverifiable individuals using free email + mail-to-a-home are hig
 
 ## Scheduling
 
-This skill is session-driven (it dispatches agents), so a scheduled run should invoke an agent
-session that runs this skill end-to-end. Pair with a periodic `scrape` so new postings accumulate
-as pending, then this skill judges them.
+This skill is worker-driven: one worker owns a run end to end (fetch, helper fan-out, assemble,
+apply), so a scheduled run should hand the whole skill to a single worker rather than splitting the
+batches across sessions. Pair with a periodic `scrape` so new postings accumulate as pending, then
+this skill judges them.
