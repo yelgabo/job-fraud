@@ -54,24 +54,29 @@ much of the corpus is never seen at all. Choose it with that in mind.
 1. **Scrape (never needs an API key). A full refresh is TWO passes, not one.**
 
    ```bash
-   npm run scrape -- --limit 5000 --skip-existing                                          # term pass
-   npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing  # city pass
+   npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing  # term pass
+   npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing       # city pass
    ```
 
    The two passes collect different postings (the city pass is by far the larger), so both
    are needed. Run the commands exactly as written: every flag above is load-bearing,
-   including the explicit `--search-terms ""` on the city pass and the explicit `--limit`.
+   including the explicit `--search-terms` on both passes (the pinned keywords on the term
+   pass, the empty `--search-terms ""` on the city pass) and the explicit `--limit`.
    `docs/TECHNICAL_INFO.md` ("Commands") owns the scrape contract - what each pass covers,
-   flag semantics, cap defaults, and the `WORKBC_SEARCH_TERMS` precedence trap that makes
-   the empty `--search-terms ""` mandatory.
+   flag semantics, cap defaults, both term-pass variants, and the `WORKBC_SEARCH_TERMS`
+   precedence trap that makes the explicit `--search-terms` mandatory on both passes.
 
-   Cheaper incremental variants, when the last full refresh is recent and the goal is just to
-   top up (run each as both passes too, city pass still with `--search-terms ""`):
-   - Last update <24h ago: add `--recent day`
-   - Within the last week: add `--recent week`
+   The term pass above is the routine weekly incremental variant, and it is the one this
+   update flow uses. `--recent week` only sees postings from its one-week window, so after a
+   gap longer than a week, or a gap of unknown age, run the full-depth catch-up variant
+   instead:
 
-   `--recent` only sees postings from its window, so a catch-up or an unknown-age gap needs
-   the plain `--limit 5000` form above.
+   ```bash
+   npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing  # term pass, catch-up
+   ```
+
+   When the last update was under 24h ago, `--recent day` is a cheaper top-up on either pass
+   (city pass still with `--search-terms ""`).
 
 2. **Pick the judge path by one predicate: is `ANTHROPIC_API_KEY` set in `.env`?** AGENTS.md
    ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see
