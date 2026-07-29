@@ -73,8 +73,11 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 
 **`lib/` root — plumbing (imported by web + CLIs)**
 - `db.ts` — Prisma client singleton.
-- `env.ts` — zod-validated env (`webEnv` for the app; `loadScrapeEnv()` adds `ANTHROPIC_API_KEY` for
-  scrape/judge; `AUDIT_TOKEN` optional, gates `/audit`) + `searchUrlForTerm()`.
+- `env.ts`: zod-validated env. `webEnv` for the app and for `scrape.ts`, which makes no Anthropic
+  calls; `loadScrapeEnv()` adds a required `ANTHROPIC_API_KEY` and is imported only by the keyed
+  judge scripts (`judge`, `rescore-failed`, `reverify-mail`, `rescan-impersonation`,
+  `compare-judge`). The check is `z.string().min(1)`, so a placeholder value passes. `AUDIT_TOKEN`
+  optional, gates `/audit`. Also exports `searchUrlForTerm()`.
 - `utils.ts` — `cn()` classname helper for the UI.
 
 _(The old Playwright-era modules — `geocode`, `http-probe`, `scrape-external`, `address-match` — were
@@ -83,9 +86,12 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `scripts/` — CLI entry points
 
 - `scrape.ts` — **Phase 1 (collect).** API search + detail + flags + NOC category + ATS classify →
-  upsert pending postings. Flags: `--search-terms`, `--limit`, `--concurrency`, `--dry-run`,
-  `--skip-existing` (alias `--new-only`: fetch detail only for new `workbcId`s), `--recent day|week`
-  (ask WorkBC server-side for only recently-posted jobs — the cheap daily path).
+  upsert pending postings. Flags: `--search-terms`, `--location` (WorkBC server-side city filter;
+  with `--search-terms ""` it sweeps every occupation in that city, not just tech), `--limit`,
+  `--concurrency`, `--dry-run`, `--skip-existing` (alias `--new-only`: fetch detail only for new
+  `workbcId`s), `--recent day|week` (ask WorkBC server-side for only recently-posted jobs, the cheap
+  daily path). See `docs/TECHNICAL_INFO.md` for the two-pass refresh and the `WORKBC_SEARCH_TERMS`
+  precedence trap.
 - `judge.ts` — **Phase 2 (evaluate), deduped + tiered.** Verify each distinct employer once — but
   *skip* the web search for employers whose postings all apply via their own matching ATS tenant
   (presumed legit, `source=ats-tenant-match`); web-verify only the rest. Then run the apply-host

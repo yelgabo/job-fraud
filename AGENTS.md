@@ -52,7 +52,12 @@ by catching it.
 ## The keyless judge path (`judge:fetch` -> agents -> `judge:apply`)
 
 There are two ways to judge, and the choice is decided by one predicate: **is `ANTHROPIC_API_KEY`
-set in `.env`?**
+set in `.env`?** "Set" means non-empty, which is all `lib/env.ts` checks. `.env.example` therefore
+ships that line commented out, and leaving it commented is what keeps a keyless machine on the
+keyless path. A placeholder or stale key answers the predicate "yes" and then every Anthropic call
+401s; a 401 is not a billing error, so the run does not abort, it writes a failed verdict plus a
+`scoredAt` timestamp per posting and those postings stop showing as pending. `.env.example`'s
+comment on that variable has the detail.
 
 - **Key present:** `npm run judge`. One process, dedups by employer (one web search per company,
   not per posting), cheapest at scale. Use for bulk and scheduled runs.

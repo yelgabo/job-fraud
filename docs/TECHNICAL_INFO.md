@@ -106,35 +106,70 @@ company) bypasses the scoring model and is written deterministically as HIGH (`l
 
 ```bash
 npm install
-cp .env.example .env          # DATABASE_URL (+ ANTHROPIC_API_KEY for scrape/judge)
+cp .env.example .env          # DATABASE_URL always; ANTHROPIC_API_KEY only for the keyed judge
 npx prisma db push            # create the Employer/Job tables
 npm run scrape -- --limit 50  # collect 50 software-engineer postings (pending)
-npm run judge -- --limit 50   # evaluate them
+npm run judge -- --limit 50   # evaluate them (needs a real key uncommented in .env)
 npm run dev                   # http://localhost:3000
 ```
 
 `DATABASE_URL` must be reachable from your machine — for Railway Postgres use its **public** URL
-(TCP-proxy host), not `*.railway.internal`. The web app needs only `DATABASE_URL`;
-`ANTHROPIC_API_KEY` is used by `scrape`/`judge`. Set `AUDIT_TOKEN` (web-app env) to enable the
-unlinked `/audit/<token>` internal pages — unset ⇒ they 404.
+(TCP-proxy host), not `*.railway.internal`. The web app needs only `DATABASE_URL`, and so does
+`scrape`: it makes no Anthropic calls. `ANTHROPIC_API_KEY` is read only by the keyed judge path
+(`judge`, `rescore-failed`, `reverify-mail`, `rescan-impersonation`, `compare-judge`); the keyless
+`judge:fetch` -> agents -> `judge:apply` path needs no key at all. Keep the key commented out in
+`.env` unless it is real, because `lib/env.ts` accepts any non-empty string, so a placeholder sends
+the run down the keyed path where every call 401s and the postings are written as judged. Set
+`AUDIT_TOKEN` (web-app env) to enable the unlinked `/audit/<token>` internal pages; unset ⇒ they 404.
 
 ## Commands
 
-**Scrape (collect):**
+**Scrape (collect).** A refresh is **two passes**, and both are intended. The *term pass* looks for
+tech postings across all of BC by keyword. The *city pass* sweeps every occupation in one city, not
+just tech, which is deliberate: fraud patterns are not confined to tech listings. The city pass is by
+far the larger of the two. On the most recent real run the term pass collected 42 new postings and the
+city pass collected 411, so running only the term pass gets you roughly a tenth of a refresh.
+
 ```bash
-npm run scrape -- --search-terms "software engineer,software" --limit 500 --concurrency 6
-npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing   # daily refresh
+# Pass 1 - term pass: recent tech postings across BC.
+npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing
+
+# Pass 2 - city pass: every occupation in Victoria, keyword filter explicitly disabled.
+npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing
+
+npm run scrape -- --search-terms "software engineer,software" --limit 500 --concurrency 6  # one-off backfill
 npm run scrape -- --dry-run          # collect without writing
 ```
-`--search-terms` (default `"software engineer"`) merged + de-duped by job id; `--limit N` caps;
-`--concurrency N` parallel detail fetches (default 6). Re-running upserts (refreshes scraped fields,
-preserves prior judgment) so a corpus grows across runs. **`--recent day|week`** asks WorkBC
-server-side (`SearchDateSelection`) for only postings from the last day/week, so the daily run pulls a
-few dozen–hundred recent stubs instead of paging the whole feed (`--recent` defaults its cap high
-enough to exhaust the small window). **`--skip-existing`** (alias `--new-only`) then drops
-`workbcId`s already in the DB so only genuinely new postings are fetched. The recommended daily
-command combines both, then `npm run judge` (which judges only pending postings and web-verifies only
-the employers that need it) — a cheap incremental refresh.
+
+Then `npm run judge` (which judges only pending postings and web-verifies only the employers that
+need it).
+
+Flags:
+
+- **`--search-terms`** comma-separated keywords, merged + de-duped by job id. Defaults to
+  `"software engineer"` with no `--location`, and to the empty keyword (every posting in the city)
+  when `--location` is given.
+- **`--location "Victoria"`** (or a comma-separated list such as `"Victoria,Saanich"`) is a WorkBC
+  server-side city filter. Pair it with `--search-terms ""` to collect every posting in that city
+  regardless of keyword or category.
+- **`--limit N`** caps stubs collected. The default cap is 5000 with `--recent` or a `--location`, and
+  only 50 otherwise, so an explicit `--limit` matters on a plain term run.
+- **`--concurrency N`** parallel detail fetches (default 6).
+- **`--recent day|week`** asks WorkBC server-side (`SearchDateSelection`) for only postings from the
+  last day/week, so the term pass pulls a few dozen to a few hundred recent stubs instead of paging
+  the whole feed.
+- **`--skip-existing`** (alias `--new-only`) drops `workbcId`s already in the DB so only genuinely new
+  postings have their detail fetched.
+- **`--dry-run`** collects without writing.
+
+Re-running upserts (refreshes scraped fields, preserves prior judgment) so a corpus grows across runs.
+
+> **`WORKBC_SEARCH_TERMS` precedence trap.** The scraper resolves the keyword as
+> `--search-terms` ?? `WORKBC_SEARCH_TERMS` ?? (empty when a location is set, else
+> `"software engineer"`) (`scripts/scrape.ts`). So the env var **outranks** the empty city default: on
+> a machine where `WORKBC_SEARCH_TERMS` is set in `.env`, a city pass that omits `--search-terms`
+> silently narrows to those keywords and quietly misses most of the city. Always pass
+> `--search-terms ""` explicitly on the city pass.
 
 **Judge (evaluate) — deduped, recommended:**
 ```bash
