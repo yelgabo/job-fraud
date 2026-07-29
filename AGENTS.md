@@ -87,14 +87,12 @@ Each batch file is a JSON array of:
 }
 ```
 
-**Step 2 - judge.** Dispatch one agent per batch file, several in one message so they run
-concurrently. The agent prompt to use verbatim is in `.claude/skills/judge-postings/SKILL.md`
-("Agent prompt"); do not improvise one, it encodes the rubric. Agents never touch the database.
-`docs/judge-runbook.md` is the longer-form version of these four steps, but it is stale on the
-handoff mechanics: it describes `judge:fetch` writing a single `logs/pending-<ts>.json` and
-assembling one `verdicts.json`, whereas `scripts/judge-fetch.ts` writes a `logs/judge-<ts>/`
-directory of `batch-NNN.json` files. The steps above and `scripts/judge-fetch.ts` are
-authoritative; read the runbook for the surrounding narrative only.
+**Step 2 - judge.** One worker owns the whole run: it fans out its own helper agents, one per batch
+file, several in a single message so they run concurrently, then assembles and applies. Do not hand
+the batches to separate top-level sessions. The agent prompt to use verbatim is in
+`.claude/skills/judge-postings/SKILL.md` ("Agent prompt"); do not improvise one, it encodes the
+rubric. Helpers never touch the database. `docs/judge-runbook.md` is the longer-form version of
+these four steps.
 
 **Step 3 - apply (the single DB writer).**
 
@@ -103,7 +101,7 @@ npm run judge:apply -- logs/judge-<timestamp>/          # a dir, or
 npm run judge:apply -- logs/judge-<timestamp>/verdicts-1.json
 ```
 
-Write each agent's returned array as `verdicts-<n>.json` **inside the batch dir** - a directory
+Write each helper's returned array as `verdicts-<n>.json` **inside the batch dir** - a directory
 argument picks up every file in it matching `/verdicts.*\.json$/i` and so ignores the
 `batch-*.json` inputs. Several files or dirs can be passed at once. Each verdict is zod-validated
 against `VerdictSchema` in `scripts/judge-apply.ts`; an invalid one is logged and skipped, the run
