@@ -83,6 +83,12 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `groupWrites()` (collapse writes into one `updateMany` per distinct date).
 - `anthropic-errors.ts` — `isBillingError()`: detects the out-of-credit 400 (not a retryable 429) so
   the judge fails fast — leaving jobs **pending** instead of mass-writing `unknown`.
+- `methodology.ts` - the README-to-`/about` bridge: `methodologySlice()` cuts the README's
+  visitor-facing sections for the page, `headingSlug()` + `RATING_ANCHOR` give other pages a stable
+  deep link to the rating-bands section. README.md owns the wording; the test pins the caveats.
+- `signal-labels.ts` - `humanizeSignalLabel()`: render-time plain-language map for judge-written
+  signal labels that echo internal keys ("web.businessMatch mismatch"). Unrecognized labels render
+  verbatim, never hidden; the contract is documented in the file.
 
 **`lib/` root — plumbing (imported by web + CLIs)**
 - `db.ts` — Prisma client singleton.
@@ -128,12 +134,16 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 
 ## `app/` — web app (Next.js, read-only, server components)
 
-- `layout.tsx` — shell + header nav (Postings / Companies / Analysis).
+- `layout.tsx` — shell + header nav (Postings / Companies / Analysis / About) + footer link to `/about`.
+- `about/page.tsx` - the methodology page: renders the README's plain-language sections (why
+  postings are reviewed, what the bands mean, the caveats) via `lib/shared/methodology.ts`, with
+  `marked` + slugged heading ids so score surfaces can deep-link `#how-each-posting-is-rated`.
 - `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`) × posted-date
   windows (`?posted=`: `any` / `7` / `30` / `90`), table of judged postings with each row's posted
   date. Every clause comes from `lib/shared/postings-filter.ts`; the page only renders.
-- `j/[id]/page.tsx` — one posting: verdict, weighted signals, evidence, + a primary **Apply ↗** link
-  to the real apply URL (host shown) when the posting routes externally.
+- `j/[id]/page.tsx` — one posting: verdict, weighted signals (plain-language labels via
+  `lib/shared/signal-labels.ts`), evidence, posted + reviewed-on dates, keyed employer-checks table,
+  + a primary **Apply ↗** link to the real apply URL (host shown) when the posting routes externally.
 - `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings.
 - `companies/page.tsx` — all companies with judged postings, risk mix + top score, most-suspicious first.
 - `analysis/page.tsx` — elevated-risk rate by job-type category, **by company** (each employer by its
@@ -146,6 +156,8 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `components/`
 - `ScoreChip.tsx` — colored risk-score badge. `FlagIcons.tsx` — application-flag chips with tooltips
   (incl. `apply_host_mismatch` brand-impersonation).
+- `EmployerChecks.tsx` - plain-language keyed table of an employer's verification record for the
+  posting page; unknown `checks` keys fall back to raw JSON so they surface instead of vanishing.
 
 ## `prisma/`
 - `schema.prisma` — `Employer`, `Job`, and `EmployerWebSearchLog` models. Job scoring fields are

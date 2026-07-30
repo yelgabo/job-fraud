@@ -1,7 +1,11 @@
 import Link from "next/link"
 import type { Employer, Job } from "@prisma/client"
 import { parseFlags, parseSignals, parseChecks } from "@/lib/shared/json-schemas"
+import { effectivePostedDate, formatPostedDate } from "@/lib/shared/posted-date"
+import { humanizeSignalLabel } from "@/lib/shared/signal-labels"
+import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
+import { EmployerChecks } from "@/components/EmployerChecks"
 import { FlagIcons } from "@/components/FlagIcons"
 import { cn } from "@/lib/utils"
 
@@ -12,6 +16,7 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
   const signals = parseSignals(job.signals).slice().sort((a, b) => b.weight - a.weight)
   const flags = parseFlags(job.applicationFlags)
   const checks = job.employer ? parseChecks(job.employer.checks) : {}
+  const posted = effectivePostedDate({ postedDate: job.postedDate, scrapedAt: job.scrapedAt })
 
   return (
     <div className="space-y-6">
@@ -31,6 +36,23 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
             )}
             {job.location ? ` · ${job.location}` : ""}
             {job.salary ? ` · ${job.salary}` : ""}
+          </p>
+          <p className="mt-1 text-sm text-zinc-500">
+            <span
+              title={
+                posted.estimated
+                  ? "This posting has no usable posted date. Estimated from the date it was scraped."
+                  : undefined
+              }
+            >
+              Posted {formatPostedDate(posted)}
+            </span>
+            {" · "}
+            {job.scoredAt ? `Reviewed on ${job.scoredAt.toISOString().slice(0, 10)}` : "Not yet reviewed"}
+            {" · "}
+            <Link href={`/about#${RATING_ANCHOR}`} className="underline hover:text-zinc-700">
+              What do these ratings mean?
+            </Link>
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -86,7 +108,10 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
               return (
                 <li key={i} className="text-sm">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-zinc-800">{s.label}</span>
+                    {/* title keeps the stored label inspectable when a plain rendering replaced it */}
+                    <span className="text-zinc-800" title={humanizeSignalLabel(s.label) !== s.label ? s.label : undefined}>
+                      {humanizeSignalLabel(s.label)}
+                    </span>
                     <span className={cn("tabular-nums font-medium", fraud ? "text-red-600" : "text-green-600")}>
                       {fraud ? "+" : ""}
                       {s.weight}
@@ -129,9 +154,7 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
           <summary className="cursor-pointer text-sm font-semibold uppercase tracking-wide text-zinc-500">
             Employer checks
           </summary>
-          <pre className="mt-3 overflow-x-auto rounded bg-zinc-50 p-3 text-xs text-zinc-700">
-            {JSON.stringify(checks, null, 2)}
-          </pre>
+          <EmployerChecks checks={checks} checkedAt={job.employer.checkedAt} />
         </details>
       )}
 

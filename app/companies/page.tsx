@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
+import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
@@ -36,7 +37,12 @@ export default async function CompaniesPage() {
     <div>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold text-zinc-900">Companies</h1>
-        <p className="text-sm text-zinc-500">{rows.length} employers with judged postings</p>
+        <p className="text-sm text-zinc-500">
+          {rows.length} employers with judged postings ·{" "}
+          <Link href={`/about#${RATING_ANCHOR}`} className="underline hover:text-zinc-900">
+            what do these ratings mean?
+          </Link>
+        </p>
       </div>
 
       {rows.length === 0 ? (
