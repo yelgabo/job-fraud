@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
+import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
 import { CATEGORIES } from "@/lib/signals/job-category"
 
 // force-dynamic keeps this page out of build-time prerendering: the Railway builder has no
@@ -37,7 +38,10 @@ function Bar({ t }: { t: Tally }) {
  * All of the page's aggregates, computed once and cached (serializable output only: the cache
  * stores JSON). Served up to 10 minutes stale, which is accepted for visitors.
  */
-const loadAnalysis = unstable_cache(loadAnalysisUncached, ["analysis-page"], { revalidate: 600 })
+const loadAnalysis = unstable_cache(loadAnalysisUncached, ["analysis-page"], {
+  revalidate: 600,
+  tags: [DATA_CACHE_TAG],
+})
 
 async function loadAnalysisUncached() {
   const [postingGroups, companyJobs, employers] = await Promise.all([

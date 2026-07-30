@@ -1,12 +1,11 @@
 import Link from "next/link"
 import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
-import { parseFlags } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
-import { FlagIcons } from "@/components/FlagIcons"
 import { PaginationNav } from "@/components/PaginationNav"
 import { CATEGORIES } from "@/lib/signals/job-category"
 import { effectivePostedDate } from "@/lib/shared/posted-date"
+import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import {
   BANDS,
@@ -46,7 +45,10 @@ function tabClass(active: boolean) {
  * entry, each serving up to 10 minutes stale. That staleness is accepted for visitors; the
  * token-gated /audit pages stay uncached.
  */
-const loadPostings = unstable_cache(loadPostingsUncached, ["postings-list"], { revalidate: 600 })
+const loadPostings = unstable_cache(loadPostingsUncached, ["postings-list"], {
+  revalidate: 600,
+  tags: [DATA_CACHE_TAG],
+})
 
 async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWindowKey, page: number) {
   const q = buildPostingsQuery({ band, cat, posted, now: new Date() })
@@ -67,12 +69,12 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
       where: q.rowsWhere,
       orderBy: POSTINGS_ORDER_BY,
       ...pageArgs(page),
+      // Only what a list row renders. Location and application flags moved to the detail page
+      // the title links to; selecting them here would bloat the cache entry and the RSC payload.
       select: {
         workbcId: true,
         title: true,
-        location: true,
         fraudScore: true,
-        applicationFlags: true,
         postedDate: true,
         scrapedAt: true,
         employer: { select: { id: true, nameDisplay: true } },
@@ -102,9 +104,7 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
       return {
         workbcId: job.workbcId,
         title: job.title,
-        location: job.location,
         fraudScore: job.fraudScore,
-        flags: parseFlags(job.applicationFlags),
         employerId: job.employer?.id ?? null,
         employerName: job.employer?.nameDisplay ?? null,
         day: p.day,
@@ -209,29 +209,30 @@ export default async function HomePage({
       ) : (
         <>
           <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full text-left text-sm">
+            {/* Rows are deliberately lean (they dominate the page's HTML): the shared cell
+                styling lives on the table element, and location and application flags live on
+                the detail page each title links to. */}
+            <table className="w-full text-left text-sm [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_th]:px-4 [&_th]:py-2.5 [&_th]:font-medium">
               <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">Score</th>
-                  <th className="px-4 py-2.5 font-medium">Title</th>
-                  <th className="px-4 py-2.5 font-medium">Employer</th>
-                  <th className="px-4 py-2.5 font-medium">Location</th>
-                  <th className="px-4 py-2.5 font-medium">Posted</th>
-                  <th className="px-4 py-2.5 font-medium">Flags</th>
+                  <th>Score</th>
+                  <th>Title</th>
+                  <th>Employer</th>
+                  <th>Posted</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {rows.map((job) => (
                   <tr key={job.workbcId} className="hover:bg-zinc-50">
-                    <td className="px-4 py-3 align-top">
+                    <td>
                       <ScoreChip score={job.fraudScore ?? 0} />
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td>
                       <Link href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">
                         {job.title}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 align-top text-zinc-600">
+                    <td className="text-zinc-600">
                       {job.employerId ? (
                         <Link href={`/e/${job.employerId}`} className="hover:underline">
                           {job.employerName}
@@ -240,22 +241,8 @@ export default async function HomePage({
                         <span className="italic text-zinc-400">employer hidden</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 align-top text-zinc-600">{job.location ?? "—"}</td>
-                    <td className="px-4 py-3 align-top text-zinc-600">
-                      {job.estimated ? (
-                        <span
-                          title="This posting has no usable posted date. Estimated from the date it was scraped."
-                          className="text-zinc-500"
-                        >
-                          <span className="whitespace-nowrap tabular-nums">~{job.day}</span>{" "}
-                          <span className="whitespace-nowrap text-xs italic text-zinc-400">(est. from scrape)</span>
-                        </span>
-                      ) : (
-                        <span className="whitespace-nowrap tabular-nums">{job.day}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <FlagIcons flags={job.flags} />
+                    <td className="whitespace-nowrap tabular-nums text-zinc-600">
+                      {job.estimated ? `~${job.day}` : job.day}
                     </td>
                   </tr>
                 ))}
@@ -264,8 +251,8 @@ export default async function HomePage({
           </div>
           {anyEstimated ? (
             <p className="mt-2 text-xs text-zinc-500">
-              A date shown as <span className="italic">~date (est. from scrape)</span> is not a published posted date:
-              that posting carried no usable one, so the day we scraped it stands in.
+              A date shown as <span className="italic">~date</span> is not a published posted date: that posting
+              carried no usable one, so the day we scraped it stands in.
             </p>
           ) : null}
         </>

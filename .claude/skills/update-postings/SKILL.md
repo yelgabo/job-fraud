@@ -13,8 +13,10 @@ a stop condition — a larger pending count just means more waves, and applying 
 every wave means progress is never lost if the session is interrupted. Report cost/count
 when done, not as a question before starting. The
 deployed site reads the production DB: **no deploy or push is ever needed for a data
-update**, but public pages are cached with 600 s revalidation, so visitors see new results
-within about 10 minutes, not instantly. Run from the `job-fraud` project directory.
+update**. Public pages are cached with 600 s revalidation; when `REVALIDATE_TOKEN` is set in
+`.env`, the scrape/judge/apply CLIs refresh that cache immediately at the end of a successful
+run (POST `/api/revalidate`), otherwise visitors see new results within about 10 minutes.
+Run from the `job-fraud` project directory.
 
 ## Credentials
 

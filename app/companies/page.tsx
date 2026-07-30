@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { orderEmployerAggs } from "@/lib/shared/companies-query"
+import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
 import { PAGE_SIZE, pageArgs, parsePage } from "@/lib/shared/postings-filter"
 import { PaginationNav } from "@/components/PaginationNav"
 import { cn } from "@/lib/utils"
@@ -25,7 +26,10 @@ const BAND_DOT: Record<string, string> = {
  * tallies, so the payload stays bounded as the corpus grows. Each page number is its own cache
  * entry, served up to 10 minutes stale (accepted for visitors).
  */
-const loadCompanies = unstable_cache(loadCompaniesUncached, ["companies-list"], { revalidate: 600 })
+const loadCompanies = unstable_cache(loadCompaniesUncached, ["companies-list"], {
+  revalidate: 600,
+  tags: [DATA_CACHE_TAG],
+})
 
 async function loadCompaniesUncached(page: number) {
   const groups = await prisma.job.groupBy({
