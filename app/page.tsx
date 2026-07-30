@@ -5,6 +5,7 @@ import { ScoreChip } from "@/components/ScoreChip"
 import { FlagIcons } from "@/components/FlagIcons"
 import { CATEGORIES } from "@/lib/signals/job-category"
 import { effectivePostedDate } from "@/lib/shared/posted-date"
+import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import {
   BANDS,
   POSTED_WINDOWS,
@@ -96,13 +97,19 @@ export default async function HomePage({
         </p>
       </div>
 
-      <nav className="mb-3 flex flex-wrap gap-2">
+      <nav className="mb-3 flex flex-wrap items-center gap-2">
         {BANDS.map((b) => (
           <Link key={b} href={hrefFor(b, activeCat, activePosted)} className={tabClass(b === active)}>
             {b[0].toUpperCase() + b.slice(1)}
             <span className="ml-1.5 text-xs opacity-70">{counts[b] ?? 0}</span>
           </Link>
         ))}
+        <Link
+          href={`/about#${RATING_ANCHOR}`}
+          className="ml-1 text-sm text-zinc-500 underline hover:text-zinc-900"
+        >
+          What do these ratings mean?
+        </Link>
       </nav>
 
       <nav className="mb-3 flex flex-wrap gap-2">

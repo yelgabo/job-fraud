@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
+import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { CATEGORIES } from "@/lib/signals/job-category"
 
 export const dynamic = "force-dynamic"
@@ -111,8 +112,11 @@ export default async function AnalysisPage() {
         <h1 className="text-2xl font-semibold text-zinc-900">Elevated-risk rate by job type</h1>
         <p className="mt-1 max-w-2xl text-sm text-zinc-500">
           Share of postings rated <span className="text-amber-600">medium</span> or{" "}
-          <span className="text-red-600">high</span> risk. Automated <em>screening signals</em>, not
-          verdicts. <strong>By company</strong> counts each employer once (by its worst posting), so a
+          <span className="text-red-600">high</span> risk. Automated{" "}
+          <Link href={`/about#${RATING_ANCHOR}`} className="underline hover:text-zinc-900">
+            <em>screening signals</em>, not verdicts
+          </Link>
+          . <strong>By company</strong> counts each employer once (by its worst posting), so a
           few big legitimate employers posting many jobs don&apos;t mask how many distinct companies
           look suspicious; <strong>by posting</strong> counts every listing.
         </p>

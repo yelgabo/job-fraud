@@ -18,7 +18,6 @@ const webSchema = z.object({
   // each term and merges/dedupes results by workbcId — the WorkBC SPA only renders ~20 cards
   // per query, so multiple terms are how we reach a larger corpus.
   WORKBC_SEARCH_TERMS: z.string().optional(),
-  NOMINATIM_USER_AGENT: z.string().min(1).default("job-fraud/0.1 (github.com/yelnil)"),
   // Secret path segment for the unlinked /audit/<token> web-search audit UI. When unset, the
   // audit pages 404 entirely (deny by default). Not in .env.example on purpose — set per-deploy.
   AUDIT_TOKEN: z.string().min(1).optional(),

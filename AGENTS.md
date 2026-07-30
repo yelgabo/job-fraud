@@ -1,7 +1,7 @@
 # job-fraud - agent notes
 
-Public review of WorkBC tech job postings, each rated on whether it looks like a genuine attempt to
-hire locally. Next.js + Prisma/Postgres, a scraping CLI, and an LLM judging CLI. Live at
+Public review of WorkBC job postings (tech terms plus a city-wide Victoria pass), each rated on
+whether it looks like a genuine attempt to hire locally. Next.js + Prisma/Postgres, a scraping CLI, and an LLM judging CLI. Live at
 https://job-fraud-production.up.railway.app
 
 Read `README.md` (why the postings are reviewed), then `docs/ARCHITECTURE.md`,
@@ -23,7 +23,10 @@ impersonation check in `lib/ai/check-impersonation.ts`, and the score-to-band cu
 `lib/shared/risk-band.ts`. The same rubric is duplicated in prose in `docs/TECHNICAL_INFO.md`,
 `docs/judge-runbook.md` and `.claude/skills/judge-postings/SKILL.md`; if you change one, change all
 of them or they will disagree. Treat any rubric edit as a change that needs the corpus re-judged,
-not a code tweak.
+not a code tweak. The README's plain-language sections (why postings are reviewed, what the bands
+mean, the caveats) are rendered live on the site's `/about` page (`app/about/page.tsx` +
+`lib/shared/methodology.ts`), so a README edit is an edit to published site copy, and
+`lib/shared/methodology.test.ts` pins the caveat wording.
 
 ## Do not run these casually
 
@@ -235,7 +238,6 @@ They cover parsers, schemas and the Anthropic callers with a mocked SDK - **no t
 database or the network**, so `npm test` passing says nothing about whether the pipeline works
 against real data. `__fixtures__/` is saved WorkBC HTML used only by the legacy parser tests in
 `lib/workbc/scrape-workbc.test.ts`; the live pipeline uses the JSON API and does not parse HTML.
-`.env.example` still lists `NOMINATIM_USER_AGENT`, left over from the removed geocoding code.
 
 ## When a published judgement looks wrong
 

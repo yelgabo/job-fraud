@@ -51,8 +51,9 @@ rather than mass-writing `unknown`.
 **Web app** (read-only) · `app/` — `/` risk-band tabs × job-type category chips × posted-date windows
 (any / 7 / 30 / 90 days, `?posted=`) · `/j/[id]` posting (with an Apply link to the real apply URL) ·
 `/e/[id]` employer · `/companies` by-company list ·
-`/analysis` elevated-risk rate by category (by company / by posting) · `/audit/<token>` internal
-web-search audit (token-gated, unlinked).
+`/analysis` elevated-risk rate by category (by company / by posting) · `/about` methodology page
+(renders the README's plain-language sections via `lib/shared/methodology.ts`; the README owns the
+wording) · `/audit/<token>` internal web-search audit (token-gated, unlinked).
 
 Risk band derives from the score (`lib/shared/risk-band.ts`): **low** `<30`, **medium** `30–69`, **high**
 `≥70`, **unknown** for scoring failures. The UI shows only judged postings (`scoredAt` set).
