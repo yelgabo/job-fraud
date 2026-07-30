@@ -246,7 +246,8 @@ npm test                 # vitest run
 Railway. `AUDIT_TOKEN` gates the unlinked `/audit/<token>` pages - unset means they 404
 (`app/audit/[token]/guard.ts`, `lib/env.ts`).
 
-Tests are colocated `*.test.ts` under `lib/`; there is no vitest config file, so defaults apply.
+Tests are colocated `*.test.ts` under `lib/` plus component render tests next to `components/`;
+`vitest.config.ts` only maps the `@/` path alias and JSX, everything else is vitest defaults.
 They cover parsers, schemas and the Anthropic callers with a mocked SDK - **no test touches the
 database or the network**, so `npm test` passing says nothing about whether the pipeline works
 against real data. `__fixtures__/` is saved WorkBC HTML used only by the legacy parser tests in

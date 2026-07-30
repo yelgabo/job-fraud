@@ -49,7 +49,8 @@ An out-of-credit billing error aborts the run (`lib/shared/anthropic-errors.ts`)
 rather than mass-writing `unknown`.
 
 **Web app** (read-only) · `app/` — `/` risk-band tabs × job-type category chips × posted-date windows
-(any / 7 / 30 / 90 days, `?posted=`) · `/j/[id]` posting (with an Apply link to the real apply URL) ·
+(any / 7 / 30 / 90 days, `?posted=`) · `/j/[id]` posting (with an Apply link to the real apply URL; de-emphasized plus a review-first
+warning line on High-band postings) ·
 `/e/[id]` employer · `/companies` by-company list ·
 `/analysis` elevated-risk rate by category (by company / by posting) · `/about` methodology page
 (renders the README's plain-language sections via `lib/shared/methodology.ts`; the README owns the
@@ -232,7 +233,7 @@ flags feed the score automatically.
 ## Testing & deploy
 
 ```bash
-npm test          # vitest — helpers, parsers, schema, mocked-SDK scoring/verify
+npm test          # vitest — helpers, parsers, schema, mocked-SDK scoring/verify, component render
 npm run build     # prisma generate + next build (full type-check)
 ```
 
