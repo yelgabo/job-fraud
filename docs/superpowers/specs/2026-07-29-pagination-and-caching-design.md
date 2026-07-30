@@ -54,3 +54,6 @@ appear without a deploy, within the revalidation window". Amended in `docs/TECHN
 
 On-write revalidation hooks from the update scripts, feeds, last-seen tracking, home redesign,
 Apply-button and branding changes.
+
+Follow-up: the on-write revalidation hooks landed later as `POST /api/revalidate`, gated by
+`REVALIDATE_TOKEN`; see `docs/TECHNICAL_INFO.md`.
