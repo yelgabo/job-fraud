@@ -20,9 +20,10 @@ export default async function AdminJobPage({
   const job = await prisma.job.findUnique({ where: { workbcId: id }, include: { employer: true } })
   if (!job) notFound()
 
-  const [notes, requests] = await Promise.all([
+  const [notes, requests, latest] = await Promise.all([
     prisma.reviewNote.findMany({ where: { workbcId: id }, orderBy: { createdAt: "desc" } }),
     prisma.judgeRequest.findMany({ where: { workbcId: id }, orderBy: { createdAt: "desc" } }),
+    prisma.job.aggregate({ _max: { lastSeenAt: true } }),
   ])
   const openRequests = requests.filter((r) => !r.resolvedAt)
 
@@ -124,7 +125,7 @@ export default async function AdminJobPage({
       </section>
 
       {job.scoredAt ? (
-        <JobReport job={job} />
+        <JobReport job={job} latestSeenAt={latest._max.lastSeenAt} />
       ) : (
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">{job.title}</h1>

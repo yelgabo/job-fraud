@@ -2,8 +2,10 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
+import { isExpired } from "@/lib/shared/last-seen"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
+import { cn } from "@/lib/utils"
 
 // Rendered on demand per employer, then cached up to 10 minutes; a re-judged verdict appears
 // within that window. The empty generateStaticParams opts the route into on-demand static
@@ -40,10 +42,13 @@ function TriBadge({
 
 export default async function EmployerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const employer = await prisma.employer.findUnique({
-    where: { id },
-    include: { jobs: { where: { scoredAt: { not: null } }, orderBy: { fraudScore: "desc" } } },
-  })
+  const [employer, latest] = await Promise.all([
+    prisma.employer.findUnique({
+      where: { id },
+      include: { jobs: { where: { scoredAt: { not: null } }, orderBy: { fraudScore: "desc" } } },
+    }),
+    prisma.job.aggregate({ _max: { lastSeenAt: true } }),
+  ])
   if (!employer) notFound()
 
   const checks = parseChecks(employer.checks)
@@ -149,15 +154,22 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
         </div>
         <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
           <ul className="divide-y divide-zinc-100">
-            {employer.jobs.map((job) => (
-              <li key={job.workbcId} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50">
-                <ScoreChip score={job.fraudScore ?? 0} />
-                <Link href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">
-                  {job.title}
-                </Link>
-                {job.location && <span className="text-sm text-zinc-500">· {job.location}</span>}
-              </li>
-            ))}
+            {employer.jobs.map((job) => {
+              const expired = isExpired(job.lastSeenAt, latest._max.lastSeenAt)
+              return (
+                <li
+                  key={job.workbcId}
+                  className={cn("flex items-center gap-3 px-4 py-3 hover:bg-zinc-50", expired && "opacity-60")}
+                  title={expired ? "No longer listed on WorkBC" : undefined}
+                >
+                  <ScoreChip score={job.fraudScore ?? 0} />
+                  <Link href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">
+                    {job.title}
+                  </Link>
+                  {job.location && <span className="text-sm text-zinc-500">· {job.location}</span>}
+                </li>
+              )
+            })}
           </ul>
         </div>
       </section>

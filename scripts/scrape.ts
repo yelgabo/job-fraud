@@ -7,6 +7,7 @@ import { detectFlags } from "../lib/signals/application-flags"
 import { parseNocGroup, categoryForNoc } from "../lib/signals/job-category"
 import { normalizeEmployer } from "../lib/signals/normalize-employer"
 import { parsePostedDate } from "../lib/shared/posted-date"
+import { stampSightings } from "../lib/shared/last-seen"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { searchJobsApi, fetchJobDetailApi, cityLocation } from "../lib/workbc/workbc-api"
 import { JsonlLogger } from "./logger"
@@ -90,6 +91,17 @@ async function main() {
       return
     }
     console.log(`[search] processing ${stubs.length} stubs`)
+
+    // Sighting stamp: every id the search enumerated is currently listed on WorkBC, so
+    // bulk-mark the ones already in the DB as seen BEFORE --skip-existing drops them - zero
+    // extra detail fetches. This feeds the site's "no longer listed" state
+    // (lib/shared/last-seen.ts); new postings get the same stamp via the upsert fields below.
+    const seenAt = new Date()
+    if (!args.dryRun) {
+      const stamped = await stampSightings(prisma, [...byId.keys()], seenAt)
+      console.log(`[scrape] lastSeenAt: stamped ${stamped} already-known postings`)
+      log.log({ stage: "seen:stamp", ok: true, meta: { stamped } })
+    }
 
     // Incremental mode: drop postings already in the DB so we only fetch detail for new ones.
     if (args.skipExisting && !args.dryRun) {
@@ -189,6 +201,7 @@ async function main() {
               nocCode,
               nocGroup,
               category: categoryForNoc(nocCode),
+              lastSeenAt: seenAt,
             }
             await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update: fields })
             written++

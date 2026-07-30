@@ -38,6 +38,7 @@ function makeJob(overrides: Partial<Job> = {}): Job & { employer: Employer | nul
     signals: [],
     scoredAt: new Date("2026-07-01T00:00:00Z"),
     scrapedAt: new Date("2026-06-30T00:00:00Z"),
+    lastSeenAt: null,
     ...overrides,
   }
 }
@@ -89,5 +90,53 @@ describe("JobReport apply-link presentation by risk band", () => {
     )
     expect(anchorFor(html, "https://www.workbc.ca/jobs/12345678")).toContain(PROMINENT)
     expect(html).not.toContain(WARNING_TEXT)
+  })
+})
+
+const EXPIRED_TEXT = "No longer listed on WorkBC (last seen 2026-07-01)"
+const LATEST_SEEN = new Date("2026-07-30T00:00:00Z")
+const SEEN_LONG_AGO = new Date("2026-07-01T00:00:00Z") // 29 days before LATEST_SEEN
+
+describe("JobReport expired-posting presentation", () => {
+  it("shows the note and de-emphasizes the apply button on an expired Low posting, without the High warning", () => {
+    const html = renderToStaticMarkup(
+      <JobReport job={makeJob({ fraudScore: 10, riskBand: "low", lastSeenAt: SEEN_LONG_AGO })} latestSeenAt={LATEST_SEEN} />,
+    )
+    expect(html).toContain(EXPIRED_TEXT)
+    expect(anchorFor(html, APPLY_URL)).not.toContain(PROMINENT)
+    expect(html).not.toContain(WARNING_TEXT)
+  })
+
+  it("composes with the High band: an expired High posting keeps its warning and gains the note", () => {
+    const html = renderToStaticMarkup(
+      <JobReport job={makeJob({ fraudScore: 92, riskBand: "high", lastSeenAt: SEEN_LONG_AGO })} latestSeenAt={LATEST_SEEN} />,
+    )
+    expect(html).toContain(EXPIRED_TEXT)
+    expect(html).toContain(WARNING_TEXT)
+    expect(anchorFor(html, APPLY_URL)).not.toContain(PROMINENT)
+  })
+
+  it("treats a null lastSeenAt as not yet tracked, never expired", () => {
+    const html = renderToStaticMarkup(
+      <JobReport job={makeJob({ fraudScore: 10, riskBand: "low", lastSeenAt: null })} latestSeenAt={LATEST_SEEN} />,
+    )
+    expect(html).not.toContain("No longer listed on WorkBC")
+    expect(anchorFor(html, APPLY_URL)).toContain(PROMINENT)
+  })
+
+  it("leaves a recently seen posting untouched", () => {
+    const html = renderToStaticMarkup(
+      <JobReport job={makeJob({ fraudScore: 10, riskBand: "low", lastSeenAt: LATEST_SEEN })} latestSeenAt={LATEST_SEEN} />,
+    )
+    expect(html).not.toContain("No longer listed on WorkBC")
+    expect(anchorFor(html, APPLY_URL)).toContain(PROMINENT)
+  })
+
+  it("renders as still listed when the caller passes no latestSeenAt reference", () => {
+    const html = renderToStaticMarkup(
+      <JobReport job={makeJob({ fraudScore: 10, riskBand: "low", lastSeenAt: SEEN_LONG_AGO })} />,
+    )
+    expect(html).not.toContain("No longer listed on WorkBC")
+    expect(anchorFor(html, APPLY_URL)).toContain(PROMINENT)
   })
 })

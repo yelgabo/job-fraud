@@ -14,7 +14,12 @@ export function generateStaticParams(): Array<{ id: string }> {
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const job = await prisma.job.findUnique({ where: { workbcId: id }, include: { employer: true } })
+  const [job, latest] = await Promise.all([
+    prisma.job.findUnique({ where: { workbcId: id }, include: { employer: true } }),
+    // Corpus-wide newest sighting: the reference point the expiry state is measured against
+    // (lib/shared/last-seen.ts). Indexed, so this is a cheap lookup.
+    prisma.job.aggregate({ _max: { lastSeenAt: true } }),
+  ])
   if (!job) notFound()
 
   if (!job.scoredAt) {
@@ -34,7 +39,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       <Link href="/" className="text-sm text-zinc-500 hover:underline">
         ← Back to all postings
       </Link>
-      <JobReport job={job} />
+      <JobReport job={job} latestSeenAt={latest._max.lastSeenAt} />
     </div>
   )
 }

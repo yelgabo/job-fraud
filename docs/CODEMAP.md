@@ -79,6 +79,10 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `warm-targets.ts` - `WARM_PATHS`, the bounded list of filter combinations the warm phase of
   `/api/revalidate` re-renders after the purge (page 1 of each band tab and posted window, `/`,
   `/companies`), capped by `MAX_WARM_PATHS`.
+- `last-seen.ts` - posting lifecycle: `EXPIRY_DAYS` (14 = two missed weekly sweeps), `isExpired()`
+  (against the corpus-wide `max(lastSeenAt)`, never the wall clock; null `lastSeenAt` = "not yet
+  tracked", never expired) and `stampSightings()`, the scrape's bulk `lastSeenAt` writer. Captain
+  decision 2026-07-30: expired postings stay listed and counted, only visually muted.
 - `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
   both producer formats (the JSON API's ISO prefix and the HTML fallback's free text) and mapping
   anything ambiguous or junk to null. `effectivePostedDate()` / `formatPostedDate()` pick the date the
@@ -122,7 +126,9 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `scripts/` — CLI entry points
 
 - `scrape.ts` — **Phase 1 (collect).** API search + detail + flags + NOC category + ATS classify →
-  upsert pending postings. Flags: `--search-terms`, `--location` (WorkBC server-side city filter;
+  upsert pending postings. Every non-dry-run pass also bulk-stamps `Job.lastSeenAt` on all ids the
+  search enumerated, before `--skip-existing` drops the known ones (zero extra detail fetches; feeds
+  the site's "no longer listed" state, `lib/shared/last-seen.ts`). Flags: `--search-terms`, `--location` (WorkBC server-side city filter;
   with `--search-terms ""` it sweeps every occupation in that city, not just tech), `--limit`,
   `--concurrency`, `--dry-run`, `--skip-existing` (alias `--new-only`: fetch detail only for new
   `workbcId`s), `--recent day|week` (ask WorkBC server-side for only recently-posted jobs, the cheap
@@ -157,7 +163,9 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   `marked` + slugged heading ids so score surfaces can deep-link `#how-each-posting-is-rated`.
 - `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`) × posted-date
   windows (`?posted=`: `any` / `7` / `30` / `90`), table of judged postings with each row's posted
-  date, paginated at 50 rows (`?page=`). Every clause comes from `lib/shared/postings-filter.ts`;
+  date, paginated at 50 rows (`?page=`). Rows whose posting is expired (`lib/shared/last-seen.ts`)
+  are muted with a footnote but stay listed and counted: no filter or count reads `lastSeenAt`
+  (pinned in `postings-filter.test.ts`). Every clause comes from `lib/shared/postings-filter.ts`;
   the page only renders. Cache semantics for all public pages:
   `docs/superpowers/specs/2026-07-29-pagination-and-caching-design.md`.
 - `j/[id]/page.tsx` — one posting: verdict, weighted signals (plain-language labels via
@@ -165,8 +173,12 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   + an **Apply ↗** link to the real apply URL (host shown) when the posting routes externally.
   On High-band postings that link drops to outline styling with a warning line pointing at the
   /about methodology page (band derived from the score in `components/JobReport.tsx`); on Low and
-  Medium it stays the primary button. The WorkBC source link is unaffected by band.
-- `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings.
+  Medium it stays the primary button. The WorkBC source link is unaffected by band. An expired
+  posting (`lib/shared/last-seen.ts`) gets a "No longer listed on WorkBC (last seen {date})" line
+  and the same outline apply styling; expiry and band compose, so an expired High posting keeps
+  its warning too.
+- `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings (expired
+  ones muted, same rule as the home list).
 - `companies/page.tsx` — companies with judged postings, risk mix + top score, most-suspicious
   first, paginated at 50 (ordering in `lib/shared/companies-query.ts`).
 - `analysis/page.tsx` — elevated-risk rate by job-type category, **by company** (each employer by its
@@ -201,7 +213,9 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   (NOC occupation + derived job-type bucket; `category` indexed) and a **pair** of posted-date fields:
   the raw `postedAt String?` exactly as the producer wrote it (still what the judge prompt sees) plus
   `postedDate DateTime?`, indexed, parsed from it and null when the raw value is unusable. Filter on
-  `postedDate`, never on `postedAt` strings. `EmployerWebSearchLog` is an
+  `postedDate`, never on `postedAt` strings. `lastSeenAt DateTime?` (indexed) records the last scrape
+  sighting of the workbcId; null means the row predates sighting tracking and is never treated as
+  expired (`lib/shared/last-seen.ts`). `EmployerWebSearchLog` is an
   append-only audit trail of the raw `web_search` activity per verification (incl. `encrypted_content`
   blocks) — kept out of `Employer.checks` so prod pages don't load it; surfaced by the token-gated
   `/audit` pages.

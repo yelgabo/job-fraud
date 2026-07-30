@@ -50,7 +50,7 @@ rather than mass-writing `unknown`.
 
 **Web app** (read-only) · `app/` — `/` risk-band tabs × job-type category chips × posted-date windows
 (any / 7 / 30 / 90 days, `?posted=`) · `/j/[id]` posting (with an Apply link to the real apply URL; de-emphasized plus a review-first
-warning line on High-band postings) ·
+warning line on High-band postings, and de-emphasized on expired postings too) ·
 `/e/[id]` employer · `/companies` by-company list ·
 `/analysis` elevated-risk rate by category (by company / by posting) · `/about` methodology page
 (renders the README's plain-language sections via `lib/shared/methodology.ts`; the README owns the
@@ -66,6 +66,15 @@ numbers equal the rows listed underneath them. The posted-date window compares t
 window never silently drops rows. Those rows are marked as estimates rather than as a posted date
 the employer published: a compact `~date` (with a footnote) in the list, the full
 `~date (est. from scrape)` label on the posting page (`lib/shared/posted-date.ts`).
+
+**Posting lifecycle.** Every scrape pass bulk-stamps `Job.lastSeenAt` on all the workbcIds its
+search enumerated (before `--skip-existing` drops the known ones, so it costs nothing extra). A
+posting unseen for more than `EXPIRY_DAYS` (14) relative to the corpus-wide newest sighting - not
+the wall clock, so a paused scraper expires nothing - is presented as expired: "No longer listed
+on WorkBC (last seen {date})" on the posting page with a de-emphasized Apply link, and a muted
+row in the lists. Expired postings stay fully listed and counted (owner decision: muted, never
+dropped); rows with a null `lastSeenAt` predate sighting tracking and are never shown as expired.
+All of it lives in `lib/shared/last-seen.ts`.
 
 ## Data sources (what we gather, and how)
 

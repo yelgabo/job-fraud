@@ -69,11 +69,18 @@ model Job {
   signals           Json?
   scoredAt          DateTime?
   scrapedAt         DateTime  @default(now())
+  // Last time a scrape saw this workbcId in WorkBC's search results. Stamped in bulk on every
+  // (non-dry-run) scrape before --skip-existing drops known ids, so it costs no detail fetches.
+  // Null means "not yet tracked" (the row predates sighting tracking), never "expired": expiry
+  // is derived in lib/shared/last-seen.ts and only ever from real sightings. Indexed because the
+  // list and detail pages read max(lastSeenAt) as the expiry reference point on every render.
+  lastSeenAt        DateTime?
 
   @@index([riskBand, fraudScore])
   @@index([scoredAt])
   @@index([category])
   @@index([postedDate])
+  @@index([lastSeenAt])
 }
 
 // Owner comments on a posting, shown only on the token-gated /audit admin mirror. Append-only.

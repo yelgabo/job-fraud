@@ -3,6 +3,7 @@ import type { Employer, Job } from "@prisma/client"
 import { parseFlags, parseSignals, parseChecks } from "@/lib/shared/json-schemas"
 import { bandFor } from "@/lib/shared/risk-band"
 import { effectivePostedDate, formatPostedDate } from "@/lib/shared/posted-date"
+import { isExpired } from "@/lib/shared/last-seen"
 import { humanizeSignalLabel } from "@/lib/shared/signal-labels"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
@@ -12,8 +13,16 @@ import { cn } from "@/lib/utils"
 
 // The full fraud-report body for one posting: header, verdict + signals, flags, employer
 // checks, description. Shared by the public /j/[id] page and the token-gated /audit admin
-// mirror so the two never drift.
-export function JobReport({ job }: { job: Job & { employer: Employer | null } }) {
+// mirror so the two never drift. `latestSeenAt` is the corpus-wide max(lastSeenAt) reference
+// point for the expiry state (lib/shared/last-seen.ts); callers without it render as if the
+// posting were still listed.
+export function JobReport({
+  job,
+  latestSeenAt = null,
+}: {
+  job: Job & { employer: Employer | null }
+  latestSeenAt?: Date | null
+}) {
   const signals = parseSignals(job.signals).slice().sort((a, b) => b.weight - a.weight)
   const flags = parseFlags(job.applicationFlags)
   const checks = job.employer ? parseChecks(job.employer.checks) : {}
@@ -22,6 +31,11 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
   // distrusts that URL, so the button must not out-shout the rating. Derived from the score
   // like ScoreChip does, so chip colour and warning can never disagree.
   const highRisk = bandFor(job.fraudScore ?? 0) === "high"
+  // An expired posting's apply link is equally de-emphasized: the URL points at a listing
+  // WorkBC no longer carries. The two states compose - a High expired posting keeps its
+  // warning AND gains the no-longer-listed note.
+  const expired = isExpired(job.lastSeenAt, latestSeenAt)
+  const quietApply = highRisk || expired
 
   return (
     <div className="space-y-6">
@@ -59,6 +73,11 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
               What do these ratings mean?
             </Link>
           </p>
+          {expired && job.lastSeenAt && (
+            <p className="mt-1 text-sm font-medium text-amber-700">
+              No longer listed on WorkBC (last seen {job.lastSeenAt.toISOString().slice(0, 10)})
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -70,7 +89,7 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
                   rel="noopener noreferrer"
                   title={job.externalApplyHost ?? undefined}
                   className={
-                    highRisk
+                    quietApply
                       ? "rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
                       : "rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
                   }

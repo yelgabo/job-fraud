@@ -159,6 +159,16 @@ describe("buildPostingsQuery: each dimension's counts exclude only itself", () =
     }
     expect(count(CORPUS, q.rowsWhere as Record<string, unknown>)).toBe(CORPUS.length - 1)
   })
+
+  it("never filters or counts by lastSeenAt: an expired posting stays listed, only muted", () => {
+    // Captain decision 2026-07-30 (lib/shared/last-seen.ts): expiry is presentation-only.
+    // If any where-clause ever mentioned lastSeenAt, expired postings would fall out of the
+    // rows or skew the tab counts and pagination.
+    for (const band of BANDS) for (const w of POSTED_WINDOWS) {
+      const q = buildPostingsQuery({ band, cat: "all", posted: w.key, now: NOW })
+      expect(JSON.stringify(q)).not.toContain("lastSeenAt")
+    }
+  })
 })
 
 describe("buildPostingsQuery: tab counts agree with the rows listed, for every filter combination", () => {

@@ -5,6 +5,7 @@ import { ScoreChip } from "@/components/ScoreChip"
 import { PaginationNav } from "@/components/PaginationNav"
 import { CATEGORIES } from "@/lib/signals/job-category"
 import { effectivePostedDate } from "@/lib/shared/posted-date"
+import { isExpired } from "@/lib/shared/last-seen"
 import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import {
@@ -63,7 +64,7 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
     // otherwise a filtered numerator sits next to an unfiltered denominator and reads as wrong.
     prisma.job.count({ where: { scoredAt: { not: null } } }),
     prisma.job.count({ where: { scoredAt: { not: null }, riskBand: { in: ["high", "medium", "low"] } } }),
-    prisma.job.aggregate({ _max: { scrapedAt: true } }),
+    prisma.job.aggregate({ _max: { scrapedAt: true, lastSeenAt: true } }),
     prisma.job.count({ where: q.rowsWhere }),
     prisma.job.findMany({
       where: q.rowsWhere,
@@ -77,6 +78,7 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
         fraudScore: true,
         postedDate: true,
         scrapedAt: true,
+        lastSeenAt: true,
         employer: { select: { id: true, nameDisplay: true } },
       },
     }),
@@ -109,6 +111,10 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
         employerName: job.employer?.nameDisplay ?? null,
         day: p.day,
         estimated: p.estimated,
+        // Computed here, before caching, because the cache stores JSON: a Date would come back
+        // a string on a hit. Presentation only - no filter or count ever reads lastSeenAt, so
+        // tab numbers and pagination are untouched by expiry.
+        expired: isExpired(job.lastSeenAt, agg._max.lastSeenAt),
       }
     }),
   }
@@ -144,6 +150,7 @@ export default async function HomePage({
   const pageHref = (n: number) => hrefFor(active, activeCat, activePosted, n)
 
   const anyEstimated = rows.some((r) => r.estimated)
+  const anyExpired = rows.some((r) => r.expired)
 
   return (
     <div>
@@ -232,7 +239,11 @@ export default async function HomePage({
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {rows.map((job) => (
-                  <tr key={job.workbcId} className="hover:bg-zinc-50">
+                  <tr
+                    key={job.workbcId}
+                    className={cn("hover:bg-zinc-50", job.expired && "opacity-60")}
+                    title={job.expired ? "No longer listed on WorkBC" : undefined}
+                  >
                     <td>
                       <ScoreChip score={job.fraudScore ?? 0} />
                     </td>
@@ -262,6 +273,11 @@ export default async function HomePage({
             <p className="mt-2 text-xs text-zinc-500">
               A date shown as <span className="italic">~date</span> is not a published posted date: that posting
               carried no usable one, so the day we scraped it stands in.
+            </p>
+          ) : null}
+          {anyExpired ? (
+            <p className="mt-2 text-xs text-zinc-500">
+              A greyed-out row is a posting our scans no longer find listed on WorkBC.
             </p>
           ) : null}
         </>
