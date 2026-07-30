@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseFlags } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
@@ -22,6 +23,9 @@ import {
 } from "@/lib/shared/postings-filter"
 import { cn } from "@/lib/utils"
 
+// Reading searchParams makes this route render dynamically per request, so route-level
+// `revalidate` cannot cache it; the time-based cache lives on loadPostings below instead, keyed
+// per (band, cat, posted, page) combination.
 export const dynamic = "force-dynamic"
 
 function tabClass(active: boolean) {
@@ -32,12 +36,19 @@ function tabClass(active: boolean) {
 }
 
 /**
- * Everything one render of the postings list needs, fetched in one place and fully serializable.
- * The tab counts are whole-corpus aggregates composed in lib/shared/postings-filter.ts; only the
- * row query is paged. Do not add skip/take to any count query: the tab numbers must not change
- * as the visitor pages through the rows under them.
+ * Everything one render of the postings list needs, fetched in one place and fully serializable
+ * (the cache stores JSON, so a Date would come back a string on a hit). The tab counts are
+ * whole-corpus aggregates composed in lib/shared/postings-filter.ts; only the row query is paged.
+ * Do not add skip/take to any count query: the tab numbers must not change as the visitor pages
+ * through the rows under them.
+ *
+ * unstable_cache keys on its arguments, so each (band, cat, posted, page) combination is its own
+ * entry, each serving up to 10 minutes stale. That staleness is accepted for visitors; the
+ * token-gated /audit pages stay uncached.
  */
-async function loadPostings(band: BandKey, cat: string, posted: PostedWindowKey, page: number) {
+const loadPostings = unstable_cache(loadPostingsUncached, ["postings-list"], { revalidate: 600 })
+
+async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWindowKey, page: number) {
   const q = buildPostingsQuery({ band, cat, posted, now: new Date() })
 
   const [grouped, catGrouped, postedCounts, total, scored, agg, filteredTotal, rows] = await Promise.all([

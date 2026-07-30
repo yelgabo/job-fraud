@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
@@ -7,6 +8,9 @@ import { PAGE_SIZE, pageArgs, parsePage } from "@/lib/shared/postings-filter"
 import { PaginationNav } from "@/components/PaginationNav"
 import { cn } from "@/lib/utils"
 
+// force-dynamic keeps this page out of build-time prerendering: the Railway builder has no
+// private-network route to the database, so a static build would fail the deploy. The time-based
+// cache lives on loadCompanies below instead, keyed per page.
 export const dynamic = "force-dynamic"
 
 const BAND_DOT: Record<string, string> = {
@@ -18,9 +22,12 @@ const BAND_DOT: Record<string, string> = {
 /**
  * One page of the companies list. The whole-corpus ordering works on a per-employer aggregate
  * (one small row per employer); only the page being shown loads employer details and band
- * tallies, so the payload stays bounded as the corpus grows.
+ * tallies, so the payload stays bounded as the corpus grows. Each page number is its own cache
+ * entry, served up to 10 minutes stale (accepted for visitors).
  */
-async function loadCompanies(page: number) {
+const loadCompanies = unstable_cache(loadCompaniesUncached, ["companies-list"], { revalidate: 600 })
+
+async function loadCompaniesUncached(page: number) {
   const groups = await prisma.job.groupBy({
     by: ["employerId"],
     where: { scoredAt: { not: null }, employerId: { not: null } },

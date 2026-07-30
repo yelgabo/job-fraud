@@ -206,7 +206,7 @@ it would change and writes nothing:
 npm run backfill-posted-date                    # dry run: counts + unparseable samples
 npm run backfill-posted-date -- --limit 100     # dry-run a sample of rows
 npm run backfill-posted-date -- --samples 50    # print more unparseable raw values
-npm run backfill-posted-date -- --apply         # write (publishes immediately, no deploy)
+npm run backfill-posted-date -- --apply         # write (publishes with no deploy, live within ~10 min)
 ```
 
 Rows whose raw value is missing, ambiguous or junk keep `postedDate = null` on purpose: the parser
@@ -237,5 +237,7 @@ npm run build     # prisma generate + next build (full type-check)
 
 GitHub-connected Railway service (`railway.json`, RAILPACK; start = `prisma db push` then
 `next start`). Web service needs only `DATABASE_URL` (reference to the Postgres service). Refresh
-prod data by running `scrape`/`judge` locally against the same DB — the site reads it live. If
-GitHub auto-deploy doesn't pick up a push, `railway up --detach` forces a deploy.
+prod data by running `scrape`/`judge` locally against the same DB: the site serves pages cached
+up to 10 minutes (`revalidate`/`unstable_cache` 600 s on the public pages), so data updates appear
+without a deploy, within the revalidation window. If GitHub auto-deploy doesn't pick up a push,
+`railway up --detach` forces a deploy.
