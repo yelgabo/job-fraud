@@ -1,0 +1,73 @@
+# Weekly WorkBC scrape (collect only). Judging is deliberately NOT part of this workflow:
+# new postings land as pending and stay off the site until a manual judging run
+# (see .claude/skills/update-postings/SKILL.md). No ANTHROPIC_API_KEY here, ever.
+name: Weekly scrape
+
+on:
+  schedule:
+    # Mondays 12:17 UTC (early morning Pacific). Offset from the top of the hour
+    # because GitHub delays or drops exactly-on-the-hour cron runs under load.
+    - cron: "17 12 * * 1"
+  workflow_dispatch:
+
+# One scrape at a time. A late-running scheduled scrape and a manual dispatch must
+# queue, not interleave upserts against the production database.
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # The playwright dependency's postinstall would otherwise download browsers;
+      # the scrape uses WorkBC's JSON API and never launches one.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - name: Check required secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REVALIDATE_TOKEN: ${{ secrets.REVALIDATE_TOKEN }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set. Set it to the Railway public proxy URL (not *.railway.internal) before running this workflow."
+            exit 1
+          fi
+          if [ -z "$REVALIDATE_TOKEN" ]; then
+            echo "::warning::The REVALIDATE_TOKEN repository secret is not set. The scrape still runs; the site refreshes on its 600s cache timer instead of immediately."
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # npm run scrape invokes tsx --env-file=.env, which hard-errors when the file
+      # is missing. Real configuration comes from step env below; environment
+      # variables outrank the (empty) file.
+      - name: Create empty .env
+        run: touch .env
+
+      # Both passes pin --search-terms explicitly per docs/TECHNICAL_INFO.md: the
+      # WORKBC_SEARCH_TERMS env var would otherwise outrank the defaults.
+      - name: Term pass (weekly incremental)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run scrape -- --search-terms "software engineer,software" --recent week --skip-existing
+
+      # REVALIDATE_TOKEN only on the final pass so the CLI's built-in revalidate +
+      # warm calls fire once, after both passes. Missing or unreachable endpoint is
+      # warn-and-continue inside the CLI (lib/shared/request-revalidation.ts).
+      - name: City pass (all Victoria occupations)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REVALIDATE_TOKEN: ${{ secrets.REVALIDATE_TOKEN }}
+        run: npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing

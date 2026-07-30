@@ -44,6 +44,14 @@ posting that appears and expires between two runs is never collected and is invi
 forever. The interval between runs therefore does not just control freshness, it decides how
 much of the corpus is never seen at all. Choose it with that in mind.
 
+**The scrape half already runs on a schedule.** `.github/workflows/scrape.yml` runs both
+passes of step 1 every Monday (and on manual dispatch from the Actions tab). Judging is not
+scheduled - it stays manual until a spend cap is decided - so scheduled scrapes accumulate
+pending postings and this skill's judge steps (2-4) are how they get drained. Before
+re-running step 1 by hand, check whether the weekly workflow already covered the window; a
+manual scrape is still needed for catch-up gaps longer than a week (the workflow only runs
+the `--recent week` term-pass variant) and for `--recent day` top-ups.
+
 ## Procedure
 
 0. **Drain the review queue** (owner flags from the /audit admin pages, `JudgeRequest` table).

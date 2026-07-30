@@ -156,8 +156,15 @@ npm run scrape -- --search-terms "software engineer,software" --limit 500 --conc
 npm run scrape -- --dry-run          # collect without writing
 ```
 
+The routine refresh (weekly term pass, then Victoria city pass) runs automatically every Monday
+via GitHub Actions (`.github/workflows/scrape.yml`, also runnable on demand from the Actions tab).
+The scheduled run scrapes only: it collects postings as `pending` and never judges, so it carries
+no `ANTHROPIC_API_KEY`. The manual commands above remain the right tool for catch-up runs, backfills
+and dry runs.
+
 Then `npm run judge` (which judges only pending postings and web-verifies only the employers that
-need it).
+need it). Judging is manual on purpose - there is no scheduled judge run, so pending postings wait
+for someone to run the judge path (either variant below).
 
 Flags:
 

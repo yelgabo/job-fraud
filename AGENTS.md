@@ -276,8 +276,13 @@ page; `prisma/schema.prisma` and `app/audit/` are authoritative.
 
 ## Repository state
 
-There is no CI configuration in the repo (no `.github/`), so nothing runs automatically on push
-except the Railway deploy.
+`.github/workflows/` holds two workflows: `test.yml` (tsc, vitest, build on push/PR; no DB, no
+network) and `scrape.yml` (the weekly two-pass scrape on a Monday cron plus manual dispatch; it
+scrapes only and carries no `ANTHROPIC_API_KEY` - judging stays manual, see
+`.claude/skills/update-postings/SKILL.md`). `scrape.yml` writes to the production database via a
+`DATABASE_URL` repo secret and revalidates the site cache via a `REVALIDATE_TOKEN` secret, so a
+green scheduled run publishes new pending rows with no human involved. Beyond those, nothing runs
+automatically on push except the Railway deploy.
 
 ## Maintaining this file
 
