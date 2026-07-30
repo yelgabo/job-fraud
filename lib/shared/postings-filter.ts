@@ -25,8 +25,34 @@ export type PostedWindowKey = (typeof POSTED_WINDOWS)[number]["key"]
 
 const POSTED_KEYS: readonly string[] = POSTED_WINDOWS.map((w) => w.key)
 
+/** Rows per page on the postings list. */
+export const PAGE_SIZE = 50
+
 export function parseBand(raw: string | null | undefined): BandKey {
   return (BANDS as readonly string[]).includes(raw ?? "") ? (raw as BandKey) : "all"
+}
+
+/** `?page=` parsed to a 1-based page number; anything that is not a positive integer means 1. */
+export function parsePage(raw: string | null | undefined): number {
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= 1 ? n : 1
+}
+
+/**
+ * The postings list's sort order. `workbcId` is the unique tiebreaker: without it, rows sharing a
+ * score and title have no defined order, so they could appear on two pages (or neither) as the
+ * database shuffles ties between the per-page queries. Tests interpret this constant, so its
+ * shape is pinned there.
+ */
+export const POSTINGS_ORDER_BY = [
+  { fraudScore: "desc" },
+  { title: "asc" },
+  { workbcId: "asc" },
+] satisfies Prisma.JobOrderByWithRelationInput[]
+
+/** skip/take for a 1-based page. Pages tile the ordered rows: no overlap, no gaps. */
+export function pageArgs(page: number, pageSize: number = PAGE_SIZE): { skip: number; take: number } {
+  return { skip: (page - 1) * pageSize, take: pageSize }
 }
 
 export function parsePostedWindow(raw: string | null | undefined): PostedWindowKey {

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
   BANDS,
+  PAGE_SIZE,
   POSTED_WINDOWS,
+  POSTINGS_ORDER_BY,
   buildPostingsQuery,
+  pageArgs,
   parseBand,
+  parsePage,
   parsePostedWindow,
   postedWindowWhere,
   windowCutoff,
@@ -233,5 +237,139 @@ describe("buildPostingsQuery: tab counts agree with the rows listed, for every f
     expect(count(CORPUS, week.catCountWhere as Record<string, unknown>)).toBeLessThan(
       count(CORPUS, any.catCountWhere as Record<string, unknown>),
     )
+  })
+})
+
+describe("parsePage / pageArgs", () => {
+  it("defaults anything that is not a positive integer to page 1", () => {
+    expect(parsePage(undefined)).toBe(1)
+    expect(parsePage("")).toBe(1)
+    expect(parsePage("bogus")).toBe(1)
+    expect(parsePage("0")).toBe(1)
+    expect(parsePage("-2")).toBe(1)
+    expect(parsePage("1.5")).toBe(1)
+    expect(parsePage("2")).toBe(2)
+    expect(parsePage("137")).toBe(137)
+  })
+
+  it("computes skip/take from the 1-based page", () => {
+    expect(pageArgs(1)).toEqual({ skip: 0, take: PAGE_SIZE })
+    expect(pageArgs(2)).toEqual({ skip: PAGE_SIZE, take: PAGE_SIZE })
+    expect(pageArgs(3, 10)).toEqual({ skip: 20, take: 10 })
+  })
+
+  it("orders by score, then title, then the unique workbcId tiebreaker", () => {
+    // Pinned shape: the interpreter below (compareBy) and app/page.tsx both rely on it, and the
+    // trailing unique key is what makes pagination deterministic at all.
+    expect(POSTINGS_ORDER_BY).toEqual([{ fraudScore: "desc" }, { title: "asc" }, { workbcId: "asc" }])
+  })
+})
+
+describe("pagination: pages partition the filtered rows and never touch the tab counts", () => {
+  type PagedRow = Row & { workbcId: string; title: string; fraudScore: number }
+
+  // Deliberate ties in fraudScore and title so only the workbcId tiebreaker separates rows.
+  const PAGED: PagedRow[] = [
+    { id: "r1", workbcId: "111", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
+    { id: "r2", workbcId: "222", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-27"), scrapedAt: day("2026-07-29") },
+    { id: "r3", workbcId: "333", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-26"), scrapedAt: day("2026-07-29") },
+    { id: "r4", workbcId: "444", title: "Developer", fraudScore: 55, riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-07-25"), scrapedAt: day("2026-07-29") },
+    { id: "r5", workbcId: "555", title: "Developer", fraudScore: 55, riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-07-24"), scrapedAt: day("2026-07-29") },
+    { id: "r6", workbcId: "666", title: "Barista", fraudScore: 12, riskBand: "low", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-23"), scrapedAt: day("2026-07-29") },
+    { id: "r7", workbcId: "777", title: "Nurse", fraudScore: 5, riskBand: "low", category: "Healthcare", scoredAt: day("2026-07-28"), postedDate: day("2026-07-22"), scrapedAt: day("2026-07-29") },
+    // pending: must appear on no page
+    { id: "rp", workbcId: "888", title: "Cook", fraudScore: 0, riskBand: null, category: "Food Service", scoredAt: null, postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
+  ]
+
+  /** Interpret POSTINGS_ORDER_BY the way the database would (all test values non-null). */
+  function compareBy(orderBy: ReadonlyArray<Record<string, string | undefined>>) {
+    return (a: PagedRow, b: PagedRow): number => {
+      for (const term of orderBy) {
+        const [field, dir] = Object.entries(term)[0]
+        const av = (a as unknown as Record<string, unknown>)[field] as number | string
+        const bv = (b as unknown as Record<string, unknown>)[field] as number | string
+        if (av === bv) continue
+        const cmp = av < bv ? -1 : 1
+        return dir === "asc" ? cmp : -cmp
+      }
+      return 0
+    }
+  }
+
+  /** Mirror of app/page.tsx's data path: whole-corpus counts, paged rows. */
+  function renderPage(filters: { band: BandKey; cat: string; posted: PostedWindowKey }, page: number, pageSize: number) {
+    const q = buildPostingsQuery({ ...filters, now: NOW })
+    const { skip, take } = pageArgs(page, pageSize)
+    const filtered = PAGED.filter((r) => matches(r, q.rowsWhere as Record<string, unknown>))
+    return {
+      bandCounts: Object.fromEntries(
+        BAND_KEYS.map((b) => [b, count(PAGED, { ...(q.bandCountWhere as Record<string, unknown>), riskBand: b })]),
+      ),
+      catCounts: Object.fromEntries(
+        CATS.filter((c) => c !== "all").map((c) => [
+          c,
+          count(PAGED, { ...(q.catCountWhere as Record<string, unknown>), category: c }),
+        ]),
+      ),
+      dateCounts: Object.fromEntries(
+        POSTED_WINDOWS.map((w) => [w.key, count(PAGED, q.postedCountWhere[w.key] as Record<string, unknown>)]),
+      ),
+      filteredTotal: filtered.length,
+      rows: [...filtered].sort(compareBy(POSTINGS_ORDER_BY)).slice(skip, skip + take),
+    }
+  }
+
+  const FILTERS = { band: "all" as BandKey, cat: "all", posted: "any" as PostedWindowKey }
+
+  it("every page of the same filter shows identical tab counts", () => {
+    const pageSize = 2
+    const pages = [1, 2, 3, 4].map((p) => renderPage(FILTERS, p, pageSize))
+    for (const p of pages.slice(1)) {
+      expect(p.bandCounts).toEqual(pages[0].bandCounts)
+      expect(p.catCounts).toEqual(pages[0].catCounts)
+      expect(p.dateCounts).toEqual(pages[0].dateCounts)
+      expect(p.filteredTotal).toBe(pages[0].filteredTotal)
+    }
+  })
+
+  it("pages tile the ordered rows: no overlap, no skips, nothing pending", () => {
+    const pageSize = 2
+    const total = renderPage(FILTERS, 1, pageSize).filteredTotal
+    const pageCount = Math.ceil(total / pageSize)
+    const seen: string[] = []
+    for (let p = 1; p <= pageCount; p++) {
+      const { rows } = renderPage(FILTERS, p, pageSize)
+      expect(rows.length).toBeLessThanOrEqual(pageSize)
+      seen.push(...rows.map((r) => r.workbcId))
+    }
+    // No overlap:
+    expect(new Set(seen).size).toBe(seen.length)
+    // No skips: together the pages are exactly the judged corpus.
+    expect([...seen].sort()).toEqual(
+      PAGED.filter((r) => r.scoredAt !== null).map((r) => r.workbcId).sort(),
+    )
+    // And a page past the end is empty rather than wrapping around.
+    expect(renderPage(FILTERS, pageCount + 1, pageSize).rows).toEqual([])
+  })
+
+  it("ties in score and title stay on a deterministic side of the page boundary", () => {
+    // r1/r2/r3 tie on (fraudScore, title); with pageSize 2 the boundary falls inside the tie.
+    const p1 = renderPage(FILTERS, 1, 2).rows.map((r) => r.workbcId)
+    const p2 = renderPage(FILTERS, 2, 2).rows.map((r) => r.workbcId)
+    expect(p1).toEqual(["111", "222"])
+    expect(p2[0]).toBe("333")
+  })
+
+  it("filtered pages partition too, and their counts still match the rows a tab would list", () => {
+    const filters = { band: "all" as BandKey, cat: "Food Service", posted: "any" as PostedWindowKey }
+    const pageSize = 2
+    const first = renderPage(filters, 1, pageSize)
+    const second = renderPage(filters, 2, pageSize)
+    expect(first.filteredTotal).toBe(4)
+    expect([...first.rows, ...second.rows].map((r) => r.workbcId)).toEqual(["111", "222", "333", "666"])
+    expect(second.bandCounts).toEqual(first.bandCounts)
+    // The count invariant the tabs rely on is untouched by paging: the "high" tab count equals
+    // ALL high rows in this filter, not just the ones on the current page.
+    expect(first.bandCounts.high).toBe(3)
   })
 })
