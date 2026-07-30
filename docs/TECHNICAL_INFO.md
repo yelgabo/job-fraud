@@ -233,7 +233,7 @@ flags feed the score automatically.
 ## Testing & deploy
 
 ```bash
-npm test          # vitest — helpers, parsers, schema, mocked-SDK scoring/verify
+npm test          # vitest — helpers, parsers, schema, mocked-SDK scoring/verify, component render
 npm run build     # prisma generate + next build (full type-check)
 ```
 

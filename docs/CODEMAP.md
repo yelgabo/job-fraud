@@ -187,6 +187,9 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `components/`
 - `ScoreChip.tsx` — colored risk-score badge. `FlagIcons.tsx` — application-flag chips with tooltips
   (incl. `apply_host_mismatch` brand-impersonation).
+- `JobReport.tsx` - the posting detail body shared by `j/[id]/page.tsx` (see that entry for the
+  band-conditional apply-link behavior) and its `/audit` mirror. Render tests colocated in
+  `JobReport.test.tsx`.
 - `EmployerChecks.tsx` - plain-language keyed table of an employer's verification record for the
   posting page; unknown `checks` keys fall back to raw JSON so they surface instead of vanishing.
 - `PaginationNav.tsx` - prev/number/next pager pills with a "Page X of Y" caption; renders nothing
@@ -208,6 +211,7 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   `compare-judge`, `rescan-impersonation`, `backfill-categories`, `backfill-posted-date`, `dev`,
   `build`, `test`) + deps.
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.
+- `vitest.config.ts` - only the `@/` path alias and automatic JSX; everything else is vitest defaults.
 - `railway.json` — Railway deploy (RAILPACK; `prisma db push` then `next start`).
 - `.env.example` — required env vars.
 - `__fixtures__/` — saved WorkBC HTML (only used by the legacy parser tests).
