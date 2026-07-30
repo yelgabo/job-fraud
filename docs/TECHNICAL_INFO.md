@@ -62,8 +62,9 @@ All three filter dimensions are composed in one place, `lib/shared/postings-filt
 dimension's tab counts apply the *other two* filters and not itself, which is what makes the tab
 numbers equal the rows listed underneath them. The posted-date window compares the indexed
 `Job.postedDate`, and falls back to `scrapedAt` for postings whose raw `postedAt` did not parse, so a
-window never silently drops rows. Those rows are shown as `~date (est. from scrape)` rather than as a
-posted date the employer published (`lib/shared/posted-date.ts`).
+window never silently drops rows. Those rows are marked as estimates rather than as a posted date
+the employer published: a compact `~date` (with a footnote) in the list, the full
+`~date (est. from scrape)` label on the posting page (`lib/shared/posted-date.ts`).
 
 ## Data sources (what we gather, and how)
 
@@ -210,7 +211,7 @@ npm run backfill-posted-date -- --apply         # write (publishes with no deplo
 ```
 
 Rows whose raw value is missing, ambiguous or junk keep `postedDate = null` on purpose: the parser
-never guesses a date, and the site shows those postings as `~date (est. from scrape)`.
+never guesses a date, and the site marks those postings' dates as estimates (`~date`).
 
 **Helpers:** `npm run rescore-failed` (re-score `unknown`-band rows) · `npm run reverify-mail`
 (re-verify mail-address employers) · `npm run rescan-impersonation` (corpus sweep for apply-host≠employer
