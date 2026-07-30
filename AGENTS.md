@@ -33,7 +33,8 @@ mean, the caveats) are rendered live on the site's `/about` page (`app/about/pag
 Nearly every script here spends money, hits WorkBC, or writes to the **production** database. There
 is no separate staging DB: `.env`'s `DATABASE_URL` points at the live Railway Postgres, and the
 deployed site reads that database, so **a local script run publishes with no deploy step** (public
-pages are cached with 600 s revalidation, so visitors see it within about 10 minutes). Read
+pages are cached with 600 s revalidation, so visitors see it within about 10 minutes - immediately
+if `REVALIDATE_TOKEN` is set, because scrape/judge/apply then POST `/api/revalidate` on success). Read
 `docs/TECHNICAL_INFO.md` before running any of them, and do not run them
 speculatively to "see what happens".
 
@@ -194,7 +195,8 @@ railway up --service job-fraud --detach
 
 Normal deploys come from GitHub push (the service's source is `yelgabo/job-fraud`). `railway up` is
 only the fallback when auto-deploy does not fire. **Data refreshes never need a deploy** - the site
-serves pages cached up to 10 minutes, so refreshed data appears within the revalidation window.
+serves pages cached up to 10 minutes, so refreshed data appears within the revalidation window (or
+immediately, when the run could call `POST /api/revalidate` with `REVALIDATE_TOKEN` set).
 
 ## `prisma db push --accept-data-loss` runs on every deploy
 

@@ -15,6 +15,7 @@ import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/ai/scoring"
 import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 import { bandFor } from "../lib/shared/risk-band"
+import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
 function parseArgs(): Args {
@@ -216,6 +217,7 @@ async function main() {
   console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} failed) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(`Web-verify tokens: in=${webIn} out=${webOut} | scoring tokens: in=${totalIn} out=${totalOut}`)
+  if (jobs.length > 0 || toWebVerify.length > 0) await requestRevalidation()
   await prisma.$disconnect()
 }
 

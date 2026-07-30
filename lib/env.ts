@@ -21,6 +21,10 @@ const webSchema = z.object({
   // Secret path segment for the unlinked /audit/<token> web-search audit UI. When unset, the
   // audit pages 404 entirely (deny by default). Not in .env.example on purpose — set per-deploy.
   AUDIT_TOKEN: z.string().min(1).optional(),
+  // Secret bearer token for POST /api/revalidate, the on-write cache refresh the CLI scripts
+  // call after a successful run. When unset, the endpoint denies every request (deny by
+  // default) and the public pages refresh only on their 600 s revalidation timer.
+  REVALIDATE_TOKEN: z.string().min(1).optional(),
 })
 
 const scrapeSchema = webSchema.extend({
