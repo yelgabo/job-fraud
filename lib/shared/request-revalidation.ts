@@ -22,9 +22,16 @@ export async function requestRevalidation(): Promise<void> {
     const res = await fetch(url, {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(10_000),
+      // The endpoint warms the common filter combos inline before responding (sequential page
+      // renders against a freshly cleared cache), so allow well beyond a bare revalidate.
+      signal: AbortSignal.timeout(120_000),
     })
-    if (res.ok) console.log("[revalidate] site caches refreshed")
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as { warmed?: number; warmFailed?: number } | null
+      const warmNote =
+        typeof body?.warmed === "number" ? `, warmed ${body.warmed} pages${body.warmFailed ? ` (${body.warmFailed} failed)` : ""}` : ""
+      console.log(`[revalidate] site caches refreshed${warmNote}`)
+    }
     else console.warn(`[revalidate] warning: ${url} responded ${res.status}; the site refreshes on its 600s timer instead`)
   } catch (err) {
     console.warn(

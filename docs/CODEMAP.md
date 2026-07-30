@@ -73,6 +73,9 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `request-revalidation.ts` - `requestRevalidation()`: best-effort POST to the deployed site's
   `/api/revalidate` (bearer `REVALIDATE_TOKEN`, endpoint overridable via `REVALIDATE_URL`) that the
   write-side CLIs call after a successful run; any failure logs one warning and never fails the run.
+- `warm-targets.ts` - `WARM_PATHS`, the bounded list of filter combinations `/api/revalidate`
+  re-warms after clearing the caches (page 1 of each band tab and posted window, `/`, `/companies`),
+  capped by `MAX_WARM_PATHS`.
 - `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
   both producer formats (the JSON API's ISO prefix and the HTML fallback's free text) and mapping
   anything ambiguous or junk to null. `effectivePostedDate()` / `formatPostedDate()` pick the date the
@@ -165,6 +168,8 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 - `api/revalidate/route.ts` - POST-only on-write cache refresh: bearer-token gated by
   `REVALIDATE_TOKEN` (unset ⇒ every request denied), purges `DATA_CACHE_TAG` plus the `/j/[id]` and
   `/e/[id]` ISR pages so an update run is visible immediately instead of after the 600 s window.
+  Then sequentially re-fetches the common filter combos (`lib/shared/warm-targets.ts`) against its
+  own origin so their first visitor gets a cache hit; the response reports how many it warmed.
 - `audit/[token]/page.tsx` + `audit/[token]/[employerId]/page.tsx` — **unlinked, token-gated** internal
   UI to review the raw `web_search` trail (queries → results → verdict) behind each verification.
   `audit/[token]/guard.ts` enforces the `AUDIT_TOKEN` env var (unset ⇒ 404).

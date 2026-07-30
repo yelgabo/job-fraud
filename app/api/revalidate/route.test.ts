@@ -22,8 +22,19 @@ function post(auth?: string) {
   })
 }
 
-beforeEach(() => vi.unstubAllEnvs())
-afterEach(() => vi.unstubAllEnvs())
+// The route warms pages through global fetch after revalidating; every case stubs it so no test
+// ever performs network I/O.
+const fetchMock = vi.fn()
+
+beforeEach(() => {
+  vi.unstubAllEnvs()
+  fetchMock.mockReset().mockResolvedValue(new Response("ok", { status: 200 }))
+  vi.stubGlobal("fetch", fetchMock)
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+})
 
 describe("POST /api/revalidate", () => {
   it("denies when REVALIDATE_TOKEN is unset, even with a plausible bearer token", async () => {
@@ -33,6 +44,7 @@ describe("POST /api/revalidate", () => {
     expect(await res.json()).toEqual({ revalidated: false })
     expect(cache.revalidateTag).not.toHaveBeenCalled()
     expect(cache.revalidatePath).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("denies a wrong token", async () => {
@@ -41,6 +53,7 @@ describe("POST /api/revalidate", () => {
     expect(res.status).toBe(401)
     expect(cache.revalidateTag).not.toHaveBeenCalled()
     expect(cache.revalidatePath).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("denies a missing Authorization header", async () => {
@@ -48,17 +61,42 @@ describe("POST /api/revalidate", () => {
     const res = await route.POST(post())
     expect(res.status).toBe(401)
     expect(cache.revalidateTag).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("revalidates every public surface on the right token", async () => {
+  it("revalidates every public surface on the right token, then warms the common combos", async () => {
     const { route, cache } = await loadRoute("right-token")
     const res = await route.POST(post("Bearer right-token"))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ revalidated: true })
+    const body = await res.json()
+    const { WARM_PATHS } = await import("../../../lib/shared/warm-targets")
+    expect(body.revalidated).toBe(true)
+    expect(body.warmed).toBe(WARM_PATHS.length)
+    expect(body.warmFailed).toBe(0)
+
     const { DATA_CACHE_TAG } = await import("../../../lib/shared/cache-tags")
     expect(cache.revalidateTag).toHaveBeenCalledWith(DATA_CACHE_TAG)
     // Dynamic ISR routes need the explicit 'page' type or revalidatePath is a silent no-op.
     expect(cache.revalidatePath).toHaveBeenCalledWith("/j/[id]", "page")
     expect(cache.revalidatePath).toHaveBeenCalledWith("/e/[id]", "page")
+
+    // Warming happens AFTER the caches are cleared, against the request's own origin, one URL
+    // per warm path and nothing else (no cross-product blowup).
+    expect(fetchMock).toHaveBeenCalledTimes(WARM_PATHS.length)
+    const fetched = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(fetched).toEqual(WARM_PATHS.map((p) => new URL(p, "http://localhost").toString()))
+    expect(cache.revalidateTag.mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0])
+  })
+
+  it("reports warm failures without failing the request", async () => {
+    fetchMock.mockRejectedValue(new Error("connect refused"))
+    const { route } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const { WARM_PATHS } = await import("../../../lib/shared/warm-targets")
+    expect(body.revalidated).toBe(true)
+    expect(body.warmed).toBe(0)
+    expect(body.warmFailed).toBe(WARM_PATHS.length)
   })
 })
