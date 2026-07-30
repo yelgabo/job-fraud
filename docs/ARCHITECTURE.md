@@ -8,9 +8,10 @@ plain-language overview see [../README.md](../README.md).
 
 ## 1. What it is
 
-An automated system that reviews WorkBC (BC's public job board) software/tech postings and rates each
-for signs it **isn't a genuine local hiring effort** — surfacing postings that may exist to
-manufacture "no Canadian available" evidence for immigration (LMIA) rather than to actually hire.
+An automated system that reviews WorkBC (BC's public job board) postings, collected via tech search
+terms plus a city-wide Victoria pass, and rates each for signs it **isn't a genuine local hiring
+effort** — surfacing postings that may exist to manufacture "no Canadian available" evidence for
+immigration (LMIA) rather than to actually hire.
 Output: every posting sorted into **Low / Medium / High** risk with cited reasons.
 
 ## 2. Architecture at a glance — three decoupled parts, one shared database
@@ -42,7 +43,8 @@ Output: every posting sorted into **Low / Medium / High** risk with cited reason
                               ▼
         ┌──────────────────────────────────────────────┐
         │  ③ WEB APP — Next.js, read-only               │
-        │     postings · companies · analysis · audit   │
+        │     postings · companies · analysis ·         │
+        │     about · audit                             │
         └──────────────────────────────────────────────┘
 ```
 
@@ -81,6 +83,9 @@ pipeline). One process writes at a time → no race conditions.
   numbers always match the rows listed (`lib/shared/postings-filter.ts`).
 - **Company** pages (risk mix, web-verdict, its postings).
 - **Analysis** — elevated-risk rate by job type, *by company* and *by posting*.
+- **About** - the methodology page: why postings are reviewed, what the bands mean, the caveats.
+  It renders the README's plain-language sections (`lib/shared/methodology.ts`); README.md owns the
+  wording.
 - **Audit** (internal, token-gated) — the raw web-search trail behind every verdict.
 
 ## 6. Data model (3 tables)
@@ -96,7 +101,8 @@ pipeline). One process writes at a time → no race conditions.
 
 Next.js 15 (App Router, server components) · Prisma + PostgreSQL (Railway) · Claude
 (`haiku-4-5` for bulk, `opus-4-8` for impersonation reasoning, with the server-side `web_search`
-tool) · zod (validation) · p-limit (concurrency) · Vitest (119 tests).
+tool) · zod (validation) · p-limit (concurrency) · marked (README-to-`/about` rendering) · Vitest
+(unit tests, `npm test`).
 
 ## 8. Why it's built this way (talking points)
 
