@@ -8,7 +8,7 @@ const DEFAULT_ENDPOINT = "https://job-fraud-production.up.railway.app/api/revali
  * Best-effort by design: the timed revalidation is the backstop, so a data run must never fail
  * on this. Every failure path logs one warning line and returns. The token is never printed.
  *
- * Env: REVALIDATE_TOKEN (skip silently-ish when unset — the endpoint would deny anyway) and
+ * Env: REVALIDATE_TOKEN (skipped with a note when unset - the endpoint would deny anyway) and
  * REVALIDATE_URL to point somewhere other than production (e.g. a local dev server).
  */
 export async function requestRevalidation(): Promise<void> {

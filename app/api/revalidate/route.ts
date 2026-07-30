@@ -12,7 +12,7 @@ function tokenMatches(given: string, expected: string): boolean {
 }
 
 /**
- * POST /api/revalidate — refresh every public cached surface now instead of waiting out the
+ * POST /api/revalidate - refresh every public cached surface now instead of waiting out the
  * 600 s revalidation window. Called by the write-side CLI scripts (scrape, judge, judge:apply)
  * at the end of a successful run; the timer remains the backstop when this is never called.
  *
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 
   // The list/aggregate pages ('/', '/companies', '/analysis') cache at the data layer under one
   // shared tag; the per-URL ISR pages are marked stale across all their instances by passing the
-  // route pattern with the explicit 'page' type (required for dynamic routes — see
+  // route pattern with the explicit 'page' type (required for dynamic routes - see
   // node_modules/next/dist/server/web/spec-extension/revalidate.js).
   revalidateTag(DATA_CACHE_TAG)
   revalidatePath("/j/[id]", "page")

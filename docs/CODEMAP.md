@@ -68,9 +68,9 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `WebVerificationSchema`, `SignalsSchema`, `parseFlags`/`parseChecks`/`parseSignals`). **Must stay
   free of the Anthropic SDK** so the web app can import it.
 - `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
-- `cache-tags.ts` — `DATA_CACHE_TAG`, the shared tag on every public-page `unstable_cache` read so
+- `cache-tags.ts` - `DATA_CACHE_TAG`, the shared tag on every public-page `unstable_cache` read so
   `POST /api/revalidate` can purge them all with one `revalidateTag`.
-- `request-revalidation.ts` — `requestRevalidation()`: best-effort POST to the deployed site's
+- `request-revalidation.ts` - `requestRevalidation()`: best-effort POST to the deployed site's
   `/api/revalidate` (bearer `REVALIDATE_TOKEN`, endpoint overridable via `REVALIDATE_URL`) that the
   write-side CLIs call after a successful run; any failure logs one warning and never fails the run.
 - `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
@@ -162,7 +162,7 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   first, paginated at 50 (ordering in `lib/shared/companies-query.ts`).
 - `analysis/page.tsx` — elevated-risk rate by job-type category, **by company** (each employer by its
   worst posting) and **by posting**, plus an "unverifiable" (businessMatch=mismatch) stat. Nav-linked.
-- `api/revalidate/route.ts` — POST-only on-write cache refresh: bearer-token gated by
+- `api/revalidate/route.ts` - POST-only on-write cache refresh: bearer-token gated by
   `REVALIDATE_TOKEN` (unset ⇒ every request denied), purges `DATA_CACHE_TAG` plus the `/j/[id]` and
   `/e/[id]` ISR pages so an update run is visible immediately instead of after the 600 s window.
 - `audit/[token]/page.tsx` + `audit/[token]/[employerId]/page.tsx` — **unlinked, token-gated** internal
