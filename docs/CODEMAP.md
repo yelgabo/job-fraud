@@ -70,12 +70,15 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
 - `cache-tags.ts` - `DATA_CACHE_TAG`, the shared tag on every public-page `unstable_cache` read so
   `POST /api/revalidate` can purge them all with one `revalidateTag`.
-- `request-revalidation.ts` - `requestRevalidation()`: best-effort POST to the deployed site's
-  `/api/revalidate` (bearer `REVALIDATE_TOKEN`, endpoint overridable via `REVALIDATE_URL`) that the
-  write-side CLIs call after a successful run; any failure logs one warning and never fails the run.
-- `warm-targets.ts` - `WARM_PATHS`, the bounded list of filter combinations `/api/revalidate`
-  re-warms after clearing the caches (page 1 of each band tab and posted window, `/`, `/companies`),
-  capped by `MAX_WARM_PATHS`.
+- `request-revalidation.ts` - `requestRevalidation()`: best-effort pair of POSTs to the deployed
+  site's `/api/revalidate` (bearer `REVALIDATE_TOKEN`, endpoint overridable via `REVALIDATE_URL`)
+  that the write-side CLIs call after a successful run: first the purge (10 s timeout), then
+  `?phase=warm` (120 s timeout) once the purge response is back, because the purge only takes
+  effect after its handler resolves. A failed purge skips the warm phase; any failure logs one
+  warning and never fails the run.
+- `warm-targets.ts` - `WARM_PATHS`, the bounded list of filter combinations the warm phase of
+  `/api/revalidate` re-renders after the purge (page 1 of each band tab and posted window, `/`,
+  `/companies`), capped by `MAX_WARM_PATHS`.
 - `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
   both producer formats (the JSON API's ISO prefix and the HTML fallback's free text) and mapping
   anything ambiguous or junk to null. `effectivePostedDate()` / `formatPostedDate()` pick the date the
@@ -165,11 +168,14 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   first, paginated at 50 (ordering in `lib/shared/companies-query.ts`).
 - `analysis/page.tsx` — elevated-risk rate by job-type category, **by company** (each employer by its
   worst posting) and **by posting**, plus an "unverifiable" (businessMatch=mismatch) stat. Nav-linked.
-- `api/revalidate/route.ts` - POST-only on-write cache refresh: bearer-token gated by
-  `REVALIDATE_TOKEN` (unset ⇒ every request denied), purges `DATA_CACHE_TAG` plus the `/j/[id]` and
-  `/e/[id]` ISR pages so an update run is visible immediately instead of after the 600 s window.
-  Then sequentially re-fetches the common filter combos (`lib/shared/warm-targets.ts`) against its
-  own origin so their first visitor gets a cache hit; the response reports how many it warmed.
+- `api/revalidate/route.ts` - POST-only on-write cache refresh in two token-gated phases (bearer
+  `REVALIDATE_TOKEN`, unset ⇒ every request denied). The bare POST purges `DATA_CACHE_TAG` plus the
+  `/j/[id]` and `/e/[id]` ISR pages so an update run is visible immediately instead of after the
+  600 s window. `POST ?phase=warm` then sequentially re-fetches the common filter combos
+  (`lib/shared/warm-targets.ts`) against its own origin so their first visitor gets a cache hit,
+  reporting warmed/failed counts and per-path timings. Two requests because Next defers
+  `revalidateTag`/`revalidatePath` until after the handler resolves: a same-request warm renders
+  against the old cache and is wiped when the queued purge lands.
 - `audit/[token]/page.tsx` + `audit/[token]/[employerId]/page.tsx` — **unlinked, token-gated** internal
   UI to review the raw `web_search` trail (queries → results → verdict) behind each verification.
   `audit/[token]/guard.ts` enforces the `AUDIT_TOKEN` env var (unset ⇒ 404).
