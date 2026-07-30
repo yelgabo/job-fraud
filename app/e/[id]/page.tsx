@@ -52,6 +52,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
   if (!employer) notFound()
 
   const checks = parseChecks(employer.checks)
+  const anyExpired = employer.jobs.some((job) => isExpired(job.lastSeenAt, latest._max.lastSeenAt))
 
   return (
     <div className="space-y-6">
@@ -172,6 +173,11 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
             })}
           </ul>
         </div>
+        {anyExpired ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            A greyed-out row is a posting our scans no longer find listed on WorkBC.
+          </p>
+        ) : null}
       </section>
     </div>
   )

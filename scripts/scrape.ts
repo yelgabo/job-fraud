@@ -7,7 +7,7 @@ import { detectFlags } from "../lib/signals/application-flags"
 import { parseNocGroup, categoryForNoc } from "../lib/signals/job-category"
 import { normalizeEmployer } from "../lib/signals/normalize-employer"
 import { parsePostedDate } from "../lib/shared/posted-date"
-import { stampSightings } from "../lib/shared/last-seen"
+import { isExhaustiveEnumeration, stampSightings, type ScrapeEnumeration } from "../lib/shared/last-seen"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { searchJobsApi, fetchJobDetailApi, cityLocation } from "../lib/workbc/workbc-api"
 import { JsonlLogger } from "./logger"
@@ -70,6 +70,9 @@ async function main() {
     if (locations.length) console.log(`[scrape] --location: ${locations.map((l) => l.City).join(", ")}`)
     if (args.recent) console.log(`[scrape] --recent: only postings from the last ${args.recent === 1 ? "day" : "week"}`)
     const byId = new Map<string, JobStub>()
+    // A search that hits the stub cap may have stopped before enumerating the whole result set,
+    // which disqualifies the run from sighting-stamping (see below).
+    let truncated = false
     for (const term of terms) {
       log.log({ stage: "search:start", ok: true, meta: { term } })
       const found = await searchJobsApi(
@@ -79,9 +82,13 @@ async function main() {
         args.recent,
         locations,
       )
+      if (found.length >= target) truncated = true
       for (const s of found) if (!byId.has(s.workbcId)) byId.set(s.workbcId, s)
       console.log(`[search] "${term}": ${found.length} stubs (running total ${byId.size})`)
-      if (byId.size >= target) break
+      if (byId.size >= target) {
+        truncated = true
+        break
+      }
     }
     let stubs = [...byId.values()].slice(0, target)
     log.log({ stage: "search:done", ok: stubs.length > 0, meta: { stubCount: stubs.length } })
@@ -92,15 +99,31 @@ async function main() {
     }
     console.log(`[search] processing ${stubs.length} stubs`)
 
-    // Sighting stamp: every id the search enumerated is currently listed on WorkBC, so
-    // bulk-mark the ones already in the DB as seen BEFORE --skip-existing drops them - zero
-    // extra detail fetches. This feeds the site's "no longer listed" state
-    // (lib/shared/last-seen.ts); new postings get the same stamp via the upsert fields below.
+    // Sighting stamp: only an exhaustive enumeration may write lastSeenAt anywhere - the bulk
+    // stamp here AND the upsert field below. A partial run (--recent, a capped collection, or a
+    // scope narrower than the BC-wide term set plus the Victoria city sweep) proves nothing
+    // about postings it never asked WorkBC for; stamping from it would advance the
+    // max(lastSeenAt) expiry reference while freezing everything outside its window, falsely
+    // expiring still-listed postings (lib/shared/last-seen.ts). On an exhaustive run the stamp
+    // covers the ids already in the DB BEFORE --skip-existing drops them (zero extra detail
+    // fetches); new postings get the same stamp via the upsert fields below.
+    const enumeration: ScrapeEnumeration = {
+      recentFilter: args.recent > 0,
+      truncated,
+      bcWideTermScope: locations.length === 0 && args.searchTerms === null,
+      victoriaCityScope: locations.some((l) => l.City.toLowerCase() === "victoria") && terms.includes(""),
+    }
+    const exhaustive = isExhaustiveEnumeration(enumeration)
     const seenAt = new Date()
     if (!args.dryRun) {
-      const stamped = await stampSightings(prisma, [...byId.keys()], seenAt)
-      console.log(`[scrape] lastSeenAt: stamped ${stamped} already-known postings`)
-      log.log({ stage: "seen:stamp", ok: true, meta: { stamped } })
+      const stamped = await stampSightings(prisma, enumeration, [...byId.keys()], seenAt)
+      if (stamped === null) {
+        console.log(`[scrape] lastSeenAt: not stamped - partial enumeration (--recent, capped, or scoped runs never advance the expiry reference)`)
+        log.log({ stage: "seen:skip", ok: true, meta: enumeration })
+      } else {
+        console.log(`[scrape] lastSeenAt: stamped ${stamped} already-known postings`)
+        log.log({ stage: "seen:stamp", ok: true, meta: { stamped } })
+      }
     }
 
     // Incremental mode: drop postings already in the DB so we only fetch detail for new ones.
@@ -201,7 +224,7 @@ async function main() {
               nocCode,
               nocGroup,
               category: categoryForNoc(nocCode),
-              lastSeenAt: seenAt,
+              lastSeenAt: exhaustive ? seenAt : undefined,
             }
             await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update: fields })
             written++

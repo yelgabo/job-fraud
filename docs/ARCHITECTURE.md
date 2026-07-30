@@ -94,8 +94,9 @@ pipeline). One process writes at a time → no race conditions.
 - **Job** — posting facts, deterministic flags, NOC/category, ATS, and the AI score / band /
   reasoning / signals (nullable until judged). Posted date is stored twice: `postedAt` is the raw
   string each producer wrote, `postedDate` is the parsed, indexed date the posted-date filter uses
-  (null when the raw value is missing, ambiguous or junk). `lastSeenAt` records the last scrape
-  sighting and drives the site's muted "no longer listed" state (`lib/shared/last-seen.ts`); null
+  (null when the raw value is missing, ambiguous or junk). `lastSeenAt` records the last sighting
+  by an exhaustive scrape (partial runs never stamp it) and drives the site's muted "no longer
+  listed" state (`lib/shared/last-seen.ts`); null
   means the row predates sighting tracking and is never presented as expired.
 - **EmployerWebSearchLog** — append-only audit trail of every web search behind a verdict.
 

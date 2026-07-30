@@ -81,7 +81,10 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `/companies`), capped by `MAX_WARM_PATHS`.
 - `last-seen.ts` - posting lifecycle: `EXPIRY_DAYS` (14 = two missed weekly sweeps), `isExpired()`
   (against the corpus-wide `max(lastSeenAt)`, never the wall clock; null `lastSeenAt` = "not yet
-  tracked", never expired) and `stampSightings()`, the scrape's bulk `lastSeenAt` writer. Captain
+  tracked", never expired), `isExhaustiveEnumeration()` (a run may stamp sightings only with no
+  `--recent` window, no cap truncation, and full corpus scope - BC-wide terms plus the Victoria
+  city sweep; partial runs write `lastSeenAt` nowhere) and `stampSightings()`, the scrape's bulk
+  `lastSeenAt` writer, which refuses non-exhaustive runs. Captain
   decision 2026-07-30: expired postings stay listed and counted, only visually muted.
 - `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
   both producer formats (the JSON API's ISO prefix and the HTML fallback's free text) and mapping
@@ -126,9 +129,12 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `scripts/` — CLI entry points
 
 - `scrape.ts` — **Phase 1 (collect).** API search + detail + flags + NOC category + ATS classify →
-  upsert pending postings. Every non-dry-run pass also bulk-stamps `Job.lastSeenAt` on all ids the
-  search enumerated, before `--skip-existing` drops the known ones (zero extra detail fetches; feeds
-  the site's "no longer listed" state, `lib/shared/last-seen.ts`). Flags: `--search-terms`, `--location` (WorkBC server-side city filter;
+  upsert pending postings. An exhaustive non-dry-run pass (no `--recent`, not capped, full corpus
+  scope; `isExhaustiveEnumeration()` in `lib/shared/last-seen.ts`) also bulk-stamps `Job.lastSeenAt`
+  on all ids the search enumerated, before `--skip-existing` drops the known ones (zero extra detail
+  fetches; feeds the site's "no longer listed" state); a partial pass - including every current
+  scheduled pass - skips the stamp and omits `lastSeenAt` from the upsert, so it can never falsely
+  expire anything. Flags: `--search-terms`, `--location` (WorkBC server-side city filter;
   with `--search-terms ""` it sweeps every occupation in that city, not just tech), `--limit`,
   `--concurrency`, `--dry-run`, `--skip-existing` (alias `--new-only`: fetch detail only for new
   `workbcId`s), `--recent day|week` (ask WorkBC server-side for only recently-posted jobs, the cheap

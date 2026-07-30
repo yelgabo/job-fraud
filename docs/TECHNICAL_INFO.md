@@ -67,9 +67,16 @@ window never silently drops rows. Those rows are marked as estimates rather than
 the employer published: a compact `~date` (with a footnote) in the list, the full
 `~date (est. from scrape)` label on the posting page (`lib/shared/posted-date.ts`).
 
-**Posting lifecycle.** Every scrape pass bulk-stamps `Job.lastSeenAt` on all the workbcIds its
-search enumerated (before `--skip-existing` drops the known ones, so it costs nothing extra). A
-posting unseen for more than `EXPIRY_DAYS` (14) relative to the corpus-wide newest sighting - not
+**Posting lifecycle.** Only an exhaustive scrape may write `Job.lastSeenAt`: no `--recent`
+window, stub collection not truncated by the `--limit`/default cap, and a scope covering the
+full corpus (the BC-wide term set plus the Victoria city sweep) - the predicate is
+`isExhaustiveEnumeration()` in `lib/shared/last-seen.ts`. Such a run bulk-stamps the workbcIds
+its search enumerated (before `--skip-existing` drops the known ones, so it costs nothing
+extra). A partial run writes `lastSeenAt` nowhere - neither the bulk stamp nor the upsert - so
+it can never advance the expiry reference or falsely expire a posting it simply did not ask
+about; the scheduled `--recent`/city passes therefore never stamp, and expiry stays dormant
+until a deliberate exhaustive sweep runs. A posting unseen for more than `EXPIRY_DAYS` (14)
+relative to the corpus-wide newest sighting - not
 the wall clock, so a paused scraper expires nothing - is presented as expired: "No longer listed
 on WorkBC (last seen {date})" on the posting page with a de-emphasized Apply link, and a muted
 row in the lists. Expired postings stay fully listed and counted (owner decision: muted, never
