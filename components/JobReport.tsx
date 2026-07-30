@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { Employer, Job } from "@prisma/client"
 import { parseFlags, parseSignals, parseChecks } from "@/lib/shared/json-schemas"
+import { bandFor } from "@/lib/shared/risk-band"
 import { effectivePostedDate, formatPostedDate } from "@/lib/shared/posted-date"
 import { humanizeSignalLabel } from "@/lib/shared/signal-labels"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
@@ -17,6 +18,10 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
   const flags = parseFlags(job.applicationFlags)
   const checks = job.employer ? parseChecks(job.employer.checks) : {}
   const posted = effectivePostedDate({ postedDate: job.postedDate, scrapedAt: job.scrapedAt })
+  // High-band postings keep their apply link but lose its prominence: the verdict below
+  // distrusts that URL, so the button must not out-shout the rating. Derived from the score
+  // like ScoreChip does, so chip colour and warning can never disagree.
+  const highRisk = bandFor(job.fraudScore ?? 0) === "high"
 
   return (
     <div className="space-y-6">
@@ -64,7 +69,11 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
                   target="_blank"
                   rel="noopener noreferrer"
                   title={job.externalApplyHost ?? undefined}
-                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                  className={
+                    highRisk
+                      ? "rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+                      : "rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                  }
                 >
                   Apply ↗
                 </a>
@@ -88,6 +97,15 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
               </a>
             )}
           </div>
+          {job.externalApplyUrl && highRisk && (
+            <p className="max-w-60 text-right text-xs text-red-700">
+              This posting is rated High risk.{" "}
+              <Link href={`/about#${RATING_ANCHOR}`} className="underline hover:text-red-900">
+                Review the assessment
+              </Link>{" "}
+              before applying.
+            </p>
+          )}
           {job.externalApplyHost && (
             <p className="text-xs text-zinc-400">
               applies via {job.externalApplyHost}

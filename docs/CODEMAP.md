@@ -162,7 +162,10 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   `docs/superpowers/specs/2026-07-29-pagination-and-caching-design.md`.
 - `j/[id]/page.tsx` — one posting: verdict, weighted signals (plain-language labels via
   `lib/shared/signal-labels.ts`), evidence, posted + reviewed-on dates, keyed employer-checks table,
-  + a primary **Apply ↗** link to the real apply URL (host shown) when the posting routes externally.
+  + an **Apply ↗** link to the real apply URL (host shown) when the posting routes externally.
+  On High-band postings that link drops to outline styling with a warning line pointing at the
+  /about methodology page (band derived from the score in `components/JobReport.tsx`); on Low and
+  Medium it stays the primary button. The WorkBC source link is unaffected by band.
 - `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings.
 - `companies/page.tsx` — companies with judged postings, risk mix + top score, most-suspicious
   first, paginated at 50 (ordering in `lib/shared/companies-query.ts`).
