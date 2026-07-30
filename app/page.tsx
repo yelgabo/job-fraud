@@ -1,22 +1,31 @@
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseFlags } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { FlagIcons } from "@/components/FlagIcons"
+import { PaginationNav } from "@/components/PaginationNav"
 import { CATEGORIES } from "@/lib/signals/job-category"
 import { effectivePostedDate } from "@/lib/shared/posted-date"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import {
   BANDS,
+  PAGE_SIZE,
   POSTED_WINDOWS,
+  POSTINGS_ORDER_BY,
   buildPostingsQuery,
+  pageArgs,
   parseBand,
+  parsePage,
   parsePostedWindow,
   type BandKey,
   type PostedWindowKey,
 } from "@/lib/shared/postings-filter"
 import { cn } from "@/lib/utils"
 
+// Reading searchParams makes this route render dynamically per request, so route-level
+// `revalidate` cannot cache it; the time-based cache lives on loadPostings below instead, keyed
+// per (band, cat, posted, page) combination.
 export const dynamic = "force-dynamic"
 
 function tabClass(active: boolean) {
@@ -26,22 +35,23 @@ function tabClass(active: boolean) {
   )
 }
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ band?: string; cat?: string; posted?: string }>
-}) {
-  const { band, cat, posted } = await searchParams
-  const active: BandKey = parseBand(band)
-  const activeCat: string = (CATEGORIES as readonly string[]).includes(cat ?? "") ? (cat as string) : "all"
-  const activePosted: PostedWindowKey = parsePostedWindow(posted)
+/**
+ * Everything one render of the postings list needs, fetched in one place and fully serializable
+ * (the cache stores JSON, so a Date would come back a string on a hit). The tab counts are
+ * whole-corpus aggregates composed in lib/shared/postings-filter.ts; only the row query is paged.
+ * Do not add skip/take to any count query: the tab numbers must not change as the visitor pages
+ * through the rows under them.
+ *
+ * unstable_cache keys on its arguments, so each (band, cat, posted, page) combination is its own
+ * entry, each serving up to 10 minutes stale. That staleness is accepted for visitors; the
+ * token-gated /audit pages stay uncached.
+ */
+const loadPostings = unstable_cache(loadPostingsUncached, ["postings-list"], { revalidate: 600 })
 
-  // Only judged postings; each of the three dimensions' counts reflect the OTHER TWO active
-  // filters, so the tab numbers always match the rows listed below them. Composed and tested in
-  // lib/shared/postings-filter.ts - do not inline these clauses back into the page.
-  const q = buildPostingsQuery({ band: active, cat: activeCat, posted: activePosted, now: new Date() })
+async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWindowKey, page: number) {
+  const q = buildPostingsQuery({ band, cat, posted, now: new Date() })
 
-  const [grouped, catGrouped, postedCounts, total, scored, agg, rows] = await Promise.all([
+  const [grouped, catGrouped, postedCounts, total, scored, agg, filteredTotal, rows] = await Promise.all([
     prisma.job.groupBy({ by: ["riskBand"], _count: true, where: q.bandCountWhere }),
     prisma.job.groupBy({ by: ["category"], _count: true, where: q.catCountWhere }),
     Promise.all(
@@ -52,10 +62,21 @@ export default async function HomePage({
     prisma.job.count({ where: { scoredAt: { not: null } } }),
     prisma.job.count({ where: { scoredAt: { not: null }, riskBand: { in: ["high", "medium", "low"] } } }),
     prisma.job.aggregate({ _max: { scrapedAt: true } }),
+    prisma.job.count({ where: q.rowsWhere }),
     prisma.job.findMany({
       where: q.rowsWhere,
-      orderBy: [{ fraudScore: "desc" }, { title: "asc" }],
-      include: { employer: true },
+      orderBy: POSTINGS_ORDER_BY,
+      ...pageArgs(page),
+      select: {
+        workbcId: true,
+        title: true,
+        location: true,
+        fraudScore: true,
+        applicationFlags: true,
+        postedDate: true,
+        scrapedAt: true,
+        employer: { select: { id: true, nameDisplay: true } },
+      },
     }),
   ])
 
@@ -67,25 +88,62 @@ export default async function HomePage({
   for (const g of catGrouped) if (g.category) catCounts[g.category] = g._count
   const catAll = catGrouped.reduce((n, g) => n + g._count, 0)
 
-  const dateCounts = Object.fromEntries(postedCounts) as Record<PostedWindowKey, number>
+  return {
+    counts,
+    catCounts,
+    catAll,
+    dateCounts: Object.fromEntries(postedCounts) as Record<PostedWindowKey, number>,
+    total,
+    scored,
+    lastScraped: agg._max.scrapedAt?.toISOString() ?? null,
+    filteredTotal,
+    rows: rows.map((job) => {
+      const p = effectivePostedDate({ postedDate: job.postedDate, scrapedAt: job.scrapedAt })
+      return {
+        workbcId: job.workbcId,
+        title: job.title,
+        location: job.location,
+        fraudScore: job.fraudScore,
+        flags: parseFlags(job.applicationFlags),
+        employerId: job.employer?.id ?? null,
+        employerName: job.employer?.nameDisplay ?? null,
+        day: p.day,
+        estimated: p.estimated,
+      }
+    }),
+  }
+}
 
-  const lastScraped = agg._max.scrapedAt
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ band?: string; cat?: string; posted?: string; page?: string }>
+}) {
+  const { band, cat, posted, page } = await searchParams
+  const active: BandKey = parseBand(band)
+  const activeCat: string = (CATEGORIES as readonly string[]).includes(cat ?? "") ? (cat as string) : "all"
+  const activePosted: PostedWindowKey = parsePostedWindow(posted)
+  const activePage = parsePage(page)
 
-  // Build a href preserving the other two active filters.
-  const hrefFor = (nextBand: BandKey, nextCat: string, nextPosted: PostedWindowKey) => {
+  const { counts, catCounts, catAll, dateCounts, total, scored, lastScraped, filteredTotal, rows } =
+    await loadPostings(active, activeCat, activePosted, activePage)
+
+  const pageCount = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))
+
+  // Build a href preserving the other active dimensions. Changing any filter resets to page 1 so
+  // a visitor is never dropped past the end of a shorter result set.
+  const hrefFor = (nextBand: BandKey, nextCat: string, nextPosted: PostedWindowKey, nextPage = 1) => {
     const p = new URLSearchParams()
     if (nextBand !== "all") p.set("band", nextBand)
     if (nextCat !== "all") p.set("cat", nextCat)
     if (nextPosted !== "any") p.set("posted", nextPosted)
+    if (nextPage > 1) p.set("page", String(nextPage))
     const qs = p.toString()
     return qs ? `/?${qs}` : "/"
   }
+  const pageHref = (n: number) => hrefFor(active, activeCat, activePosted, n)
 
-  const listed = rows.map((job) => ({
-    job,
-    posted: effectivePostedDate({ postedDate: job.postedDate, scrapedAt: job.scrapedAt }),
-  }))
-  const anyEstimated = listed.some((r) => r.posted.estimated)
+  const anyEstimated = rows.some((r) => r.estimated)
 
   return (
     <div>
@@ -133,11 +191,20 @@ export default async function HomePage({
         ))}
       </nav>
 
-      {listed.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center text-zinc-500">
-          {total === 0
-            ? "No postings yet. Run the scraper (npm run scrape) to populate the database."
-            : "No postings match this filter."}
+          {total === 0 ? (
+            "No postings yet. Run the scraper (npm run scrape) to populate the database."
+          ) : filteredTotal === 0 ? (
+            "No postings match this filter."
+          ) : (
+            <>
+              Nothing on page {activePage}.{" "}
+              <Link href={pageHref(1)} className="underline hover:text-zinc-900">
+                Back to page 1
+              </Link>
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -154,7 +221,7 @@ export default async function HomePage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {listed.map(({ job, posted: p }) => (
+                {rows.map((job) => (
                   <tr key={job.workbcId} className="hover:bg-zinc-50">
                     <td className="px-4 py-3 align-top">
                       <ScoreChip score={job.fraudScore ?? 0} />
@@ -165,9 +232,9 @@ export default async function HomePage({
                       </Link>
                     </td>
                     <td className="px-4 py-3 align-top text-zinc-600">
-                      {job.employer ? (
-                        <Link href={`/e/${job.employer.id}`} className="hover:underline">
-                          {job.employer.nameDisplay}
+                      {job.employerId ? (
+                        <Link href={`/e/${job.employerId}`} className="hover:underline">
+                          {job.employerName}
                         </Link>
                       ) : (
                         <span className="italic text-zinc-400">employer hidden</span>
@@ -175,20 +242,20 @@ export default async function HomePage({
                     </td>
                     <td className="px-4 py-3 align-top text-zinc-600">{job.location ?? "—"}</td>
                     <td className="px-4 py-3 align-top text-zinc-600">
-                      {p.estimated ? (
+                      {job.estimated ? (
                         <span
                           title="This posting has no usable posted date. Estimated from the date it was scraped."
                           className="text-zinc-500"
                         >
-                          <span className="whitespace-nowrap tabular-nums">~{p.day}</span>{" "}
+                          <span className="whitespace-nowrap tabular-nums">~{job.day}</span>{" "}
                           <span className="whitespace-nowrap text-xs italic text-zinc-400">(est. from scrape)</span>
                         </span>
                       ) : (
-                        <span className="whitespace-nowrap tabular-nums">{p.day}</span>
+                        <span className="whitespace-nowrap tabular-nums">{job.day}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <FlagIcons flags={parseFlags(job.applicationFlags)} />
+                      <FlagIcons flags={job.flags} />
                     </td>
                   </tr>
                 ))}
@@ -203,6 +270,12 @@ export default async function HomePage({
           ) : null}
         </>
       )}
+      <PaginationNav
+        page={activePage}
+        pageCount={pageCount}
+        hrefFor={pageHref}
+        summary={`${filteredTotal} postings`}
+      />
     </div>
   )
 }

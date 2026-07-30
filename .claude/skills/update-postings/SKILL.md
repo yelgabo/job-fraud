@@ -12,8 +12,9 @@ big": pick the path by the key predicate in step 2 and run waves until drained. 
 a stop condition — a larger pending count just means more waves, and applying verdicts after
 every wave means progress is never lost if the session is interrupted. Report cost/count
 when done, not as a question before starting. The
-deployed site reads the production DB live — **no deploy or push is ever needed for a data
-update**. Run from the `job-fraud` project directory.
+deployed site reads the production DB: **no deploy or push is ever needed for a data
+update**, but public pages are cached with 600 s revalidation, so visitors see new results
+within about 10 minutes, not instantly. Run from the `job-fraud` project directory.
 
 ## Credentials
 

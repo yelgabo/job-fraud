@@ -1,9 +1,13 @@
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { CATEGORIES } from "@/lib/signals/job-category"
 
+// force-dynamic keeps this page out of build-time prerendering: the Railway builder has no
+// private-network route to the database, so a static build would fail the deploy. The time-based
+// cache lives on loadAnalysis below instead.
 export const dynamic = "force-dynamic"
 
 const pct = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0)
@@ -29,7 +33,13 @@ function Bar({ t }: { t: Tally }) {
   )
 }
 
-export default async function AnalysisPage() {
+/**
+ * All of the page's aggregates, computed once and cached (serializable output only: the cache
+ * stores JSON). Served up to 10 minutes stale, which is accepted for visitors.
+ */
+const loadAnalysis = unstable_cache(loadAnalysisUncached, ["analysis-page"], { revalidate: 600 })
+
+async function loadAnalysisUncached() {
   const [postingGroups, companyJobs, employers] = await Promise.all([
     prisma.job.groupBy({ by: ["category", "riskBand"], _count: true, where: { scoredAt: { not: null } } }),
     prisma.job.findMany({
@@ -92,9 +102,6 @@ export default async function AnalysisPage() {
     if (bm === "mismatch") webMismatch++
   }
 
-  const elev = (t: Tally) => pct(t.medium + t.high, t.total)
-  const high = (t: Tally) => pct(t.high, t.total)
-
   // By-company category rows, sorted by company elevated-rate desc.
   const compRows = [...compCat.entries()]
     .map(([cat, t]) => ({ cat, t, post: postCat.get(cat) ?? emptyTally() }))
@@ -105,6 +112,16 @@ export default async function AnalysisPage() {
     .map(([cat, t]) => ({ cat, t }))
     .filter((r) => r.t.total > 0)
     .sort((a, b) => elev(b.t) - elev(a.t))
+
+  return { postOverall, compOverall, webMismatch, webChecked, compRows, postRows }
+}
+
+const elev = (t: Tally) => pct(t.medium + t.high, t.total)
+const high = (t: Tally) => pct(t.high, t.total)
+
+export default async function AnalysisPage() {
+  const { postOverall, compOverall, webMismatch, webChecked, compRows, postRows } =
+    await loadAnalysis()
 
   return (
     <div className="space-y-8">

@@ -5,7 +5,14 @@ import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
 
-export const dynamic = "force-dynamic"
+// Rendered on demand per employer, then cached up to 10 minutes; a re-judged verdict appears
+// within that window. The empty generateStaticParams opts the route into on-demand static
+// generation without prerendering any path, so the build never queries the database (the Railway
+// builder has no private-network route to Postgres).
+export const revalidate = 600
+export function generateStaticParams(): Array<{ id: string }> {
+  return []
+}
 
 function ReachBadge({ value }: { value: boolean | null | undefined }) {
   if (value === true) return <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">✓ reachable</span>

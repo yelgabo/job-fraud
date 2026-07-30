@@ -77,7 +77,13 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `parseBand()` / `parsePostedWindow()`, and `buildPostingsQuery()`, which builds the row query plus
   one count clause per dimension. **Each dimension's counts apply the other two filters and not
   itself**, which is what keeps the tab numbers equal to the rows listed. Adding a fourth filter
-  dimension means changing this one function, not the page.
+  dimension means changing this one function, not the page. Also owns pagination: `PAGE_SIZE` (50),
+  `parsePage()`, `pageArgs()` (skip/take), and `POSTINGS_ORDER_BY`, whose unique `workbcId`
+  tiebreaker keeps ties from straddling page boundaries. Only the row query pages; counts stay
+  whole-corpus (pinned in `postings-filter.test.ts`).
+- `companies-query.ts` - `orderEmployerAggs()`: sorts the per-employer judged-postings aggregates
+  for `/companies` (worst score, then count, then unique `employerId` tiebreaker) so the page can
+  fetch full employer rows only for the 50 shown.
 - `posted-date-backfill.ts` - the pure half of `scripts/backfill-posted-date.ts`: `parseBackfillArgs()`
   (dry run unless `--apply`), `planBackfill()` (what a run would change, without a DB) and
   `groupWrites()` (collapse writes into one `updateMany` per distinct date).
@@ -140,12 +146,15 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   `marked` + slugged heading ids so score surfaces can deep-link `#how-each-posting-is-rated`.
 - `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`) × posted-date
   windows (`?posted=`: `any` / `7` / `30` / `90`), table of judged postings with each row's posted
-  date. Every clause comes from `lib/shared/postings-filter.ts`; the page only renders.
+  date, paginated at 50 rows (`?page=`). Every clause comes from `lib/shared/postings-filter.ts`;
+  the page only renders. Cache semantics for all public pages:
+  `docs/superpowers/specs/2026-07-29-pagination-and-caching-design.md`.
 - `j/[id]/page.tsx` — one posting: verdict, weighted signals (plain-language labels via
   `lib/shared/signal-labels.ts`), evidence, posted + reviewed-on dates, keyed employer-checks table,
   + a primary **Apply ↗** link to the real apply URL (host shown) when the posting routes externally.
 - `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings.
-- `companies/page.tsx` — all companies with judged postings, risk mix + top score, most-suspicious first.
+- `companies/page.tsx` — companies with judged postings, risk mix + top score, most-suspicious
+  first, paginated at 50 (ordering in `lib/shared/companies-query.ts`).
 - `analysis/page.tsx` — elevated-risk rate by job-type category, **by company** (each employer by its
   worst posting) and **by posting**, plus an "unverifiable" (businessMatch=mismatch) stat. Nav-linked.
 - `audit/[token]/page.tsx` + `audit/[token]/[employerId]/page.tsx` — **unlinked, token-gated** internal
@@ -158,6 +167,8 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   (incl. `apply_host_mismatch` brand-impersonation).
 - `EmployerChecks.tsx` - plain-language keyed table of an employer's verification record for the
   posting page; unknown `checks` keys fall back to raw JSON so they surface instead of vanishing.
+- `PaginationNav.tsx` - prev/number/next pager pills with a "Page X of Y" caption; renders nothing
+  on a single page. Used by the postings and companies lists.
 
 ## `prisma/`
 - `schema.prisma` — `Employer`, `Job`, and `EmployerWebSearchLog` models. Job scoring fields are

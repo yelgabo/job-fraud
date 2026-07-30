@@ -3,7 +3,14 @@ import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
 import { JobReport } from "@/components/JobReport"
 
-export const dynamic = "force-dynamic"
+// Rendered on demand per posting, then cached up to 10 minutes; a re-judged score appears within
+// that window. The empty generateStaticParams opts the route into on-demand static generation
+// without prerendering any path, so the build never queries the database (the Railway builder
+// has no private-network route to Postgres).
+export const revalidate = 600
+export function generateStaticParams(): Array<{ id: string }> {
+  return []
+}
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
