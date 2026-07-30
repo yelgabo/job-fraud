@@ -155,9 +155,13 @@ export default async function HomePage({
         </p>
       </div>
 
+      {/* Filter tabs carry prefetch={true}: this route is force-dynamic with no loading.js, so
+          the default prefetch stops before any data and a click pays a full server round-trip.
+          Full prefetch is scoped to the tab/pager links only - the 50 posting rows below keep the
+          default, or every page view would fan out 100+ speculative renders. */}
       <nav className="mb-3 flex flex-wrap items-center gap-2">
         {BANDS.map((b) => (
-          <Link key={b} href={hrefFor(b, activeCat, activePosted)} className={tabClass(b === active)}>
+          <Link key={b} href={hrefFor(b, activeCat, activePosted)} prefetch={true} className={tabClass(b === active)}>
             {b[0].toUpperCase() + b.slice(1)}
             <span className="ml-1.5 text-xs opacity-70">{counts[b] ?? 0}</span>
           </Link>
@@ -171,11 +175,11 @@ export default async function HomePage({
       </nav>
 
       <nav className="mb-3 flex flex-wrap gap-2">
-        <Link href={hrefFor(active, "all", activePosted)} className={tabClass(activeCat === "all")}>
+        <Link href={hrefFor(active, "all", activePosted)} prefetch={true} className={tabClass(activeCat === "all")}>
           All types<span className="ml-1.5 text-xs opacity-70">{catAll}</span>
         </Link>
         {CATEGORIES.filter((c) => (catCounts[c] ?? 0) > 0 || c === activeCat).map((c) => (
-          <Link key={c} href={hrefFor(active, c, activePosted)} className={tabClass(c === activeCat)}>
+          <Link key={c} href={hrefFor(active, c, activePosted)} prefetch={true} className={tabClass(c === activeCat)}>
             {c}
             <span className="ml-1.5 text-xs opacity-70">{catCounts[c] ?? 0}</span>
           </Link>
@@ -184,7 +188,12 @@ export default async function HomePage({
 
       <nav className="mb-5 flex flex-wrap gap-2">
         {POSTED_WINDOWS.map((w) => (
-          <Link key={w.key} href={hrefFor(active, activeCat, w.key)} className={tabClass(w.key === activePosted)}>
+          <Link
+            key={w.key}
+            href={hrefFor(active, activeCat, w.key)}
+            prefetch={true}
+            className={tabClass(w.key === activePosted)}
+          >
             {w.label}
             <span className="ml-1.5 text-xs opacity-70">{dateCounts[w.key] ?? 0}</span>
           </Link>
