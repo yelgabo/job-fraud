@@ -248,6 +248,8 @@ describe("parsePage / pageArgs", () => {
     expect(parsePage("0")).toBe(1)
     expect(parsePage("-2")).toBe(1)
     expect(parsePage("1.5")).toBe(1)
+    expect(parsePage("1e300")).toBe(1)
+    expect(parsePage(String(Number.MAX_SAFE_INTEGER + 1))).toBe(1)
     expect(parsePage("2")).toBe(2)
     expect(parsePage("137")).toBe(137)
   })

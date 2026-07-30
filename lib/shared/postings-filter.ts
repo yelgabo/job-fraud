@@ -32,10 +32,10 @@ export function parseBand(raw: string | null | undefined): BandKey {
   return (BANDS as readonly string[]).includes(raw ?? "") ? (raw as BandKey) : "all"
 }
 
-/** `?page=` parsed to a 1-based page number; anything that is not a positive integer means 1. */
+/** `?page=` parsed to a 1-based page number; anything that is not a positive safe integer means 1. */
 export function parsePage(raw: string | null | undefined): number {
   const n = Number(raw)
-  return Number.isInteger(n) && n >= 1 ? n : 1
+  return Number.isSafeInteger(n) && n >= 1 ? n : 1
 }
 
 /**
