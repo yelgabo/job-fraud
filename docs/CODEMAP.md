@@ -26,7 +26,11 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 **`lib/workbc/` — WorkBC data layer**
 - `workbc-api.ts` — WorkBC JSON API client. `searchJobsApi()` (paged keyword search → job stubs) and
   `fetchJobDetailApi()` (per-job detail → NOC group, salary, apply URL/email, mailing address). The
-  data source for the whole pipeline.
+  data source for the whole pipeline. All requests flow through `polite-fetch.ts`.
+- `polite-fetch.ts` — `createPoliteFetch()`: hardened fetch for the WorkBC APIs — global pacing
+  (≥150ms between request starts across all concurrent workers), 20s per-attempt timeout, and
+  exponential-backoff retries (with jitter, Retry-After honored) on 429/5xx/network errors.
+  Non-429 4xx is returned unretried (the caller decides what it means).
 - `scrape-workbc.ts` — `JobStub` / `DetailFields` types (used everywhere). Also holds the old HTML
   parsers `parseListingCards` / `parseDetail` — **no longer used by the pipeline** (kept only for
   their tests; superseded by `workbc-api.ts`).
@@ -70,6 +74,8 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
 - `anthropic-errors.ts` — `isBillingError()`: detects the out-of-credit 400 (not a retryable 429) so
   the judge fails fast — leaving jobs **pending** instead of mass-writing `unknown`.
+- `retry.ts` — `retryOnce()`: the AI callers' shared retry policy (one delayed retry for transient
+  failures; the fatal billing error is rethrown immediately, feeding the judge's abort path).
 
 **`lib/` root — plumbing (imported by web + CLIs)**
 - `db.ts` — Prisma client singleton.
