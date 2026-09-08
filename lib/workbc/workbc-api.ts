@@ -1,4 +1,5 @@
 import type { JobStub, DetailFields } from "./scrape-workbc"
+import { createPoliteFetch } from "./polite-fetch"
 
 // The WorkBC SPA fetches results from this JSON API. It returns clean structured data
 // (employer, city, salary, dates) and paginates reliably via Page/PageSize — far better than
@@ -7,6 +8,11 @@ const JOB_SEARCH_API =
   "https://workbc-jb.a55eb5-prod.stratus.cloud.gov.bc.ca/api/Search/JobSearch"
 
 const PAGE_SIZE = 50
+
+// All WorkBC requests (search pages + per-job detail, across concurrent workers) flow through one
+// paced fetch: >=150ms between request starts, 20s per-attempt timeout, 3 backoff retries on
+// 429/5xx/network. Keeps the scraper both resilient AND polite to the government API.
+const workbcFetch = createPoliteFetch({ minIntervalMs: 150, timeoutMs: 20_000, retries: 3 })
 
 // WorkBC's SearchLocations entries are {City, Postal, Region} objects (the SPA's eP class). A
 // City-only entry with SearchLocationDistance -1 filters to that city (verified: Victoria → 1430).
@@ -70,7 +76,7 @@ export function apiJobToStub(j: ApiJob): JobStub {
 }
 
 async function fetchPage(keyword: string, page: number, dateSelection: number, locations: WorkbcLocation[]): Promise<JobSearchResponse> {
-  const resp = await fetch(JOB_SEARCH_API, {
+  const resp = await workbcFetch(JOB_SEARCH_API, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify(searchBody(keyword, page, dateSelection, locations)),
@@ -121,7 +127,7 @@ function joinParts(parts: Array<string | null | undefined>): string | null {
 /** Fetch one posting's full detail from the WorkBC API and map it to DetailFields. */
 export async function fetchJobDetailApi(jobId: string): Promise<DetailFields | null> {
   const url = `${JOB_DETAIL_API}?jobId=${encodeURIComponent(jobId)}&language=en&isToggle=false`
-  const resp = await fetch(url, { headers: { accept: "application/json" } })
+  const resp = await workbcFetch(url, { headers: { accept: "application/json" } })
   if (!resp.ok) return null
   const item: DetailApiItem | undefined = (await resp.json())?.result?.[0]
   if (!item) return null

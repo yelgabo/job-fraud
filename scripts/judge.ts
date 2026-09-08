@@ -36,7 +36,9 @@ const mailEvidence = (flagsJson: unknown) =>
 async function main() {
   const args = parseArgs()
   const env = loadScrapeEnv()
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+  // maxRetries 5 (SDK default 2): long runs must ride out 429/529 bursts with the SDK's own
+  // exponential backoff; concurrency caps below are the primary rate limiter.
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 5 })
   const t0 = Date.now()
 
   const jobs = await prisma.job.findMany({

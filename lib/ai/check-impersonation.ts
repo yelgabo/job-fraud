@@ -4,6 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
 import { extractSearchLog, type SearchLog } from "./verify-employer-web"
+import { retryOnce } from "../shared/retry"
 
 // Stronger model than the rest of the pipeline (which is Haiku): this is a rare call (only on an
 // apply-host mismatch) and demands corporate-genealogy synthesis across web sources — exactly where
@@ -103,10 +104,5 @@ export async function checkImpersonation(
   input: ImpersonationInput,
   opts: { retryDelayMs?: number } = {},
 ): Promise<ImpersonationOutput> {
-  try {
-    return await callOnce(client, input)
-  } catch {
-    await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 2000))
-    return await callOnce(client, input)
-  }
+  return retryOnce(() => callOnce(client, input), opts.retryDelayMs ?? 2000)
 }

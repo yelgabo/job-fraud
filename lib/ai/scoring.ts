@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
 import { SignalsSchema, type Signal } from "../shared/json-schemas"
+import { retryOnce } from "../shared/retry"
 
 const MODEL = "claude-haiku-4-5-20251001"
 
@@ -158,13 +159,12 @@ async function callOnce(client: Anthropic, input: ScoreInput): Promise<ScoreOutp
   }
 }
 
-export async function scoreJob(client: Anthropic, input: ScoreInput): Promise<ScoreOutput> {
-  try {
-    return await callOnce(client, input)
-  } catch (e) {
-    await new Promise((r) => setTimeout(r, 2000))
-    return await callOnce(client, input)
-  }
+export async function scoreJob(
+  client: Anthropic,
+  input: ScoreInput,
+  opts: { retryDelayMs?: number } = {},
+): Promise<ScoreOutput> {
+  return retryOnce(() => callOnce(client, input), opts.retryDelayMs ?? 2000)
 }
 
 export function makeFailedResult(reason: string): ScoreResult & { signals: Signal[] } {

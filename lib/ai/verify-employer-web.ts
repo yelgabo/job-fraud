@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { WebVerificationSchema, type WebVerification } from "../shared/json-schemas"
+import { retryOnce } from "../shared/retry"
 
 const MODEL = "claude-haiku-4-5-20251001"
 
@@ -142,10 +143,5 @@ export async function verifyEmployerWeb(
   input: WebVerifyInput,
   opts: { retryDelayMs?: number } = {},
 ): Promise<WebVerifyOutput> {
-  try {
-    return await callOnce(client, input)
-  } catch {
-    await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 2000))
-    return await callOnce(client, input)
-  }
+  return retryOnce(() => callOnce(client, input), opts.retryDelayMs ?? 2000)
 }
