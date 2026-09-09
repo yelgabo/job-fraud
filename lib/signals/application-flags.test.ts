@@ -26,11 +26,19 @@ describe("detectFlags — generic_email_domain", () => {
   it("flags free consumer email providers", () => {
     expect(flagNames("Apply to orxsurgical@outlook.com")).toContain("generic_email_domain")
     expect(flagNames("email careers@gmail.com")).toContain("generic_email_domain")
+    // free providers beyond the big four (found in the wild: whitespotjobs@mail.com)
+    expect(flagNames("send to whitespotjobs@mail.com")).toContain("generic_email_domain")
+    expect(flagNames("apply hr@gmx.com")).toContain("generic_email_domain")
+    expect(flagNames("apply someone@live.com")).toContain("generic_email_domain")
+    expect(flagNames("apply someone@ymail.com")).toContain("generic_email_domain")
   })
 
   it("does NOT flag a company-domain email (regression: idmelon.com is legitimate)", () => {
     expect(flagNames("Apply to jobs@idmelon.com")).not.toContain("generic_email_domain")
     expect(flagNames("contact hiring@arya-health.ca")).not.toContain("generic_email_domain")
+    // a company host that merely CONTAINS "mail" must not trip the free-provider rule
+    expect(flagNames("apply jobs@mail.acme.com")).not.toContain("generic_email_domain")
+    expect(flagNames("apply careers@emailleaders.ca")).not.toContain("generic_email_domain")
   })
 })
 

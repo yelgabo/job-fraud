@@ -24,7 +24,10 @@ const DETECTORS: Detector[] = [
   {
     flag: "generic_email_domain",
     patterns: [
-      /\b[\w.+-]+@(gmail|yahoo|hotmail|outlook|aol|icloud|protonmail|yandex)\.[a-z.]{2,10}\b/i,
+      // Free consumer mailbox providers. `mail\.com` and `gmx` are matched as full hosts (not as a
+      // bare `mail` prefix) so a company domain like `jobs@mail.acme.com` never trips the flag.
+      /\b[\w.+-]+@(gmail|yahoo|ymail|rocketmail|hotmail|outlook|live|msn|aol|icloud|me|protonmail|proton|tutanota|zoho|yandex)\.[a-z.]{2,10}\b/i,
+      /\b[\w.+-]+@(mail|gmx|inbox|email)\.(com|net|org|ru|de|us|co\.uk)\b/i,
     ],
   },
   {
