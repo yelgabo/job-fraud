@@ -72,15 +72,54 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `WebVerificationSchema`, `SignalsSchema`, `parseFlags`/`parseChecks`/`parseSignals`). **Must stay
   free of the Anthropic SDK** so the web app can import it.
 - `risk-band.ts` — `bandFor(score)` → `low | medium | high | unknown`.
+- `cache-tags.ts` - `DATA_CACHE_TAG`, the shared tag on every public-page `unstable_cache` read so
+  `POST /api/revalidate` can purge them all with one `revalidateTag`.
+- `request-revalidation.ts` - `requestRevalidation()`: best-effort pair of POSTs to the deployed
+  site's `/api/revalidate` (bearer `REVALIDATE_TOKEN`, endpoint overridable via `REVALIDATE_URL`)
+  that the write-side CLIs call after a successful run: first the purge (10 s timeout), then
+  `?phase=warm` (120 s timeout) once the purge response is back, because the purge only takes
+  effect after its handler resolves. A failed purge skips the warm phase; any failure logs one
+  warning and never fails the run.
+- `warm-targets.ts` - `WARM_PATHS`, the bounded list of filter combinations the warm phase of
+  `/api/revalidate` re-renders after the purge (page 1 of each band tab and posted window, `/`,
+  `/companies`), capped by `MAX_WARM_PATHS`.
+- `posted-date.ts` - `parsePostedDate()` turns a raw `Job.postedAt` string into a UTC date, handling
+  both producer formats (the JSON API's ISO prefix and the HTML fallback's free text) and mapping
+  anything ambiguous or junk to null. `effectivePostedDate()` / `formatPostedDate()` pick the date the
+  UI shows, falling back to `scrapedAt` and marking it `~date (est. from scrape)` so an estimate is
+  never mistaken for a published posted date.
+- `postings-filter.ts` - where-clause composition for the postings list: `BANDS`, `POSTED_WINDOWS`,
+  `parseBand()` / `parsePostedWindow()`, and `buildPostingsQuery()`, which builds the row query plus
+  one count clause per dimension. **Each dimension's counts apply the other two filters and not
+  itself**, which is what keeps the tab numbers equal to the rows listed. Adding a fourth filter
+  dimension means changing this one function, not the page. Also owns pagination: `PAGE_SIZE` (50),
+  `parsePage()`, `pageArgs()` (skip/take), and `POSTINGS_ORDER_BY`, whose unique `workbcId`
+  tiebreaker keeps ties from straddling page boundaries. Only the row query pages; counts stay
+  whole-corpus (pinned in `postings-filter.test.ts`).
+- `companies-query.ts` - `orderEmployerAggs()`: sorts the per-employer judged-postings aggregates
+  for `/companies` (worst score, then count, then unique `employerId` tiebreaker) so the page can
+  fetch full employer rows only for the 50 shown.
+- `posted-date-backfill.ts` - the pure half of `scripts/backfill-posted-date.ts`: `parseBackfillArgs()`
+  (dry run unless `--apply`), `planBackfill()` (what a run would change, without a DB) and
+  `groupWrites()` (collapse writes into one `updateMany` per distinct date).
 - `anthropic-errors.ts` — `isBillingError()`: detects the out-of-credit 400 (not a retryable 429) so
   the judge fails fast — leaving jobs **pending** instead of mass-writing `unknown`.
 - `retry.ts` — `retryOnce()`: the AI callers' shared retry policy (one delayed retry for transient
   failures; the fatal billing error is rethrown immediately, feeding the judge's abort path).
+- `methodology.ts` - the README-to-`/about` bridge: `methodologySlice()` cuts the README's
+  visitor-facing sections for the page, `headingSlug()` + `RATING_ANCHOR` give other pages a stable
+  deep link to the rating-bands section. README.md owns the wording; the test pins the caveats.
+- `signal-labels.ts` - `humanizeSignalLabel()`: render-time plain-language map for judge-written
+  signal labels that echo internal keys ("web.businessMatch mismatch"). Unrecognized labels render
+  verbatim, never hidden; the contract is documented in the file.
 
 **`lib/` root — plumbing (imported by web + CLIs)**
 - `db.ts` — Prisma client singleton.
-- `env.ts` — zod-validated env (`webEnv` for the app; `loadScrapeEnv()` adds `ANTHROPIC_API_KEY` for
-  scrape/judge; `AUDIT_TOKEN` optional, gates `/audit`) + `searchUrlForTerm()`.
+- `env.ts`: zod-validated env. `webEnv` for the app and for `scrape.ts`, which makes no Anthropic
+  calls; `loadScrapeEnv()` adds a required `ANTHROPIC_API_KEY` and is imported only by the keyed
+  judge scripts (`judge`, `rescore-failed`, `reverify-mail`, `rescan-impersonation`,
+  `compare-judge`). The check is `z.string().min(1)`, so a placeholder value passes. `AUDIT_TOKEN`
+  optional, gates `/audit`. Also exports `searchUrlForTerm()`.
 - `utils.ts` — `cn()` classname helper for the UI.
 
 _(The old Playwright-era modules — `geocode`, `http-probe`, `scrape-external`, `address-match` — were
@@ -89,9 +128,12 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `scripts/` — CLI entry points
 
 - `scrape.ts` — **Phase 1 (collect).** API search + detail + flags + NOC category + ATS classify →
-  upsert pending postings. Flags: `--search-terms`, `--limit`, `--concurrency`, `--dry-run`,
-  `--skip-existing` (alias `--new-only`: fetch detail only for new `workbcId`s), `--recent day|week`
-  (ask WorkBC server-side for only recently-posted jobs — the cheap daily path).
+  upsert pending postings. Flags: `--search-terms`, `--location` (WorkBC server-side city filter;
+  with `--search-terms ""` it sweeps every occupation in that city, not just tech), `--limit`,
+  `--concurrency`, `--dry-run`, `--skip-existing` (alias `--new-only`: fetch detail only for new
+  `workbcId`s), `--recent day|week` (ask WorkBC server-side for only recently-posted jobs, the cheap
+  daily path). See `docs/TECHNICAL_INFO.md` for the two-pass refresh and the `WORKBC_SEARCH_TERMS`
+  precedence trap.
 - `judge.ts` — **Phase 2 (evaluate), deduped + tiered.** Verify each distinct employer once — but
   *skip* the web search for employers whose postings all apply via their own matching ATS tenant
   (presumed legit, `source=ats-tenant-match`); web-verify only the rest. Then run the apply-host
@@ -107,19 +149,42 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   each distinct pair, re-attribute + HIGH-score confirmed brand impersonations. `npm run rescan-impersonation`.
 - `backfill-categories.ts` — fill `nocCode`/`nocGroup`/`category` from each posting's stored
   description (pure parse, no API calls, re-runnable). `npm run backfill-categories`.
+- `backfill-posted-date.ts` - fill `postedDate` by parsing the raw `postedAt` string (pure parse, no
+  API calls, re-runnable, raw string untouched). **Dry run is the default**; `--apply` writes, and
+  `--limit` / `--samples` scope the report. `npm run backfill-posted-date`. Logic in
+  `lib/shared/posted-date-backfill.ts`.
 - `logger.ts` — `JsonlLogger` (per-run JSONL logs under `logs/`).
 
 ## `app/` — web app (Next.js, read-only, server components)
 
-- `layout.tsx` — shell + header nav (Postings / Companies / Analysis).
-- `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`), table of judged
-  postings.
-- `j/[id]/page.tsx` — one posting: verdict, weighted signals, evidence, + a primary **Apply ↗** link
-  to the real apply URL (host shown) when the posting routes externally.
+- `layout.tsx` — shell + header nav (Postings / Companies / Analysis / About) + footer link to `/about`.
+- `about/page.tsx` - the methodology page: renders the README's plain-language sections (why
+  postings are reviewed, what the bands mean, the caveats) via `lib/shared/methodology.ts`, with
+  `marked` + slugged heading ids so score surfaces can deep-link `#how-each-posting-is-rated`.
+- `page.tsx` — home: risk-band tabs (`?band=`) × job-type category chips (`?cat=`) × posted-date
+  windows (`?posted=`: `any` / `7` / `30` / `90`), table of judged postings with each row's posted
+  date, paginated at 50 rows (`?page=`). Every clause comes from `lib/shared/postings-filter.ts`;
+  the page only renders. Cache semantics for all public pages:
+  `docs/superpowers/specs/2026-07-29-pagination-and-caching-design.md`.
+- `j/[id]/page.tsx` — one posting: verdict, weighted signals (plain-language labels via
+  `lib/shared/signal-labels.ts`), evidence, posted + reviewed-on dates, keyed employer-checks table,
+  + an **Apply ↗** link to the real apply URL (host shown) when the posting routes externally.
+  On High-band postings that link drops to outline styling with a warning line pointing at the
+  /about methodology page (band derived from the score in `components/JobReport.tsx`); on Low and
+  Medium it stays the primary button. The WorkBC source link is unaffected by band.
 - `e/[id]/page.tsx` — one employer: web-verification card, address checks, its postings.
-- `companies/page.tsx` — all companies with judged postings, risk mix + top score, most-suspicious first.
+- `companies/page.tsx` — companies with judged postings, risk mix + top score, most-suspicious
+  first, paginated at 50 (ordering in `lib/shared/companies-query.ts`).
 - `analysis/page.tsx` — elevated-risk rate by job-type category, **by company** (each employer by its
   worst posting) and **by posting**, plus an "unverifiable" (businessMatch=mismatch) stat. Nav-linked.
+- `api/revalidate/route.ts` - POST-only on-write cache refresh in two token-gated phases (bearer
+  `REVALIDATE_TOKEN`, unset ⇒ every request denied). The bare POST purges `DATA_CACHE_TAG` plus the
+  `/j/[id]` and `/e/[id]` ISR pages so an update run is visible immediately instead of after the
+  600 s window. `POST ?phase=warm` then sequentially re-fetches the common filter combos
+  (`lib/shared/warm-targets.ts`) against its own origin so their first visitor gets a cache hit,
+  reporting warmed/failed counts and per-path timings. Two requests because Next defers
+  `revalidateTag`/`revalidatePath` until after the handler resolves: a same-request warm renders
+  against the old cache and is wiped when the queued purge lands.
 - `audit/[token]/page.tsx` + `audit/[token]/[employerId]/page.tsx` — **unlinked, token-gated** internal
   UI to review the raw `web_search` trail (queries → results → verdict) behind each verification.
   `audit/[token]/guard.ts` enforces the `AUDIT_TOKEN` env var (unset ⇒ 404).
@@ -128,19 +193,31 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `components/`
 - `ScoreChip.tsx` — colored risk-score badge. `FlagIcons.tsx` — application-flag chips with tooltips
   (incl. `apply_host_mismatch` brand-impersonation).
+- `JobReport.tsx` - the posting detail body shared by `j/[id]/page.tsx` (see that entry for the
+  band-conditional apply-link behavior) and its `/audit` mirror. Render tests colocated in
+  `JobReport.test.tsx`.
+- `EmployerChecks.tsx` - plain-language keyed table of an employer's verification record for the
+  posting page; unknown `checks` keys fall back to raw JSON so they surface instead of vanishing.
+- `PaginationNav.tsx` - prev/number/next pager pills with a "Page X of Y" caption; renders nothing
+  on a single page. Used by the postings and companies lists.
 
 ## `prisma/`
 - `schema.prisma` — `Employer`, `Job`, and `EmployerWebSearchLog` models. Job scoring fields are
   nullable (`null` = pending); `scoredAt` marks judged. Job also carries `nocCode`/`nocGroup`/`category`
-  (NOC occupation + derived job-type bucket; `category` indexed). `EmployerWebSearchLog` is an
+  (NOC occupation + derived job-type bucket; `category` indexed) and a **pair** of posted-date fields:
+  the raw `postedAt String?` exactly as the producer wrote it (still what the judge prompt sees) plus
+  `postedDate DateTime?`, indexed, parsed from it and null when the raw value is unusable. Filter on
+  `postedDate`, never on `postedAt` strings. `EmployerWebSearchLog` is an
   append-only audit trail of the raw `web_search` activity per verification (incl. `encrypted_content`
   blocks) — kept out of `Employer.checks` so prod pages don't load it; surfaced by the token-gated
   `/audit` pages.
 
 ## Config & meta
 - `package.json` — scripts (`scrape`, `judge`, `judge:fetch/apply`, `rescore-failed`, `reverify-mail`,
-  `compare-judge`, `rescan-impersonation`, `backfill-categories`, `dev`, `build`, `test`) + deps.
+  `compare-judge`, `rescan-impersonation`, `backfill-categories`, `backfill-posted-date`, `dev`,
+  `build`, `test`) + deps.
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.
+- `vitest.config.ts` - only the `@/` path alias and automatic JSX; everything else is vitest defaults.
 - `railway.json` — Railway deploy (RAILPACK; `prisma db push` then `next start`).
 - `.env.example` — required env vars.
 - `__fixtures__/` — saved WorkBC HTML (only used by the legacy parser tests).

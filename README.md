@@ -1,12 +1,17 @@
 # WorkBC Job Posting Reviews
 
-**A review of software and tech job postings on [WorkBC](https://www.workbc.ca) — British
-Columbia's public job board — rating each one on whether it looks like a genuine attempt to hire
-locally, or a posting that exists for other reasons.**
+**A review of job postings on [WorkBC](https://www.workbc.ca) — British Columbia's public job
+board — rating each one on whether it looks like a genuine attempt to hire locally, or a posting
+that exists for other reasons.**
 
 **Browse the reviews:** https://job-fraud-production.up.railway.app
 
 ---
+
+<!-- Everything from the first section heading below down to the closing divider is rendered
+     verbatim on the live site's /about page (app/about/page.tsx via lib/shared/methodology.ts).
+     Editing these sections edits published site copy; lib/shared/methodology.test.ts pins the
+     caveat wording. -->
 
 ## Why these postings are worth reviewing
 

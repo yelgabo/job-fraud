@@ -2,9 +2,17 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
+import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
 
-export const dynamic = "force-dynamic"
+// Rendered on demand per employer, then cached up to 10 minutes; a re-judged verdict appears
+// within that window. The empty generateStaticParams opts the route into on-demand static
+// generation without prerendering any path, so the build never queries the database (the Railway
+// builder has no private-network route to Postgres).
+export const revalidate = 600
+export function generateStaticParams(): Array<{ id: string }> {
+  return []
+}
 
 function ReachBadge({ value }: { value: boolean | null | undefined }) {
   if (value === true) return <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">✓ reachable</span>
@@ -131,9 +139,14 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Postings in this scan ({employer.jobs.length})
-        </h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+            Postings in this scan ({employer.jobs.length})
+          </h2>
+          <Link href={`/about#${RATING_ANCHOR}`} className="text-xs text-zinc-500 underline hover:text-zinc-900">
+            What do these ratings mean?
+          </Link>
+        </div>
         <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
           <ul className="divide-y divide-zinc-100">
             {employer.jobs.map((job) => (

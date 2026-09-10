@@ -17,6 +17,7 @@
     "reverify-mail": "tsx --env-file=.env scripts/reverify-mail.ts",
     "rescan-impersonation": "tsx --env-file=.env scripts/rescan-impersonation.ts",
     "backfill-categories": "tsx --env-file=.env scripts/backfill-categories.ts",
+    "backfill-posted-date": "tsx --env-file=.env scripts/backfill-posted-date.ts",
     "test": "vitest run",
     "local:verify:fetch": "tsx --env-file=.env scripts/local-verify-fetch.ts",
     "local:verify:apply": "tsx --env-file=.env scripts/local-verify-apply.ts",
@@ -25,6 +26,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@prisma/client": "^6.1.0",
+    "marked": "^18.0.7",
     "next": "^15.5.18",
     "p-limit": "^6.1.0",
     "playwright": "^1.49.1",

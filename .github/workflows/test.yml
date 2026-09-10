@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The playwright dependency's postinstall would otherwise download browsers;
+      # nothing in the type-check, tests, or build launches one.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall runs prisma generate, which tsc and the build both need.
+      - run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      # Tests are DB-free and network-free by design (mocked SDK, colocated under lib/).
+      - name: Unit tests
+        run: npm test
+
+      # lib/env.ts zod-parses DATABASE_URL at import, so the build needs a value
+      # present, but no page connects to it at build time (all DB-backed routes are
+      # force-dynamic or empty-params ISR).
+      - name: Build
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+        run: npm run build

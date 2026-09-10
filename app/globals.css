@@ -9,3 +9,34 @@
 body {
   @apply bg-zinc-50 text-zinc-900 antialiased;
 }
+
+/* Markdown rendered from the README on /about (see app/about/page.tsx). */
+.methodology h2 {
+  @apply mt-8 text-lg font-semibold text-zinc-900;
+}
+.methodology h3 {
+  @apply mt-6 text-base font-semibold text-zinc-900;
+}
+.methodology p {
+  @apply mt-3 leading-relaxed text-zinc-700;
+}
+.methodology ul,
+.methodology ol {
+  @apply mt-3 list-outside space-y-2 pl-6 leading-relaxed text-zinc-700;
+}
+.methodology ul {
+  @apply list-disc;
+}
+.methodology ol {
+  @apply list-decimal;
+}
+.methodology li > ul,
+.methodology li > ol {
+  @apply mt-2;
+}
+.methodology a {
+  @apply text-zinc-900 underline hover:text-zinc-600;
+}
+.methodology strong {
+  @apply font-semibold text-zinc-900;
+}

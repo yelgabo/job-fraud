@@ -8,6 +8,15 @@ describe("isBillingError", () => {
     expect(isBillingError(new Error(msg))).toBe(true)
   })
 
+  // The reason `.env.example` ships ANTHROPIC_API_KEY commented out: a placeholder key passes the
+  // non-empty check in lib/env.ts, every call then 401s, and a 401 is NOT fatal here, so judge.ts
+  // writes a failed verdict plus a scoredAt timestamp for each posting rather than leaving it pending.
+  it("does not match an invalid-key 401, so a placeholder key marks postings judged", () => {
+    const msg =
+      '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
+    expect(isBillingError(new Error(msg))).toBe(false)
+  })
+
   it("does not match unrelated errors", () => {
     expect(isBillingError(new Error("429 rate_limit_error"))).toBe(false)
     expect(isBillingError(new Error("tool input failed zod validation"))).toBe(false)

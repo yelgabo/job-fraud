@@ -6,6 +6,8 @@ import { classifyHost, isKnownAts } from "../lib/signals/ats-registry"
 import { detectFlags } from "../lib/signals/application-flags"
 import { parseNocGroup, categoryForNoc } from "../lib/signals/job-category"
 import { normalizeEmployer } from "../lib/signals/normalize-employer"
+import { parsePostedDate } from "../lib/shared/posted-date"
+import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { searchJobsApi, fetchJobDetailApi, cityLocation } from "../lib/workbc/workbc-api"
 import { JsonlLogger } from "./logger"
 
@@ -173,6 +175,10 @@ async function main() {
               location: detail.location ?? stub.location ?? null,
               salary: detail.salary,
               postedAt: detail.postedAt,
+              // Parsed alongside the raw string so a fresh posting is filterable by date without
+              // waiting for `npm run backfill-posted-date`. Null when the raw value is missing,
+              // ambiguous or junk (lib/shared/posted-date.ts).
+              postedDate: parsePostedDate(detail.postedAt),
               sourceUrl: stub.sourceUrl,
               descriptionMd: detail.descriptionMd,
               externalApplyUrl,
@@ -198,6 +204,7 @@ async function main() {
     console.log(`Collected ${written} postings (pending judgment) from ${empIdCache.size} employers; ${detailFail} detail fetch failures`)
     console.log(`Next: run the judge-postings skill (or npm run judge:fetch) to evaluate pending postings.`)
     console.log(`Log: ${logPath}`)
+    if (!args.dryRun && written > 0) await requestRevalidation()
   } finally {
     await prisma.$disconnect().catch(() => {})
     log.close()
