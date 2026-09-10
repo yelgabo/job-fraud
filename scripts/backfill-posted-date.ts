@@ -12,6 +12,7 @@
 //      npm run backfill-posted-date -- --limit 100       # dry-run a sample
 //      npm run backfill-posted-date -- --samples 50      # print more unparseable examples
 import { prisma } from "../lib/db"
+import { requestRevalidation } from "../lib/shared/request-revalidation"
 import {
   groupWrites,
   parseBackfillArgs,
@@ -69,6 +70,9 @@ async function main() {
     written += res.count
   }
   console.log(`\nwrote ${written} rows across ${groups.length} distinct dates.`)
+  // A write here changes what the public pages filter on and display, so purge the site caches
+  // like every other write-side script instead of leaving them stale for the 600 s timer.
+  if (written > 0) await requestRevalidation()
   await prisma.$disconnect()
 }
 
