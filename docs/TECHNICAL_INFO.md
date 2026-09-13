@@ -93,19 +93,19 @@ the employer published: a compact `~date` (with a footnote) in the list, the ful
 ## Scoring logic
 
 Claude (`lib/ai/scoring.ts`, `temperature: 0`) outputs `fraudScore` 0–100 plus `signals[]`, each
-weighted **−30 (legitimacy) … +30 (fraud)** with cited evidence.
+weighted **−30 (legitimacy) … +45 (fraud)** with cited evidence.
 
 | Signal | Weight |
 |---|---|
 | `applicationAddressType` = residential / po_box / virtual | **+35…45** (alone → HIGH; with `mail_physical_resume` → HIGH) |
-| `businessMatch` = mismatch (fake/shell/impersonation) | +20…30 · match → −10…20 |
+| `businessMatch` = mismatch (fake/shell/impersonation) | +20…30 · match → −20…−10 |
 | `crypto_payment` / `banking_info_upfront` | +20…30 |
 | `generic_email_domain` (free provider) | +15…25 · company-domain email = normal, never penalized |
 | `mail_physical_resume` + software role | +20 |
 | `locationMatch` = mismatch | +10…15 |
 | website unreachable (checked `false`, not unknown) | +10…15 |
-| `ats_known_provider` / applies via a real ATS | −20…30 |
-| detailed duties, real benefits, recognizable employer, careers page | −10…20 |
+| `ats_known_provider` / applies via a real ATS | −30…−20 |
+| detailed duties, real benefits, recognizable employer | −20…−10 |
 
 Two invariants: a check that is `null`/`unknown` is **strictly neutral** (missing info is never
 penalized), and `mismatch` means "not a real company" — **not** "the company's industry differs from

@@ -1,5 +1,8 @@
 # job-fraud — Design
 
+
+The September 12, 2026 owner decision supersedes the historical signal-weight cap below. New verdicts allow -30 to +45 while preserving the +35 to +45 address contribution. See [current scoring logic](../../TECHNICAL_INFO.md#scoring-logic).
+
 **Date:** 2026-05-29
 **Status:** Spec, awaiting implementation plan
 

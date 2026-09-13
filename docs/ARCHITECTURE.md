@@ -68,7 +68,7 @@ pipeline). One process writes at a time → no race conditions.
   box? is a known brand being misused?* The verdict is cached on the company and reused by all its
   postings.
 - **Stage 2 — score each posting** (cheap Claude call, no web): combines the company verdict + the
-  posting's own flags into a **0–100 score**, weighted from −30 (legitimacy) to +30 (fraud) →
+  posting's own flags into a **0–100 score**, weighted from −30 (legitimacy) to +45 (fraud) →
   Low / Medium / High band.
 - **Brand-impersonation detection:** if a posting names company X but its apply link routes to a
   _different_ company's hiring system, a stronger model (Opus) confirms via web search and

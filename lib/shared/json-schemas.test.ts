@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { WebVerificationSchema, parseChecks } from "./json-schemas"
+import { WebVerificationSchema, parseChecks, ScoringSignalsSchema, parseSignals } from "./json-schemas"
 
 describe("WebVerificationSchema", () => {
   it("parses a full verdict and nulls an empty websiteUrl", () => {
@@ -60,5 +60,21 @@ describe("ChecksSchema.web", () => {
       },
     })
     expect(c.web?.websiteUrl).toBe("https://x.com")
+  })
+})
+
+
+describe("scoring signal bounds", () => {
+  it.each([-30, 0, 35, 45])("accepts the approved integer weight %i for new verdicts", (weight) => {
+    expect(ScoringSignalsSchema.parse([{ label: "signal", weight, evidence: "source" }])[0].weight).toBe(weight)
+  })
+
+  it.each([-31, 46, 35.5])("rejects weight %s outside the new-verdict contract", (weight) => {
+    expect(ScoringSignalsSchema.safeParse([{ label: "signal", weight, evidence: "source" }]).success).toBe(false)
+  })
+
+  it("keeps historical signal records readable without rewriting their values", () => {
+    const historical = [{ label: "legacy", weight: 50.5, evidence: "stored evidence" }]
+    expect(parseSignals(historical)).toEqual(historical)
   })
 })

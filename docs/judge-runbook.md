@@ -14,6 +14,6 @@ For scraping followed by judging, use the
 [update-postings skill](../.claude/skills/update-postings/SKILL.md).
 
 Scoring policy comes from [the runtime rubric](../lib/ai/scoring.ts). The
-[judge skill's unresolved scoring-policy note](../.claude/skills/judge-postings/SKILL.md#unresolved-scoring-policy)
-describes the address-weight conflict and the required owner decision. Schema
-validation alone does not resolve it.
+[judge skill's scoring policy](../.claude/skills/judge-postings/SKILL.md#scoring-policy)
+records the approved +35 to +45 address contribution and the shared new-verdict
+validation range. Historical records are preserved; this repair does not rescore data.

@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
-import { SignalsSchema, type Signal } from "../shared/json-schemas"
+import { ScoringSignalsSchema, MIN_SIGNAL_WEIGHT, MAX_SIGNAL_WEIGHT, type Signal } from "../shared/json-schemas"
 import { retryOnce } from "../shared/retry"
 
 const MODEL = "claude-haiku-4-5-20251001"
@@ -23,7 +23,7 @@ function tryParseJson(v: unknown): unknown {
 const ToolResultSchema = z.object({
   fraudScore: z.number().int().min(0).max(100),
   reasoning: z.string().min(1),
-  signals: z.preprocess(tryParseJson, SignalsSchema),
+  signals: z.preprocess(tryParseJson, ScoringSignalsSchema),
 })
 
 export type ScoreResult = z.infer<typeof ToolResultSchema>
@@ -58,7 +58,7 @@ const tool: Anthropic.Tool = {
           required: ["label", "weight", "evidence"],
           properties: {
             label: { type: "string" },
-            weight: { type: "integer", minimum: -30, maximum: 30 },
+            weight: { type: "integer", minimum: MIN_SIGNAL_WEIGHT, maximum: MAX_SIGNAL_WEIGHT },
             evidence: { type: "string" },
           },
         },
@@ -70,7 +70,7 @@ const tool: Anthropic.Tool = {
 function buildPrompt(i: ScoreInput): string {
   return `You are auditing a WorkBC job posting for fraud risk.
 
-Output a fraudScore 0-100 (low <30, medium 30-69, high >=70), a short prose reasoning (2-4 sentences), and a signals[] array citing specific evidence. Weight signals from -30 (strong legitimacy) to +30 (strong fraud).
+Output a fraudScore 0-100 (low <30, medium 30-69, high >=70), a short prose reasoning (2-4 sentences), and a signals[] array citing specific evidence. Weight signals from -30 (strong legitimacy) to +45 (strong fraud). Use +35 to +45 for the address-type signal specified below; other signals keep their listed ranges.
 
 CRITICAL — null vs false: A check value of \`null\` means NOT CHECKED / unknown. Treat it as
 strictly NEUTRAL — never a fraud signal, never mention "missing/null verification" as a concern.

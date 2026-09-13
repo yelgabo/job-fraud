@@ -95,11 +95,11 @@ the `--recent week` term-pass variant) and for `--recent day` top-ups.
    - **Key present:** `npm run judge` (fast path: dedups by employer, single process).
    - **No key:** follow the [judge-postings procedure](../judge-postings/SKILL.md#procedure)
      for batched fetching, agent verdict files and the single-writer apply. Use its
-     prompt and observe its unresolved scoring-policy note.
+     prompt and follow its approved scoring policy.
 
 3. **Loop.** Re-run `judge:fetch` until it reports 0 pending. Correct invalid verdicts
-   before retrying them. If the judge skill holds a verdict for a scoring-policy
-   decision, finish unaffected work and report the held IDs. Keep them pending until
-   the owner resolves the conflict; do not repeatedly dispatch them or claim a full drain.
+   before retrying them. Report any persistently invalid or unavailable verdicts
+   accurately; do not repeatedly dispatch unchanged failures or claim a full drain
+   while postings remain pending.
 
 4. **Verify.** `judge:fetch` printing `0 pending` is done. Spot-check the live site if asked.

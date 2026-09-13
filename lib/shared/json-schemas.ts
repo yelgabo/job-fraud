@@ -54,6 +54,12 @@ export const SignalSchema = z.object({
 
 export const SignalsSchema = z.array(SignalSchema)
 
+export const MIN_SIGNAL_WEIGHT = -30
+export const MAX_SIGNAL_WEIGHT = 45
+export const ScoringSignalsSchema = z.array(SignalSchema.extend({
+  weight: z.number().int().min(MIN_SIGNAL_WEIGHT).max(MAX_SIGNAL_WEIGHT),
+}))
+
 export type Checks = z.infer<typeof ChecksSchema>
 export type ApplicationFlag = z.infer<typeof ApplicationFlagSchema>
 export type Signal = z.infer<typeof SignalSchema>

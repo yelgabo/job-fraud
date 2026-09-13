@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { z } from "zod"
 import { prisma } from "../lib/db"
-import { SignalsSchema, WebVerificationSchema } from "../lib/shared/json-schemas"
+import { ScoringSignalsSchema, WebVerificationSchema } from "../lib/shared/json-schemas"
 import { bandFor } from "../lib/shared/risk-band"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
@@ -28,7 +28,7 @@ const VerdictSchema = z.object({
   workbcId: z.string(),
   fraudScore: z.number().int().min(0).max(100),
   reasoning: z.string().min(1),
-  signals: SignalsSchema,
+  signals: ScoringSignalsSchema,
   web: WebVerificationSchema.optional(),
 })
 

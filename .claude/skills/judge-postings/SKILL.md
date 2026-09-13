@@ -63,20 +63,16 @@ Run from the `job-fraud` project directory.
 
 6. For large corpora (e.g. 500), repeat steps 1-5 in waves until `judge:fetch` reports 0 pending.
 
-## Unresolved scoring policy
+## Scoring policy
 
-[The runtime rubric](../../../lib/ai/scoring.ts) supplies scoring policy. Its
-Anthropic tool schema limits each signal weight to -30..+30, while its prompt
-assigns +35..45 to a residential, PO-box or virtual mailing address. The shared
-[SignalsSchema](../../../lib/shared/json-schemas.ts) used by `judge:apply` accepts
-any numeric weight, so successful validation does not settle this policy conflict.
-The source does not establish whether +35..45 is an aggregate contribution or a
-single signal weight. An owner decision is required before changing either
-value or treating the address contribution as an aggregate. Do not invent a split
-into extra signals to reconcile the conflict. Flag affected deep-path verdicts for
-that decision before applying them. Complete unaffected verdicts and report held IDs
-separately. Do not repeatedly dispatch held postings or report the queue as drained
-while they remain pending. This instruction repair does not tune scoring.
+[The runtime rubric](../../../lib/ai/scoring.ts) supplies scoring policy. New signal
+weights are integers from -30 to +45. The user confirmed on September 12, 2026 that
+the residential, PO-box and virtual mailing-address signal retains its +35 to +45
+contribution. Other signals retain their listed ranges. Both scoring responses and
+`judge:apply` use [ScoringSignalsSchema](../../../lib/shared/json-schemas.ts).
+Historical records remain readable through the separate SignalsSchema. Do not split
+an address signal into invented signals, tune other weights or rescore existing data
+unless the current task requests it.
 
 ## Verdict shape (one object per posting; agents return a JSON array of these)
 
@@ -102,7 +98,7 @@ while they remain pending. This instruction repair does not tune scoring.
 Enums — `websiteReachable`/`hasJobsListing`: `yes|no|unknown`; `businessMatch`/`locationMatch`:
 `match|mismatch|uncertain`; `applicationAddressType`: `business|residential|po_box|virtual|none|uncertain`.
 `fraudScore` is 0-100. For signal weights, follow the runtime rubric subject to the
-unresolved scoring policy above. `web` is optional but expected when an employer name exists.
+scoring policy above. `web` is optional but expected when an employer name exists.
 
 ## Agent prompt (paste, then append the batch JSON)
 
@@ -124,9 +120,8 @@ For each posting:
    residential (home/apartment/unit), po_box, virtual (mail-forwarding), none, uncertain.
 
 Read `lib/ai/scoring.ts` for the maintained scoring guidance. Keep unknown checks
-neutral and use the posting's actual flags and cited web evidence. Apply the
-unresolved scoring-policy rule above to affected address verdicts before submission.
-Do not choose new weights or reinterpret the conflicting address range.
+neutral and use the posting's actual flags and cited web evidence. Preserve the
+approved address contribution and the other listed signal ranges.
 
 Be skeptical but fair: a real, verifiable company with a normal application method is low risk;
 postings from unverifiable individuals using free email + mail-to-a-home are high risk.
