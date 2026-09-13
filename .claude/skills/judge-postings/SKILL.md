@@ -58,8 +58,25 @@ Run from the `job-fraud` project directory.
    each verdict and updates the job (`fraudScore`, `riskBand`, `reasoning`, `signals`, `scoredAt`)
    and the employer's `checks.web`; `riskBand` is derived from `fraudScore` rather than read from
    the verdict. Invalid verdicts are skipped, not fatal, and those postings stay pending.
+   Apply each completed wave serially using its explicit verdict file paths, or apply the
+   directory once after all its waves finish, to avoid reapplying earlier waves.
 
 6. For large corpora (e.g. 500), repeat steps 1-5 in waves until `judge:fetch` reports 0 pending.
+
+## Unresolved scoring policy
+
+[The runtime rubric](../../../lib/ai/scoring.ts) supplies scoring policy. Its
+Anthropic tool schema limits each signal weight to -30..+30, while its prompt
+assigns +35..45 to a residential, PO-box or virtual mailing address. The shared
+[SignalsSchema](../../../lib/shared/json-schemas.ts) used by `judge:apply` accepts
+any numeric weight, so successful validation does not settle this policy conflict.
+The source does not establish whether +35..45 is an aggregate contribution or a
+single signal weight. An owner decision is required before changing either
+value or treating the address contribution as an aggregate. Do not invent a split
+into extra signals to reconcile the conflict. Flag affected deep-path verdicts for
+that decision before applying them. Complete unaffected verdicts and report held IDs
+separately. Do not repeatedly dispatch held postings or report the queue as drained
+while they remain pending. This instruction repair does not tune scoring.
 
 ## Verdict shape (one object per posting; agents return a JSON array of these)
 
@@ -84,7 +101,8 @@ Run from the `job-fraud` project directory.
 
 Enums — `websiteReachable`/`hasJobsListing`: `yes|no|unknown`; `businessMatch`/`locationMatch`:
 `match|mismatch|uncertain`; `applicationAddressType`: `business|residential|po_box|virtual|none|uncertain`.
-`fraudScore` 0-100; `signals[].weight` -30..+30. `web` is optional but expected when an employer name exists.
+`fraudScore` is 0-100. For signal weights, follow the runtime rubric subject to the
+unresolved scoring policy above. `web` is optional but expected when an employer name exists.
 
 ## Agent prompt (paste, then append the batch JSON)
 
@@ -105,16 +123,10 @@ For each posting:
    to MAIL materials somewhere, web-search that address and classify: business (real office),
    residential (home/apartment/unit), po_box, virtual (mail-forwarding), none, uncertain.
 
-Scoring (fraudScore 0-100: low <30, medium 30-69, high ≥70; signals weighted -30..+30):
-- `applicationAddressType` residential/po_box/virtual → VERY STRONG fraud (+35..45); alone it
-  should push toward HIGH, and with a mail-resume instruction it should land HIGH.
-- generic free-email domain (gmail/outlook/yahoo/etc.) → +15..25. A company-domain email
-  (jobs@theircompany.com) is NORMAL — never "generic".
-- mail_physical_resume + software role → +20.
-- businessMatch mismatch → +20..30; match → −10..20. locationMatch mismatch → +10..15.
-- crypto_payment / banking_info_upfront → +20..30.
-- Detailed responsibilities, real benefits, recognizable employer, known ATS → legitimacy.
-- A check you cannot determine is NEUTRAL (uncertain/unknown) — never penalize missing info.
+Read `lib/ai/scoring.ts` for the maintained scoring guidance. Keep unknown checks
+neutral and use the posting's actual flags and cited web evidence. Apply the
+unresolved scoring-policy rule above to affected address verdicts before submission.
+Do not choose new weights or reinterpret the conflicting address range.
 
 Be skeptical but fair: a real, verifiable company with a normal application method is low risk;
 postings from unverifiable individuals using free email + mail-to-a-home are high risk.

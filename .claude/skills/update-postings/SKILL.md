@@ -93,17 +93,13 @@ the `--recent week` term-pass variant) and for `--recent day` top-ups.
    ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see
    Credentials).
    - **Key present:** `npm run judge` (fast path: dedups by employer, single process).
-   - **No key (keyless agent flow):** use the **judge-postings** skill's agent-orchestrated
-     path. `npm run judge:fetch -- --batch-size 15` writes `logs/judge-<ts>/batch-*.json`.
-     **One session owns the whole run:** it fans out parallel helpers, one per batch file,
-     several in a single message so they run concurrently (waves of 5-8 helpers for large
-     sets), collects their verdicts, and is the **single DB writer**. Do not hand batches off
-     to separate top-level sessions. Give each helper the agent prompt from that skill; write
-     each helper's returned array as `verdicts-<n>.json` in the same dir; apply with
-     `npm run judge:apply -- logs/judge-<ts>/` (the dir expands to its `verdicts*.json`).
-     Helpers never write the DB; `judge:apply` is the single writer.
+   - **No key:** follow the [judge-postings procedure](../judge-postings/SKILL.md#procedure)
+     for batched fetching, agent verdict files and the single-writer apply. Use its
+     prompt and observe its unresolved scoring-policy note.
 
-3. **Loop.** Re-run `judge:fetch` until it reports 0 pending (invalid verdicts are skipped by
-   apply and stay pending — re-dispatch just those).
+3. **Loop.** Re-run `judge:fetch` until it reports 0 pending. Correct invalid verdicts
+   before retrying them. If the judge skill holds a verdict for a scoring-policy
+   decision, finish unaffected work and report the held IDs. Keep them pending until
+   the owner resolves the conflict; do not repeatedly dispatch them or claim a full drain.
 
 4. **Verify.** `judge:fetch` printing `0 pending` is done. Spot-check the live site if asked.
