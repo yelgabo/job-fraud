@@ -490,8 +490,8 @@ Online: https://jobs.smartrecruiters.com/SodexoCanadaLtd/744000141799589-environ
 ## 15. Project Manager
 
 ```
-label:   
-reason:  
+label: low
+reason:  remote job, has a jobs listing page.
 ```
 
 - **Employer:** TJM Labs
@@ -518,8 +518,8 @@ Online: https://jobs.workable.com/view/puEdoJ21DA3YL1e8V8zqSL/remote-project-man
 ## 16. Development Director - EA SPORTS UFC
 
 ```
-label:   
-reason:  
+label: low
+reason:  reputable company with jobs protal.
 ```
 
 - **Employer:** Electronic Arts
@@ -545,8 +545,8 @@ Online: https://jobs.ea.com/en_US/careers/JobDetail/Development-Director-UFC/215
 ## 17. administrative assistant
 
 ```
-label:   
-reason:  
+label:  medium
+reason: generic email, no clear company website
 ```
 
 - **Employer:** S LINK LOGISTICS INC
@@ -580,8 +580,8 @@ By email: slinklogistics@hotmail.com
 ## 18. cook
 
 ```
-label:   
-reason:  
+label: high
+reason:  everything checks out but email has immigration in it meaning this job posting is prioritizing immigration rather than a real job posting by the restaurant/business.
 ```
 
 - **Employer:** Thai Green Elephant Restaurant
@@ -629,8 +629,8 @@ By phone: 7784337172
 ## 19. Registered Pharmacy Technician
 
 ```
-label:   
-reason:  
+label: low
+reason:  ats provider matches company. save on foods is reputable as well.
 ```
 
 - **Employer:** Save-On-Foods
@@ -657,8 +657,8 @@ Online: https://pfg.wd3.myworkdayjobs.com/SaveonfoodsCareers/job/0624-University
 ## 20. automotive mechanic
 
 ```
-label:   
-reason:  
+label: medium
+reason:  physical mail but the address goes to mobil 1 lube express. generic email is whats pushing it to medium.
 ```
 
 - **Employer:** Mobil 1 Lube Express
@@ -691,8 +691,8 @@ By mail: Room 600, 1400 Dogwood Street, Campbell River, British Columbia, V9W 3A
 ## 21. Registered Nurse -SPH
 
 ```
-label:   
-reason:  
+label:  low
+reason:  island health is reputable. everything matches, even the the hospitals job posting site.
 ```
 
 - **Employer:** Island Health
@@ -719,8 +719,8 @@ Online: https://islandhealth.hua.hrsmart.com/hr/ats/Posting/view/232944
 ## 22. information technology (IT) specialist
 
 ```
-label:   
-reason:  
+label:   medium
+reason:  generic email. didnt use their own hr email. hrjobs179 is used by a lot of other job postings.
 ```
 
 - **Employer:** INNOV8 DIGITAL SOLUTIONS INC.

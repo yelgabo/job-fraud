@@ -305,3 +305,49 @@ the high band is a single posting, so nothing here says anything reliable about 
 behaviour. More labels, weighted toward medium and high, would change what can be claimed.
 
 No weights have been set and nothing has been wired into either judging path.
+
+---
+
+# Addendum 3: 21 labels (12 low, 7 medium, 2 high)
+
+## Scores
+
+| system | agrees with the human |
+| --- | --- |
+| current stored scoring | 19/21 |
+| deterministic composer | 19/21 |
+| deterministic + Jev v1 | 17/21 |
+
+Stored and the composer now tie, and v1 judgments are actively costing two.
+
+`routePlausibleForEmployer` holds up: low mean 0.85 (range 0.62-0.95), medium mean 0.30
+(range 0.10-0.52). One overlap point at #15/#17, so a threshold near 0.57 splits 20 of 21.
+
+## Two new signals the labels surfaced
+
+**Immigration-broker routing (#18).** Generalised into a question, this works and a keyword
+cannot. Of 8 postings whose contact email mentions immigration/LMIA/visa, the question scores
+0.89-0.92 on the three where an ordinary business or household routes hiring through a
+consultancy (a nanny, a restaurant cook, a delivery driver), and 0.16-0.19 on the four where
+an immigration firm is hiring its own staff. A regex on "immigration" flags all eight. Base
+rate check: those 8 are 25% low band against a corpus that is 92% low.
+
+**Shared contact email (#22).** Weaker than it looked, and the specific case was wrong:
+`hrjobs179@gmail.com` is used by one employer across four postings, all INNOV8's own. Corpus
+wide, 53 emails serve more than one employer, covering 268 postings, and the band mix is the
+same as sole-use emails (67/31/2 against 65/30/5). Most are franchise groups: one address for
+five Red Barn Market locations, five Browns Socialhouse locations, four Popeyes franchisees.
+The discriminating version is reuse across *unrelated* employers, which does exist
+(`employment.ssii@gmail.com` serves Edo Japan, Booster Juice and Nanda Barber; another serves
+Barcelos, Pizza Pizza, Subway, and two tire shops), but separating that from franchise reuse
+needs a name-relatedness judgment that has not been built or measured.
+
+## Next session
+
+1. Decide a `routePlausibleForEmployer` threshold and whether it replaces the binary
+   `routeDisowned` switch in `composeScore`, which currently penalises a neighbourhood pub
+   using gmail as hard as a national chain using gmail.
+2. Measure `brokerRouting` for discrimination on a full stratified sample, as
+   `npm run measure-questions` does for the others. n=8 is not a basis for a weight.
+3. Still unresolved from addendum 1: Oracle Fusion missing from the ATS registry, and
+   Megacity's residential address recorded as `applicationAddressType: "none"`.
