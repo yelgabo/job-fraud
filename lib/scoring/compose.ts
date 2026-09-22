@@ -56,16 +56,23 @@ function deterministicSignals(input: ComposeInput): Signal[] {
   const ats = flag("ats_known_provider")
   if (ats) add("ats_known_provider", ats.evidence || "applies through a recognized hiring system")
 
+  // Confirming the advertised employer is a real business only vouches for THIS posting when the
+  // application actually goes to that business. A verified brand reached through a free consumer
+  // mailbox is the impersonation shape, not a reassurance: anyone can put "Tim Hortons" on a
+  // posting and collect replies at gmail. So the brand credits are withheld on an unowned route,
+  // while the penalties on the same fields still apply.
+  const routeDisowned = Boolean(flag("generic_email_domain") ?? flag("whatsapp_telegram_only"))
+
   if (web) {
-    if (web.businessMatch === "match") add("business_match", web.summary)
+    if (web.businessMatch === "match" && !routeDisowned) add("business_match", web.summary)
     if (web.businessMatch === "mismatch") add("business_mismatch", web.summary)
-    if (web.locationMatch === "match") add("location_match", web.summary)
+    if (web.locationMatch === "match" && !routeDisowned) add("location_match", web.summary)
     if (web.locationMatch === "mismatch") add("location_mismatch", web.summary)
-    if (web.hasJobsListing === "yes") add("jobs_listing", web.websiteUrl ?? web.summary)
+    if (web.hasJobsListing === "yes" && !routeDisowned) add("jobs_listing", web.websiteUrl ?? web.summary)
 
     const addr = web.applicationAddressType
-    if (addr === "business") add("apply_address_business", web.summary)
-    if (addr === "none") add("apply_address_none", "the posting asks for no mailed materials")
+    if (addr === "business" && !routeDisowned) add("apply_address_business", web.summary)
+    if (addr === "none" && !routeDisowned) add("apply_address_none", "the posting asks for no mailed materials")
     if (addr === "residential" || addr === "po_box" || addr === "virtual") {
       add("apply_address_private", `applications are mailed to a ${addr} address: ${web.summary}`)
     }

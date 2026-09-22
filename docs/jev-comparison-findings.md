@@ -120,3 +120,85 @@ score and band deliberately withheld so the labels are not anchored to the thing
 
 With labels, every number in this document can be recomputed against something real, and
 `BASELINE` and the weight table can be fitted to fraud rather than to agreement.
+
+---
+
+# Addendum: the first 13 human labels
+
+Added 2026-09-22, after 13 of the 80 worksheet postings were labelled by the repo owner.
+Small, and the low band is over-represented (9 of 13), so nothing below separates the systems.
+What it does do is settle one design question and vindicate the current scoring.
+
+## Against real labels
+
+| system | agrees with the human |
+| --- | --- |
+| current stored scoring | 13/13 |
+| deterministic composer | 12/13 |
+| deterministic + Jev judgments | 13/13 |
+
+The current LLM scoring did not miss once. Every measurement before this compared systems to
+each other; this is the first one against a person, and the incumbent won it.
+
+Jev's single extra posting is #4, which it moved from 65 to 70 and over the high threshold.
+That is the 5-point nudge already identified as a scale effect, not discrimination, and a
+baseline change would have done the same. At this n the three systems are indistinguishable.
+
+## The design error the labels exposed
+
+The composer originally matched on 8 of 13. All five misses were the same mistake, and the
+labeller's own words diagnose it: *"generic email means anyone can be pretending to be Tim
+Hortons"*.
+
+On posting #2, a Burger King listing taking applications at `burgerking6811@gmail.com`, the
+composer scored 8:
+
+```
+generic_email_domain +20   business_match -15   location_match -5
+jobs_listing -7            apply_address_business -5
+```
+
+The brand credits cancelled the warning. But confirming that Burger King is a real chain with a
+careers page says nothing about whether *this posting* is from Burger King. When the application
+route is a free consumer mailbox, employer verification is not reassurance, it is the
+precondition for impersonation: the better known the brand, the more attractive it is to borrow.
+
+The rubric in `lib/ai/scoring.ts` treats employer verification and application route as
+independent additive signals. They are not independent. Brand credit is conditional on the
+application actually going to the brand.
+
+`composeScore` now withholds `business_match`, `location_match`, `jobs_listing` and
+`apply_address_business` when `generic_email_domain` or `whatsapp_telegram_only` fires. The
+penalties on those same fields still apply, and `apply_address_private` is never suppressed.
+
+## It generalised rather than overfitted
+
+The rule was derived from three labelled postings, which is exactly the shape of an overfit.
+Checked against the separate 300-posting sample (one posting of overlap):
+
+| | before the rule | after |
+| --- | --- | --- |
+| band agreement | 186/300 | 248/300 |
+| stored-medium kept medium | 16/100 | 91/100 |
+| stored-high kept high | 70/100 | 70/100 |
+| stored-low leaked upward | 0/100 | 13/100 |
+
+The medium band was where the composer was worst, and it was worst for this reason. A verified
+brand contacted through gmail is most of what the medium band is.
+
+`BASELINE` stays unfitted at 20. The gain here came from a structural rule with a stated reason,
+not from moving a constant until the numbers improved.
+
+## Still open
+
+Posting #4 is the remaining miss: `3444 Caldera Ct, Langford` is a house, but the stored web
+check recorded `applicationAddressType: "none"`, so the +40 private-address signal never fired
+and no floor applied. The address classification failed upstream in `verifyEmployerWeb`, which
+is a different bug from anything in the composer.
+
+Posting #1 turned up a second upstream gap: `lib/signals/ats-registry.ts` knows Oracle's older
+Taleo but not Oracle Fusion (`*.fa.*.oraclecloud.com`), so Marriott and every other Oracle
+Fusion employer loses the -25 `ats_known_provider` credit.
+
+Both are left alone until the worksheet is done, since fixing them mid-labelling would move the
+scores the labels are meant to judge.

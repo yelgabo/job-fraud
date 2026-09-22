@@ -91,6 +91,46 @@ describe("composeScore", () => {
     })
   })
 
+  describe("brand credit is conditional on an employer-owned application route", () => {
+    const verifiedBrand = {
+      websiteUrl: "https://timhortons.ca", websiteReachable: "yes" as const,
+      businessMatch: "match" as const, locationMatch: "match" as const,
+      hasJobsListing: "yes" as const, applicationAddressType: "none" as const,
+      confidence: 0.9, summary: "Tim Hortons is a real chain",
+    }
+
+    it("credits a verified employer when nothing disowns the route", () => {
+      const r = composeScore(base({ checks: { web: verifiedBrand } }))
+      expect(r.signals.map((s) => s.label).sort()).toEqual(["apply_address_none", "business_match", "jobs_listing", "location_match"])
+    })
+
+    it("withholds every brand credit when contact is a free consumer mailbox", () => {
+      const r = composeScore(base({
+        checks: { web: verifiedBrand },
+        flags: [{ flag: "generic_email_domain", evidence: "teamtims@gmail.com" }],
+      }))
+      expect(r.signals.map((s) => s.label)).toEqual(["generic_email_domain"])
+      expect(r.riskBand).toBe("medium")
+    })
+
+    it("still applies the penalties on those same fields", () => {
+      const r = composeScore(base({
+        checks: { web: { ...verifiedBrand, businessMatch: "mismatch", locationMatch: "mismatch" } },
+        flags: [{ flag: "generic_email_domain", evidence: "x@gmail.com" }],
+      }))
+      expect(r.signals.map((s) => s.label).sort()).toEqual(["business_mismatch", "generic_email_domain", "location_mismatch"])
+    })
+
+    it("a private mailing address is never suppressed", () => {
+      const r = composeScore(base({
+        checks: { web: { ...verifiedBrand, applicationAddressType: "residential" } },
+        flags: [{ flag: "generic_email_domain", evidence: "x@gmail.com" }],
+      }))
+      expect(r.signals.map((s) => s.label)).toContain("apply_address_private")
+      expect(r.riskBand).toBe("high")
+    })
+  })
+
   describe("floors", () => {
     const privateAddress = base({
       checks: { web: { websiteUrl: null, websiteReachable: "unknown", businessMatch: "match", locationMatch: "match", hasJobsListing: "yes", applicationAddressType: "residential", confidence: 0.9, summary: "a house" } },

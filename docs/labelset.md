@@ -17,8 +17,11 @@ work can route those to a second look rather than pretending they were decided.
 ## 1. Sales Coordinator
 
 ```
-label:   
-reason:  
+label:   low
+reason:  Marriott verified, applies through their own Oracle recruiting site, nothing
+         asked of the applicant. Posting body has no duties at all, but that is WorkBC
+         stub-listing behaviour, not a warning sign. Note: apply host reads as
+         atsProvider "unknown" because the registry has Taleo but not Oracle Fusion.
 ```
 
 - **Employer:** Marriott
@@ -45,8 +48,9 @@ Online: https://ejwl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/M
 ## 2. food service supervisor
 
 ```
-label:   
-reason:  
+label:  medium
+reason:  everything checks out. pay is roughly expected. medium because generic email provided
+could be anyone impersonating burger king just to get the job id listing
 ```
 
 - **Employer:** Burger King
@@ -85,8 +89,9 @@ By email: burgerking6811@gmail.com
 ## 3. baker
 
 ```
-label:   
-reason:  
+label: medium
+reason:  posting checks out. generic email means anyone can be pretending to
+be from tim hortons to have a job id present in the system. how do we know this is actually tim hortons?
 ```
 
 - **Employer:** Tim Hortons
@@ -128,8 +133,8 @@ Support for Veterans: Participates in a governme
 ## 4. construction helper
 
 ```
-label:   
-reason:  
+label:  high
+reason: a lot of red flags. physical mail for resume. physical mail address goes to a residential property. no company email. megacity company seems to be made up company.  
 ```
 
 - **Employer:** Megacity Construction Ltd.
@@ -170,8 +175,8 @@ By mail: 3444 Caldera Ct, Langford, British Columbia, V9B 6Z8
 ## 5. artificial intelligence (ai) software engineer
 
 ```
-label:   
-reason:  
+label: medium   
+reason: everything checks out but this is a software company and the only way to apply is send a physical resume.
 ```
 
 - **Employer:** Geoswift
@@ -211,8 +216,8 @@ Support for youths: Participates in a government or community program or initiat
 ## 6. Nuclear Medicine PET CT Technologist P2A
 
 ```
-label:   
-reason:  
+label: low
+reason: all the things match and its a known ats provider.  
 ```
 
 - **Employer:** Providence Healthcare
@@ -239,8 +244,8 @@ Online: https://careers-phc.icims.com/jobs/64549/nuclear-medicine-pet-ct-technol
 ## 7. cook
 
 ```
-label:   
-reason:  
+label: low   
+reason: everything checks out and they use business email address.
 ```
 
 - **Employer:** Browns Crafthouse Vic West
@@ -273,8 +278,8 @@ By email: nwilson@brownssocialhouse.com
 ## 8. Clinical Support Clerk and Clerk IVs - Various Sites
 
 ```
-label:   
-reason:  
+label: low
+reason: real business. they use ats. the ats matches the company.
 ```
 
 - **Employer:** Providence Healthcare
@@ -300,8 +305,8 @@ Online: https://careers-phc.icims.com/jobs/59907/clinical-support-clerk-and-cler
 ## 9. food service supervisor
 
 ```
-label:   
-reason:  
+label: medium   
+reason: everything matches. medium because they use gmail.
 ```
 
 - **Employer:** Tim Hortons
@@ -345,8 +350,8 @@ In person: 38930 Progress Way, Squamish, British Columbia, V8B 0K5
 ## 10. Customer Service Representative
 
 ```
-label:   
-reason:  
+label: low 
+reason: legit company. own company jobsite. 
 ```
 
 - **Employer:** FortisBC
@@ -373,8 +378,8 @@ Online: https://careers.fortisbc.com/job/Trail-Customer-Service-Representative-B
 ## 11. Appointment Coordinator-OpenRoad Subaru Boundary
 
 ```
-label:   
-reason:  
+label: low
+reason:  everything matches and they have their own job posting that is for them.
 ```
 
 - **Employer:** OpenRoad Auto Group
@@ -401,8 +406,8 @@ Online: https://orag.bamboohr.com/careers/4896
 ## 12. Advanced Data Analyst - EA Sports FC Live
 
 ```
-label:   
-reason:  
+label: low
+reason:  legit with their own job postings.
 ```
 
 - **Employer:** Electronic Arts
@@ -429,8 +434,8 @@ Online: https://jobs.ea.com/en_US/careers/JobDetail/Advanced-Analyst/214116
 ## 13. Registered Respiratory Therapist
 
 ```
-label:   
-reason:  
+label: low   
+reason: company is real. they have their won job portal as well.
 ```
 
 - **Employer:** Island Health
