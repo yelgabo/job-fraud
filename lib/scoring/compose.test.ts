@@ -124,17 +124,43 @@ describe("composeScore", () => {
     it("a private mailing address is never suppressed", () => {
       const r = composeScore(base({
         checks: { web: { ...verifiedBrand, applicationAddressType: "residential" } },
-        flags: [{ flag: "generic_email_domain", evidence: "x@gmail.com" }],
+        flags: [
+          { flag: "generic_email_domain", evidence: "x@gmail.com" },
+          { flag: "mail_physical_resume", evidence: "By mail: 12 Somewhere Cres" },
+        ],
       }))
       expect(r.signals.map((s) => s.label)).toContain("apply_address_private")
       expect(r.riskBand).toBe("high")
     })
   })
 
+  describe("an employer-level address verdict only touches postings that mail", () => {
+    const residentialEmployer = {
+      web: { websiteUrl: null, websiteReachable: "unknown" as const, businessMatch: "match" as const,
+        locationMatch: "match" as const, hasJobsListing: "no" as const,
+        applicationAddressType: "residential" as const, confidence: 0.9, summary: "a house" },
+    }
+
+    it("penalises the posting that actually mails to the house", () => {
+      const r = composeScore(base({ checks: residentialEmployer, flags: [{ flag: "mail_physical_resume", evidence: "By mail: 3444 Caldera Ct" }] }))
+      expect(r.signals.map((s) => s.label)).toContain("apply_address_private")
+      expect(r.riskBand).toBe("high")
+    })
+
+    it("spares a sibling posting that applies online", () => {
+      const r = composeScore(base({ checks: residentialEmployer }))
+      expect(r.signals.map((s) => s.label)).not.toContain("apply_address_private")
+      expect(r.riskBand).toBe("low")
+    })
+  })
+
   describe("floors", () => {
     const privateAddress = base({
       checks: { web: { websiteUrl: null, websiteReachable: "unknown", businessMatch: "match", locationMatch: "match", hasJobsListing: "yes", applicationAddressType: "residential", confidence: 0.9, summary: "a house" } },
-      flags: [{ flag: "ats_known_provider", evidence: "greenhouse.io" }],
+      flags: [
+        { flag: "ats_known_provider", evidence: "greenhouse.io" },
+        { flag: "mail_physical_resume", evidence: "By mail: 12 Somewhere Cres" },
+      ],
     })
 
     it("a private mailing address lands high even against every legitimacy credit", () => {

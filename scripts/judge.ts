@@ -9,6 +9,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
+import { cachedVerdictMissedAnAddress, mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { allApplyHostsMatch, matchedProvider } from "../lib/signals/apply-host"
 import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
 import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/ai/scoring"
@@ -31,8 +32,6 @@ function parseArgs(): Args {
   return a
 }
 
-const mailEvidence = (flagsJson: unknown) =>
-  parseFlags(flagsJson).find((f) => f.flag === "mail_physical_resume")?.evidence ?? ""
 
 async function main() {
   const args = parseArgs()
@@ -78,8 +77,13 @@ async function main() {
     const web = (list[0].employer?.checks as { web?: WebVerification } | undefined)?.web
     let action: Decision["action"]
     if (args.rejudge) action = "web"
-    else if (web) action = web.source === "ats-tenant-match" && !allMatch ? "web" : "reuse"
-    else action = allMatch ? "presume" : "web"
+    else if (web) {
+      const staleAts = web.source === "ats-tenant-match" && !allMatch
+      // A cached "none" only means the representative posting we sent last time carried no
+      // mailing address. If any posting does, the address has never actually been looked at.
+      const missedAddress = cachedVerdictMissedAnAddress(web.applicationAddressType, list)
+      action = staleAts || missedAddress ? "web" : "reuse"
+    } else action = allMatch ? "presume" : "web"
     return { id, list, action }
   })
   const toWebVerify = decisions.filter((d) => d.action === "web")
@@ -123,7 +127,9 @@ async function main() {
     toWebVerify.map((d) =>
       vLimit(async () => {
         if (billingAbort) return
-        const rep = d.list[0]
+        // Verify on a posting that carries a mailing address when one exists: applicationAddressType
+        // is the heaviest signal the check produces and it can only judge an address it is given.
+        const rep = pickRepresentative(d.list)
         try {
           const out = await verifyEmployerWeb(client, {
             employerName: rep.employer!.nameDisplay,

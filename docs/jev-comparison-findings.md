@@ -379,3 +379,57 @@ Consequence: `apply_address_private` at +40, the heaviest weight in the table, c
 from a text model. The addendum-1 bug on Megacity (`3444 Caldera Ct` recorded as
 `applicationAddressType: "none"`) has to be fixed inside `verifyEmployerWeb`, which has
 web_search, and not by adding a question.
+
+---
+
+# Addendum 5: fixing the residential check where it belongs
+
+Decision: keep address classification in `verifyEmployerWeb` with web_search, per addendum 4.
+Two bugs fixed, both found by tracing why Megacity's `3444 Caldera Ct` came back as `"none"`.
+
+## The prompt was never the problem
+
+`judge.ts` verifies each employer once, using `d.list[0]` as the representative. Megacity has two
+postings: the carpenter (applies by email, first) and the construction helper (mails to the house,
+second). The verifier was handed `"(none given)"` and answered `"none"` correctly.
+
+Corpus-wide, 52 employers have a mail-in posting whose address never reaches the check, and a
+cached verdict is reused forever, so each employer only ever got one chance to have its address
+looked at.
+
+`lib/shared/mail-evidence.ts` now picks the representative by evidence rather than array position,
+and `cachedVerdictMissedAnAddress` re-verifies when a cached `"none"` is contradicted by a posting
+that does give an address. A normal run now re-verifies 36 employers, about 36 web searches.
+
+## The flaw that fix exposed
+
+`applicationAddressType` lives on the employer but describes one posting's mailing address. Making
+the address finally get looked at would have spread the verdict across every sibling posting:
+
+| employer | postings | give an address | would have inherited |
+| --- | --- | --- | --- |
+| Tim Hortons | 237 | 32 | 205 |
+| Subway | 65 | 37 | 28 |
+| dentalcorp | 47 | 1 | 46 |
+| Wendy's | 32 | 1 | 31 |
+
+Across the 36 employers: 609 postings, 135 with an address, **474 that would have inherited one**.
+A single franchise location posting a street address would have set the verdict for 46 dentalcorp
+postings, and at +40 with a floor of 70 that is the difference between low and high.
+
+`composeScore` now applies the address signals only to postings carrying `mail_physical_resume`.
+A sibling that applies online is telling the truth when it says no mailed materials are involved.
+
+Two existing tests failed on this change, both constructing a residential verdict with no mailing
+flag. That is exactly the sibling case now spared, so the tests were asserting the old bug; they
+now include the flag their description always implied.
+
+## Before the next judge run
+
+The 36 re-verifications will reclassify addresses for real, and some will land on `residential`
+and floor those postings to high. That is the intended behaviour and it has never run, so the
+first run deserves watching rather than trusting.
+
+The proper fix is still a schema change: `applicationAddressType` belongs on `Job`, not
+`Employer`. The guard in `composeScore` prevents the damage without it, but the field remains
+stored in the wrong place.

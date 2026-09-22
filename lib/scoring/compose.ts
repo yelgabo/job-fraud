@@ -62,6 +62,7 @@ function deterministicSignals(input: ComposeInput): Signal[] {
   // posting and collect replies at gmail. So the brand credits are withheld on an unowned route,
   // while the penalties on the same fields still apply.
   const routeDisowned = Boolean(flag("generic_email_domain") ?? flag("whatsapp_telegram_only"))
+  const postingMailsApplications = Boolean(flag("mail_physical_resume"))
 
   if (web) {
     if (web.businessMatch === "match" && !routeDisowned) add("business_match", web.summary)
@@ -70,7 +71,12 @@ function deterministicSignals(input: ComposeInput): Signal[] {
     if (web.locationMatch === "mismatch") add("location_mismatch", web.summary)
     if (web.hasJobsListing === "yes" && !routeDisowned) add("jobs_listing", web.websiteUrl ?? web.summary)
 
-    const addr = web.applicationAddressType
+    // applicationAddressType is stored per EMPLOYER but describes one posting's mailing address,
+    // so it must only be applied to postings that actually mail. Otherwise one franchise location
+    // that posts a street address decides the verdict for every sibling posting: dentalcorp has
+    // 47 postings and one address, Wendy's 32 and one. A sibling that applies online is telling
+    // the truth when it says no mailed materials are involved.
+    const addr = postingMailsApplications ? web.applicationAddressType : "none"
     if (addr === "business" && !routeDisowned) add("apply_address_business", web.summary)
     if (addr === "none" && !routeDisowned) add("apply_address_none", "the posting asks for no mailed materials")
     if (addr === "residential" || addr === "po_box" || addr === "virtual") {
