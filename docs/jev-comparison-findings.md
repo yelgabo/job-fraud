@@ -451,3 +451,42 @@ several employers. A small `MailingAddress` table keyed on the normalised addres
 the classification and when it was checked, verifies each address once and reuses it everywhere
 it appears. That is roughly 917 one-off searches, in the same order as the 693 employer checks
 already being run, and it shrinks from there as addresses repeat.
+
+---
+
+# Addendum 6: does handing Jev a structured route help?
+
+Hypothesis: the judgment would sharpen if the "How to apply" block and the stored
+`atsProvider` / `externalApplyHost` were passed as named fields, instead of the model locating
+the block inside 6,000 characters of description. Tested three state shapes on the same 300
+stratified postings plus the 21 labelled ones, same question, same model.
+
+| state shape | low | medium | high | d(low,high) | input tokens |
+| --- | --- | --- | --- | --- | --- |
+| A: description only (current) | 0.74 | 0.49 | 0.53 | **-1.07** | 229,963 |
+| B: structured route + description | 0.76 | 0.52 | 0.55 | -1.09 | 253,789 |
+| C: structured route, no description | 0.76 | 0.53 | 0.58 | -1.01 | 161,596 |
+
+Against the human labels all three keep a clean low/medium gap:
+
+| state shape | low | medium |
+| --- | --- | --- |
+| A | 0.85 [0.62-0.95] | 0.30 [0.10-0.51] |
+| B | 0.86 [0.61-0.95] | 0.30 [0.10-0.59] |
+| C | 0.88 [0.68-0.95] | 0.32 [0.08-0.61] |
+
+**No improvement.** B costs 10% more tokens for a d that moves 0.02, which is noise. Jev was
+already finding the apply block on its own; it was never handicapped by having to look.
+
+C is the only real difference and it is a cost one: 30% fewer input tokens for the same
+judgment. That is 30% off a stage that costs about $2 per corpus, so it buys nothing worth
+having, and it comes with a cost of its own. C's medium band reaches 0.61 where A's stops at
+0.51, so at the ~0.57 threshold proposed for replacing `routeDisowned`, C misclassifies postings
+A gets right. Dropping the description narrows the margin exactly where the decision is made.
+
+Keep A. No change to how the question is asked.
+
+`lib/signals/apply-route.ts` is kept anyway, with tests: it parses every channel a posting offers
+rather than only the first, which is what the per-address classification table will need to find
+mailing addresses. It is a better source for that than the `mail_physical_resume` flag's
+evidence string, which is whatever the regex happened to match.
