@@ -351,3 +351,31 @@ needs a name-relatedness judgment that has not been built or measured.
    `npm run measure-questions` does for the others. n=8 is not a basis for a weight.
 3. Still unresolved from addendum 1: Oracle Fusion missing from the ATS registry, and
    Megacity's residential address recorded as `applicationAddressType: "none"`.
+
+---
+
+# Addendum 4: can Jev classify a mailing address?
+
+Tested on 120 postings carrying a `By mail:` address, asking Jev to classify the premises from
+the address string plus the employer name, and compared against the web-search verdict already
+stored in `checks.web.applicationAddressType`.
+
+| web-search verdict | Jev said business | Jev said residential |
+| --- | --- | --- |
+| business (87) | 87 | 0 |
+| none (17) | 17 | 0 |
+| uncertain (12) | 11 | 1 |
+| **residential (4)** | **4** | **0** |
+
+Jev answered "business" for 119 of 120, at mean confidence 0.96. On the four addresses the web
+search had established as residential it was wrong every time, confidently.
+
+This is a limit of the input, not of the model. A house on a suburban court and a small shop on
+the same street are the same kind of string; telling them apart needs a map, a land registry, or
+street imagery, and Jev has no retrieval. The accompanying "would this employer take applications
+here" question averaged 0.51 on its business verdicts, which is a coin flip.
+
+Consequence: `apply_address_private` at +40, the heaviest weight in the table, cannot be sourced
+from a text model. The addendum-1 bug on Megacity (`3444 Caldera Ct` recorded as
+`applicationAddressType: "none"`) has to be fixed inside `verifyEmployerWeb`, which has
+web_search, and not by adding a question.
