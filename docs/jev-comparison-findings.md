@@ -202,3 +202,106 @@ Fusion employer loses the -25 `ats_known_provider` credit.
 
 Both are left alone until the worksheet is done, since fixing them mid-labelling would move the
 scores the labels are meant to judge.
+
+---
+
+# Addendum 2: redesigned questions
+
+Added 2026-09-22. Nothing is wired up; this measures candidate questions only.
+Reproduce with `npm run measure-questions -- --per-band 100`. About 1.5 cents per run.
+
+## Method change: measure separation before choosing a weight
+
+The v1 set was designed, weighted, and only then measured, so a question that reads identically
+on a Marriott ATS posting and a shell company still got a weight and still moved scores. No
+weight can rescue a judgment that does not vary with risk, and that is checkable before any
+weight exists.
+
+`scripts/measure-questions.ts` reports, per question, the mean by band and Cohen's d between the
+low and high bands, with no scoring involved. It also reports absolute spread, because a large d
+over a meaningless range is a trap: `askBeforeHire` shows d = -0.30 while ranging from 0.03 to
+0.08 across 300 postings, which is noise with a small standard deviation, not signal.
+
+## Results, 300 postings
+
+| question | low | medium | high | d(low,high) | spread |
+| --- | --- | --- | --- | --- | --- |
+| brandProminence (0-3) | 2.03 | 1.29 | 0.74 | **-1.58** | 0.00-3.00 |
+| routePlausibleForEmployer | 0.74 | 0.49 | 0.53 | **-1.08** | 0.06-0.94 |
+| employerIsOrganisation | 0.94 | 0.86 | 0.74 | **-0.78** | 0.02-0.99 |
+| askBeforeHire | 0.05 | 0.04 | 0.05 | -0.30 | 0.03-0.08 |
+| moneyThroughWorker | 0.03 | 0.03 | 0.03 | 0.14 | flat |
+| payVsDuties | 1.91 | 1.99 | 1.91 | -0.02 | flat |
+
+Compare v1, where four of seven were flat and `specificity` ran backwards.
+
+## The confound, and it survives
+
+Large brands use applicant tracking systems, and the composer already credits those, so strong
+separation could just be re-reading `ats_known_provider`. Split the sample by whether a
+free-mailbox flag fires, which holds the deterministic signals roughly constant inside each half:
+
+| | disowned route (n=155), medium vs high | owned route (n=145), low vs rest |
+| --- | --- | --- |
+| brandProminence | -0.75 | -1.74 |
+| employerIsOrganisation | -0.54 | -0.86 |
+| routePlausibleForEmployer | +0.34 | -1.46 |
+
+`brandProminence` and `employerIsOrganisation` keep separating inside the gmail group, where
+every posting looks the same to the regex. That is incremental information, not a restatement.
+`routePlausibleForEmployer` saturates there, which makes sense: inside the disowned group every
+route is already implausible.
+
+## Against the 13 human labels
+
+| human label | n | brandProminence | employerIsOrganisation | routePlausibleForEmployer |
+| --- | --- | --- | --- | --- |
+| low | 8 | 2.30 | 0.98 | **0.87** |
+| medium | 4 | 2.37 | 0.91 | **0.27** |
+| high | 1 | 0.48 | 0.92 | **0.37** |
+
+`routePlausibleForEmployer` separates the human's low band from the human's medium band with no
+overlap at all: every low sits between 0.77 and 0.95, every medium between 0.10 and 0.40.
+
+It also explains what the other two cannot. `brandProminence` is 2.30 on lows and 2.37 on
+mediums, because the medium band **is** big brands. Prominence is not a risk signal by itself
+and must not be weighted as one; it is an input to a comparison. `routePlausibleForEmployer`
+performs that comparison inside one question:
+
+| posting | brandProminence | routePlausible | human |
+| --- | --- | --- | --- |
+| Marriott, Oracle careers site | 3.00 | 0.83 | low |
+| Burger King, `burgerking6811@gmail.com` | 3.00 | 0.10 | medium |
+| Tim Hortons, `tims.squamish@gmail.com` | 3.00 | 0.20 | medium |
+| Browns Crafthouse, small local pub | 1.26 | 0.77 | low |
+
+That is the labeller's own reasoning, computed. And it is something no deterministic rule can
+reach: the regex knows "gmail", and cannot know that gmail is unremarkable for a neighbourhood
+pub and alarming for a national chain.
+
+## What this implies for the composer
+
+`composeScore` currently approximates this with a binary `routeDisowned` switch driven by
+`generic_email_domain`. That is the right idea at the wrong resolution: it penalises Browns
+Crafthouse exactly as hard as Tim Hortons. A continuous `routePlausibleForEmployer` would grade
+it, and the evidence says it would grade it correctly.
+
+Recommended set if text judgments are adopted: **`routePlausibleForEmployer`** as the primary,
+**`employerIsOrganisation`** as support, and **`brandProminence`** stored but never weighted
+directly, since its value is as context for the first. Drop `payVsDuties` and `moneyThroughWorker`
+outright. `askBeforeHire` is dead on this corpus at a 0.05-point spread, but it is the only
+question covering the thing that would matter most if WorkBC moderation ever lapses, and it costs
+effectively nothing to keep asking; keeping it is a judgment call about tail risk, not a claim
+supported by this data.
+
+## Caveats
+
+The 300-posting separation is measured against stored bands, which remain an unvalidated
+reference. The 13/13 agreement between stored bands and the human labels is the only reason to
+trust them even this far.
+
+The label check is 8 lows, 4 mediums, and 1 high. The low-versus-medium separation is clean and
+the high band is a single posting, so nothing here says anything reliable about high-band
+behaviour. More labels, weighted toward medium and high, would change what can be claimed.
+
+No weights have been set and nothing has been wired into either judging path.

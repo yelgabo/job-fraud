@@ -23,7 +23,8 @@
     "local:verify:apply": "tsx --env-file=.env scripts/local-verify-apply.ts",
     "local:score:fetch": "tsx --env-file=.env scripts/local-score-fetch.ts",
     "compare-jev": "tsx --env-file=.env scripts/compare-jev.ts",
-    "export-labelset": "tsx --env-file=.env scripts/export-labelset.ts"
+    "export-labelset": "tsx --env-file=.env scripts/export-labelset.ts",
+    "measure-questions": "tsx --env-file=.env scripts/measure-questions.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
