@@ -430,6 +430,24 @@ The 36 re-verifications will reclassify addresses for real, and some will land o
 and floor those postings to high. That is the intended behaviour and it has never run, so the
 first run deserves watching rather than trusting.
 
-The proper fix is still a schema change: `applicationAddressType` belongs on `Job`, not
-`Employer`. The guard in `composeScore` prevents the damage without it, but the field remains
-stored in the wrong place.
+## What the guard does not fix
+
+The guard spares siblings that do not mail. It does nothing about siblings that do, and they
+share one verdict:
+
+- 917 distinct mailing addresses in the corpus
+- 61 employers of 693 mail to more than one address, covering 519 postings
+- Subway mails to 32 distinct addresses under one verdict, Tim Hortons 20, McDonald's 19
+
+This is not theoretical. A&W Restaurant mails to 13 distinct addresses and its stored verdict is
+`business`. One of those addresses is a P.O. box. That posting currently earns
+`apply_address_business` at -5 when it should earn `apply_address_private` at +40, a 45-point
+error in the forgiving direction, which is the direction that matters.
+
+Moving `applicationAddressType` to `Job` fixes the sharing, but it is still not quite the right
+home. The classification is a property of the **address**, not of the posting or the employer:
+917 addresses back a larger number of mailing postings, and the same strip mall can appear under
+several employers. A small `MailingAddress` table keyed on the normalised address string, with
+the classification and when it was checked, verifies each address once and reuses it everywhere
+it appears. That is roughly 917 one-off searches, in the same order as the 693 employer checks
+already being run, and it shrinks from there as addresses repeat.
