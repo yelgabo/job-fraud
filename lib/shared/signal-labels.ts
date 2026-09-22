@@ -41,6 +41,28 @@ const PLAIN: Record<string, string> = {
   id_upfront: "Applicants are asked for ID documents up front",
   crypto_payment: "Payment in cryptocurrency is involved",
   banking_info_upfront: "Applicants are asked for banking details up front",
+  // composed deterministic signals (lib/scoring/weights.ts) that have no flag of the same name
+  business_match: "Web search confirms the employer is a real business",
+  business_mismatch: "Web search found a different business than the posting claims",
+  location_match: "The employer's real-world location matches the posting",
+  location_mismatch: "The employer's real-world location does not match the posting",
+  jobs_listing: "The employer's own website lists job openings",
+  apply_address_business: "Applications are mailed to a business address",
+  apply_address_none: "The posting asks for no mailed materials",
+  apply_address_private: "Applications are mailed to a private home, PO box, or mail-forwarding address",
+  address_not_geocoded: "The employer's stated address could not be located",
+  address_city_match: "The employer's address is in the city the posting names",
+  address_city_mismatch: "The employer's address is in a different city than the posting names",
+  website_unreachable: "The employer's website could not be reached",
+  mail_resume_software_role: "A software role asks for a paper résumé by mail",
+  // composed text judgments (lib/scoring/compose.ts)
+  vague_description: "The posting does not describe the actual work concretely",
+  unsubstantiated_employer: "The posting carries little checkable detail about the employer",
+  pay_implausible: "The stated pay does not match the skill level the duties describe",
+  urgency_pressure: "The posting pressures applicants to act immediately",
+  pre_hire_ask: "Money, banking details, or ID are requested before any offer",
+  money_handling: "Money or parcels would pass through the worker's own account or home",
+  role_incoherent: "The title, duties, requirements, and pay do not describe one coherent job",
 }
 
 // "web.businessMatch == mismatch" / "businessMatch: mismatch" / "web.hasJobsListing no"

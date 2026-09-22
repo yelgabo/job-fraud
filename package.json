@@ -21,11 +21,14 @@
     "test": "vitest run",
     "local:verify:fetch": "tsx --env-file=.env scripts/local-verify-fetch.ts",
     "local:verify:apply": "tsx --env-file=.env scripts/local-verify-apply.ts",
-    "local:score:fetch": "tsx --env-file=.env scripts/local-score-fetch.ts"
+    "local:score:fetch": "tsx --env-file=.env scripts/local-score-fetch.ts",
+    "compare-jev": "tsx --env-file=.env scripts/compare-jev.ts",
+    "export-labelset": "tsx --env-file=.env scripts/export-labelset.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@prisma/client": "^6.1.0",
+    "@typesafe-ai/sdk": "^0.6.0",
     "marked": "^18.0.7",
     "next": "^15.5.18",
     "p-limit": "^6.1.0",
