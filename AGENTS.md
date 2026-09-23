@@ -16,14 +16,16 @@ to anyone. Write them accordingly.
 
 **2. It publishes judgements about named real employers.** Every posting on the live site carries a
 Low/Medium/High risk band, the employer's name, and reasoning naming that employer. Changing a
-scoring rule, a prompt, or a rescore script does not just change code, it changes published claims
-about real organisations. The rubric and its prompt live in `lib/ai/scoring.ts`
-(`temperature: 0`), the employer verdict prompt in `lib/ai/verify-employer-web.ts`, the
-impersonation check in `lib/ai/check-impersonation.ts`, and the score-to-band cut-offs in
-`lib/shared/risk-band.ts`. The same rubric is duplicated in prose in `docs/TECHNICAL_INFO.md`,
-`docs/judge-runbook.md` and `.claude/skills/judge-postings/SKILL.md`; if you change one, change all
-of them or they will disagree. Treat any rubric edit as a change that needs the corpus re-judged,
-not a code tweak. The README's plain-language sections (why postings are reviewed, what the bands
+scoring rule, a question, or a rescore script does not just change code, it changes published claims
+about real organisations. No model chooses the number: the weight table is `lib/scoring/weights.ts`,
+the composer `lib/scoring/compose.ts`, the published prose `lib/scoring/explain.ts`, the Jev text
+questions `lib/ai/jev-judgments.ts`, the employer verdict prompt `lib/ai/verify-employer-web.ts`,
+the impersonation check `lib/ai/check-impersonation.ts`, and the score-to-band cut-offs
+`lib/shared/risk-band.ts`. `docs/scoring-algorithm.md` is the prose account and
+`docs/TECHNICAL_INFO.md` summarises it; if you change the table, change both or they will disagree.
+A weight change is `npm run recompose` over the composed rows (no inference); a question change
+needs those rows re-judged. Adding a weight-table row without a `lib/shared/signal-labels.ts`
+entry fails a test. The README's plain-language sections (why postings are reviewed, what the bands
 mean, the caveats) are rendered live on the site's `/about` page (`app/about/page.tsx` +
 `lib/shared/methodology.ts`), so a README edit is an edit to published site copy, and
 `lib/shared/methodology.test.ts` pins the caveat wording.
@@ -41,12 +43,13 @@ speculatively to "see what happens".
 | Command | Why it is not casual |
 |---|---|
 | `npm run scrape` | Hits WorkBC's JSON APIs and upserts rows. No API key needed, no LLM cost, but it is outbound traffic to a public government service and it writes to prod. `--dry-run` collects without writing. |
-| `npm run judge` | Anthropic calls: a `web_search` verification per unverified employer plus a scoring call per posting. `--rejudge` re-verifies and re-scores **everything** and rewrites every published verdict. Always bound it with `--limit` unless a full re-judge is the actual goal. |
-| `npm run rescore-failed` | Re-scores every row with `riskBand="unknown"`. **No limit flag** - it processes all of them. |
+| `npm run judge` | Anthropic `web_search` verification per unverified employer, then a Jev call per posting (when `TYPESAFE_API_KEY` is set, about $2 per corpus) and a composed score. `--rejudge` re-verifies and re-scores **everything** and rewrites every published verdict. Always bound it with `--limit` unless a full re-judge is the actual goal. |
+| `npm run rescore-failed` | Re-scores every row with `riskBand="unknown"` (Jev + composer, no Anthropic key needed). **No limit flag** - it processes all of them. |
 | `npm run reverify-mail` | Re-web-verifies every employer with a `mail_physical_resume` posting and re-scores all their postings. **No limit and no dry-run flag.** These are exactly the postings most likely to be rated High, so this rewrites the most consequential published claims. |
+| `npm run recompose` | Recomputes score, band, signals and prose for every composed row (`scoringVersion` not null) from its stored judgments and the current weight table. No API calls, but `--apply` rewrites every one of those published verdicts. Dry run is the default. |
 | `npm run rescan-impersonation` | Corpus-wide sweep; confirmed impersonations are re-attributed to a different company and written HIGH deterministically, bypassing the scoring model. Uses Opus. `--dry-run` lists candidates without web-checking or writing. |
-| `npm run compare-judge` | Read-only against the DB, but it still makes live Anthropic web-search + scoring calls for a hard-coded list of companies in `scripts/compare-judge.ts`. |
-| `npm run judge:apply` | The single DB writer for the agent path. Overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`scoredAt` and the employer's `checks.web`. No LLM cost, but it publishes verdicts. |
+| `npm run compare-jev` / `npm run measure-questions` | Read-only against the DB, but each makes a Jev call per sampled posting. |
+| `npm run judge:apply` | The single DB writer for the agent path. Stores the agent's `web` verdict on the employer, then asks Jev (when keyed) and composes: overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`judgments`/`scoringVersion`/`scoredAt`. Publishes verdicts. |
 | `npm run backfill-categories` | No API calls, but it updates **every** Job row. |
 | `npm run backfill-posted-date` | No API calls, and it touches no published judgement (only `Job.postedDate`, which drives the site's date filter), but `--apply` can update **every** Job row. Dry run is the default: a bare run reports counts and writes nothing. |
 | `npm run judge:fetch` | The only genuinely safe one: read-only, writes files under `logs/` and nothing else. |
@@ -57,8 +60,12 @@ by catching it.
 
 ## The keyless judge path (`judge:fetch` -> agents -> `judge:apply`)
 
-There are two ways to judge, and the choice is decided by one predicate: **is `ANTHROPIC_API_KEY`
-set in `.env`?** "Set" means non-empty, which is all `lib/env.ts` checks. `.env.example` therefore
+Both paths score the same way: the agent or the Anthropic verifier supplies the employer verdict
+(`checks.web`), Jev answers the text questions when **`TYPESAFE_API_KEY`** is set (otherwise the
+route judgment falls back to the regex flags and the row stores `judgments = null`), and
+`lib/scoring/verdict.ts` composes the number. What differs is who does the employer verification,
+and that is decided by one predicate: **is `ANTHROPIC_API_KEY` set in `.env`?** "Set" means
+non-empty, which is all `lib/env.ts` checks. `.env.example` therefore
 ships that line commented out, and leaving it commented is what keeps a keyless machine on the
 keyless path. A placeholder or stale key answers the predicate "yes" and then every Anthropic call
 401s; a 401 is not a billing error, so the run does not abort, it writes a failed verdict plus a
@@ -67,10 +74,11 @@ comment on that variable has the detail.
 
 - **Key present:** `npm run judge`. One process, dedups by employer (one web search per company,
   not per posting), cheapest at scale. Use for bulk and scheduled runs.
-- **No key:** the path below. Judging happens *outside this codebase* - in whatever agent session
-  is orchestrating - so no `ANTHROPIC_API_KEY` is needed anywhere. `.env` needs only
-  `DATABASE_URL`. Also the right path for a small, high-scrutiny subset even when a key is
-  available, because each posting gets its own investigation instead of a shared employer verdict.
+- **No key:** the path below. Employer investigation happens *outside this codebase* - in whatever
+  agent session is orchestrating - so no `ANTHROPIC_API_KEY` is needed anywhere. `.env` needs
+  `DATABASE_URL`, plus `TYPESAFE_API_KEY` for the text judgments. Also the right path for a small,
+  high-scrutiny subset even when a key is available, because each posting gets its own
+  investigation instead of a shared employer verdict.
 
 Both paths write the same fields. They are interchangeable per posting; you can judge some rows one
 way and some the other.
@@ -101,11 +109,11 @@ Each batch file is a JSON array of:
 **Step 2 - judge.** One worker owns the whole run: it fans out its own helper agents, one per batch
 file, several in a single message so they run concurrently, then assembles and applies. Do not hand
 the batches to separate top-level sessions. The agent prompt to use verbatim is in
-`.claude/skills/judge-postings/SKILL.md` ("Agent prompt"); do not improvise one, it encodes the
-rubric. Helpers never touch the database. `docs/judge-runbook.md` is the longer-form version of
+`.claude/skills/judge-postings/SKILL.md` ("Agent prompt"); do not improvise one, it encodes what
+the composer consumes. Helpers never touch the database and never score. `docs/judge-runbook.md` is the longer-form version of
 these four steps.
 
-**Step 3 - apply (the single DB writer).**
+**Step 3 - apply (the single DB writer, and the only place a score is computed on this path).**
 
 ```bash
 npm run judge:apply -- logs/judge-<timestamp>/          # a dir, or
@@ -116,17 +124,15 @@ Write each helper's returned array as `verdicts-<n>.json` **inside the batch dir
 argument picks up every file in it matching `/verdicts.*\.json$/i` and so ignores the
 `batch-*.json` inputs. Several files or dirs can be passed at once. Each verdict is zod-validated
 against `VerdictSchema` in `scripts/judge-apply.ts`; an invalid one is logged and skipped, the run
-continues, and that posting simply stays pending for the next wave. `riskBand` is **not** taken
-from the verdict, it is derived from `fraudScore` by `bandFor()`.
+continues, and that posting simply stays pending for the next wave. The score is **not** taken from
+the verdict: apply stores `web` on the employer, asks Jev, and composes. Any `fraudScore`,
+`signals` or `reasoning` an agent returns is dropped.
 
 Verdict shape (authoritative schemas: `scripts/judge-apply.ts` + `lib/shared/json-schemas.ts`):
 
 ```json
 {
   "workbcId": "49588691",
-  "fraudScore": 18,
-  "reasoning": "2-4 sentences grounded in the evidence.",
-  "signals": [{ "label": "...", "weight": -20, "evidence": "..." }],
   "web": {
     "websiteUrl": "https://acme.com",
     "websiteReachable": "yes",
@@ -140,7 +146,6 @@ Verdict shape (authoritative schemas: `scripts/judge-apply.ts` + `lib/shared/jso
 }
 ```
 
-`fraudScore` integer 0-100. `signals` required (may be empty), each `{label, weight, evidence}`.
 `web` optional; when present it overwrites the employer's cached `checks.web`, so a careless verdict
 poisons every other posting by that employer. Enums: `websiteReachable`/`hasJobsListing`
 `yes|no|unknown`; `businessMatch`/`locationMatch` `match|mismatch|uncertain`;
@@ -161,14 +166,17 @@ path to pick. Use it rather than reinventing the sequence.
 
 `scrape` (collect, pending) -> `judge` (evaluate) -> web app (read-only). Within `judge`:
 employer web-verify (once per employer, skipped for employers whose postings all apply via their
-own matching ATS tenant) -> brand-impersonation pre-check per posting -> per-posting scoring.
+own matching ATS tenant) -> brand-impersonation pre-check per posting -> per-posting Jev text
+judgments -> composed score (`lib/scoring/verdict.ts`).
 Postings are `pending` while `scoredAt` is null and the site shows only judged ones. Running the
 stages out of order is not possible from the CLI; the sequencing risk is the *helpers*
 (`rescore-failed`, `reverify-mail`, `rescan-impersonation`), which assume postings already have
 scores and employers already have verdicts. Run `judge` first.
 
-Models are pinned in the source, not in env: `claude-haiku-4-5-20251001` for verification and
-scoring, `claude-opus-4-8` for the impersonation check. Grep `const MODEL` in `lib/ai/`.
+Models are pinned in the source, not in env: `claude-haiku-4-5-20251001` for employer
+verification, `claude-opus-4-8` for the impersonation check (grep `const MODEL` in `lib/ai/`), and
+TypeSafe's default Jev model for the text judgments (`lib/ai/jev-judgments.ts`). Nothing scores:
+`scoringVersion` on the row says which era produced its number (null = a model chose it).
 
 ## Deploying: the wrong-service hazard
 
@@ -279,7 +287,7 @@ page; `prisma/schema.prisma` and `app/audit/` are authoritative.
 
 `.github/workflows/` holds two workflows: `test.yml` (tsc, vitest, build on push/PR; no DB, no
 network) and `scrape.yml` (the weekly two-pass scrape on a Monday cron plus manual dispatch; it
-scrapes only and carries no `ANTHROPIC_API_KEY` - judging stays manual, see
+scrapes only and carries no `ANTHROPIC_API_KEY` or `TYPESAFE_API_KEY` - judging stays manual, see
 `.claude/skills/update-postings/SKILL.md`). `scrape.yml` writes to the production database via a
 `DATABASE_URL` repo secret and revalidates the site cache via a `REVALIDATE_TOKEN` secret, so a
 green scheduled run publishes new pending rows with no human involved. Beyond those, nothing runs
