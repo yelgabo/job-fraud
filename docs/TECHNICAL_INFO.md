@@ -4,8 +4,9 @@ Developer/operator documentation for the Job Fraud Scanner. For the system-archi
 [ARCHITECTURE.md](ARCHITECTURE.md); for the plain-language overview see [README.md](../README.md); for
 a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
 
-**Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-4-5` for bulk
-verify/scoring, `claude-opus-4-8` for brand-impersonation checks, incl. the `web_search` tool) · zod ·
+**Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-4-5` for employer
+verification, `claude-opus-4-8` for brand-impersonation checks, incl. the `web_search` tool) ·
+TypeSafe Jev (typed text judgments, `@typesafe-ai/sdk`) · zod ·
 p-limit · Vitest. Data comes from WorkBC's JSON APIs (no browser/HTML scraping). **Live:**
 https://job-fraud-production.up.railway.app
 
@@ -41,9 +42,11 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
   (`opus-4-8`) `web_search` call (`lib/ai/check-impersonation.ts`) classifies the relationship
   (`same`/`affiliate`/`impersonation`/`uncertain`); a confirmed impersonation is re-attributed to the
   real company and scored HIGH (`lib/ai/resolve-impersonation.ts`).
-- *Stage 2 — score each posting.* A cheap Claude call (no web search) combines the employer verdict
-  with the posting's own flags / NOC / apply fields (`lib/ai/scoring.ts`) → `fraudScore`, `riskBand`,
-  `reasoning`, `signals`, `scoredAt`.
+- *Stage 2 — judge text, compose score.* Jev (`lib/ai/jev-judgments.ts`, needs `TYPESAFE_API_KEY`)
+  answers typed questions about the posting text; `lib/scoring/verdict.ts` composes the employer
+  verdict, the posting's own flags / NOC and those answers through the weight table → `fraudScore`,
+  `riskBand`, `reasoning`, `signals`, `judgments`, `scoringVersion`, `scoredAt`. Without the key the
+  composer still runs, with the route judgment replaced by the regex flags.
 
 An out-of-credit billing error aborts the run (`lib/shared/anthropic-errors.ts`) leaving jobs **pending**,
 rather than mass-writing `unknown`.
@@ -92,26 +95,38 @@ the employer published: a compact `~date` (with a footnote) in the list, the ful
 
 ## Scoring logic
 
-Claude (`lib/ai/scoring.ts`, `temperature: 0`) outputs `fraudScore` 0–100 plus `signals[]`, each
-weighted **−30 (legitimacy) … +45 (fraud)** with cited evidence.
+No model chooses the number. `composeScore` (`lib/scoring/compose.ts`, pure, unit-tested) sums a
+baseline of 20 with the signals below, each an explicit comparison against the stored evidence, then
+applies the floors and clamps to 0–100. The full account, with the measurements behind each rule, is
+`docs/scoring-algorithm.md`; the table itself is `lib/scoring/weights.ts`.
 
 | Signal | Weight |
 |---|---|
-| `applicationAddressType` = residential / po_box / virtual | **+35…45** (alone → HIGH; with `mail_physical_resume` → HIGH) |
-| `businessMatch` = mismatch (fake/shell/impersonation) | +20…30 · match → −20…−10 |
-| `crypto_payment` / `banking_info_upfront` | +20…30 |
-| `generic_email_domain` (free provider) | +15…25 · company-domain email = normal, never penalized |
-| `mail_physical_resume` + software role | +20 |
-| `locationMatch` = mismatch | +10…15 |
-| website unreachable (checked `false`, not unknown) | +10…15 |
-| `ats_known_provider` / applies via a real ATS | −30…−20 |
-| detailed duties, real benefits, recognizable employer | −20…−10 |
+| `apply_address_private` (residential / po_box / virtual mailing address, on a posting that mails) | **+40, floors the score at 70** |
+| `business_mismatch` (fake/shell/impersonation) · `crypto_payment` · `banking_info_upfront` | +25 |
+| `generic_email_domain` (free provider) | +20, +5 more when the website is unreachable |
+| `fee_to_apply` · `id_upfront` · `whatsapp_telegram_only` · `mail_resume_software_role` · `address_not_geocoded` | +20 |
+| `address_city_mismatch` | +15 · `location_mismatch` / `website_unreachable` +12 |
+| `pre_hire_ask` (Jev: money, banking details or ID asked before any offer) | up to +25, floors at 70 above 0.8 |
+| `ats_known_provider` (applies via the employer's own hiring system) | −25 |
+| `business_match` | −15 · `jobs_listing` −7 · `location_match` / `apply_address_business` / `address_city_match` −5 · `apply_address_none` −4 |
 
-Two invariants: a check that is `null`/`unknown` is **strictly neutral** (missing info is never
-penalized), and `mismatch` means "not a real company" — **not** "the company's industry differs from
-the role" (a ridesharing firm hiring a developer is a match). A failed scoring call → `unknown` band,
-never a fabricated score. A **confirmed brand impersonation** (apply URL routes to an unrelated
-company) bypasses the scoring model and is written deterministically as HIGH (`lib/ai/resolve-impersonation.ts`).
+Brand credits (`business_match`, `location_match`, `jobs_listing`, `apply_address_*`) are withheld
+when the application route is not the employer's own. With Jev, that is `routePlausibleForEmployer`
+below 0.57, which grades a neighbourhood pub on gmail differently from a national chain on gmail;
+without Jev it is the `generic_email_domain` / `whatsapp_telegram_only` flags. The rest of the Jev
+question set (`employerIsOrganisation`, `brokerRouting`, `brandProminence`) is stored on the row in
+`Job.judgments` and not weighted until measurement supports a weight.
+
+Invariants: a check that is `null`/`unknown` is **strictly neutral** (missing info is never
+penalized, enforced by comparing against explicit values), `mismatch` means "not a real company" —
+**not** "the company's industry differs from the role", and the address verdict only touches
+postings that actually mail. The published `reasoning` is generated from the composed signals
+(`lib/scoring/explain.ts`), so it cannot disagree with the number. A **confirmed brand
+impersonation** (apply URL routes to an unrelated company) bypasses the composer and is written
+deterministically as HIGH (`lib/ai/resolve-impersonation.ts`). `Job.scoringVersion` is 1 on composed
+rows and null on rows scored before the composer, whose numbers a model chose; filter on it in any
+analysis across time.
 
 ## Setup
 
@@ -127,8 +142,9 @@ npm run dev                   # http://localhost:3000
 `DATABASE_URL` must be reachable from your machine — for Railway Postgres use its **public** URL
 (TCP-proxy host), not `*.railway.internal`. The web app needs only `DATABASE_URL`, and so does
 `scrape`: it makes no Anthropic calls. `ANTHROPIC_API_KEY` is read only by the keyed judge path
-(`judge`, `rescore-failed`, `reverify-mail`, `rescan-impersonation`, `compare-judge`); the keyless
-`judge:fetch` -> agents -> `judge:apply` path needs no key at all. Keep the key commented out in
+(`judge`, `reverify-mail`, `rescan-impersonation`); the keyless
+`judge:fetch` -> agents -> `judge:apply` path needs no Anthropic key. `TYPESAFE_API_KEY` is read by
+both paths for the Jev text judgments and is optional (`.env.example` says what changes without it). Keep the key commented out in
 `.env` unless it is real, because `lib/env.ts` accepts any non-empty string, so a placeholder sends
 the run down the keyed path where every call 401s and the postings are written as judged. Set
 `AUDIT_TOKEN` (web-app env) to enable the unlinked `/audit/<token>` internal pages; unset ⇒ they 404.
@@ -202,9 +218,17 @@ npm run judge -- --limit 500         # next 500 pending
 npm run judge -- --rejudge           # re-evaluate everything (e.g. after prompt tuning)
 npm run judge -- --emp-concurrency 4 --score-concurrency 8
 ```
-Single-process (one DB writer → no races); web-verifies each distinct employer once, then cheap
-per-job scoring. ~1 web search per company instead of per posting. Wrapped by the `judge-postings`
-skill (`.claude/skills/`) for repeatable/scheduled runs.
+Single-process (one DB writer → no races); web-verifies each distinct employer once, then one Jev
+call per posting and a composed score. ~1 web search per company instead of per posting. Wrapped by
+the `judge-postings` skill (`.claude/skills/`) for repeatable/scheduled runs.
+
+**Recompose after a weight change.** `Job.judgments` keeps Jev's raw answers, so changing
+`lib/scoring/weights.ts` never needs inference. Dry run by default:
+
+```bash
+npm run recompose                    # band movement and changed scores, writes nothing
+npm run recompose -- --apply         # rewrite every composed row (publishes with no deploy)
+```
 
 **Backfill the posted-date column.** `Job.postedDate` is parsed from the raw `Job.postedAt` string;
 run this after any change to the parser, or once after the column is first added. Pure parse, no API
@@ -221,11 +245,12 @@ npm run backfill-posted-date -- --apply         # write (publishes with no deplo
 Rows whose raw value is missing, ambiguous or junk keep `postedDate = null` on purpose: the parser
 never guesses a date, and the site marks those postings' dates as estimates (`~date`).
 
-**Helpers:** `npm run rescore-failed` (re-score `unknown`-band rows) · `npm run reverify-mail`
-(re-verify mail-address employers) · `npm run rescan-impersonation` (corpus sweep for apply-host≠employer
-brand impersonation) · `npm run backfill-categories` (fill `nocCode`/`nocGroup`/`category` from stored
-descriptions — pure parse, no API) · `npm run backfill-posted-date` (fill `postedDate` from `postedAt` -
-pure parse, no API, dry run by default) · `npm run compare-judge` (read-only A/B of deduped vs agent scoring) ·
+**Helpers:** `npm run rescore-failed` (re-score `unknown`-band rows, no Anthropic key needed) ·
+`npm run reverify-mail` (re-verify mail-address employers) · `npm run rescan-impersonation` (corpus
+sweep for apply-host≠employer brand impersonation) · `npm run backfill-categories` (fill
+`nocCode`/`nocGroup`/`category` from stored descriptions — pure parse, no API) ·
+`npm run backfill-posted-date` (fill `postedDate` from `postedAt` - pure parse, no API, dry run by
+default) · `npm run compare-jev` / `npm run measure-questions` (read-only Jev measurement harnesses) ·
 **agent "deep" path:** `npm run judge:fetch` dumps pending into per-batch files for dispatched fraud
 agents, `npm run judge:apply <dir>` validates + applies their verdicts (single writer) — see
 `judge-runbook.md`.
@@ -234,7 +259,7 @@ agents, `npm run judge:apply <dir>` validates + applies their verdicts (single w
 
 Edit `lib/signals/application-flags.ts` — add a `{flag, patterns}` entry to `DETECTORS` (matched text →
 `evidence`). Add a label/icon in `components/FlagIcons.tsx` and a case in
-`lib/signals/application-flags.test.ts`. The scoring prompt (`lib/ai/scoring.ts`) reads the flags array, so new
+`lib/signals/application-flags.test.ts`. The composer (`lib/scoring/compose.ts`) reads the flags array, so new
 flags feed the score automatically.
 
 ## Testing & deploy

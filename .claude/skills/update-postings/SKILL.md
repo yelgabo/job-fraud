@@ -91,7 +91,9 @@ the `--recent week` term-pass variant) and for `--recent day` top-ups.
 
 2. **Pick the judge path by one predicate: is `ANTHROPIC_API_KEY` set in `.env`?** AGENTS.md
    ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see
-   Credentials).
+   Credentials). Either path scores through the same composer; `TYPESAFE_API_KEY` decides
+   whether Jev answers the text questions or the regex flags stand in (rows then store
+   `judgments = null`). Say which in the run report.
    - **Key present:** `npm run judge` (fast path: dedups by employer, single process).
    - **No key:** follow the [judge-postings procedure](../judge-postings/SKILL.md#procedure)
      for batched fetching, agent verdict files and the single-writer apply. Use its

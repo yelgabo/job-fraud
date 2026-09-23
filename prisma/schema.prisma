@@ -68,6 +68,14 @@ model Job {
   reasoning         String?
   signals           Json?
   scoredAt          DateTime?
+  // Raw Jev text judgments the composer consumed, kept so a reweight (`npm run recompose`)
+  // never needs inference. Null on rows scored before the composer, and on rows composed
+  // without a TYPESAFE_API_KEY.
+  judgments         Json?
+  // Which era produced fraudScore: null = a model chose the number (pre-composer, or the
+  // deterministic impersonation write), 1 = composed from the weight table. Analysis across
+  // time must filter on this rather than guess.
+  scoringVersion    Int?
   scrapedAt         DateTime  @default(now())
 
   @@index([riskBand, fraudScore])

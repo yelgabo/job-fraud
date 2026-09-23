@@ -88,7 +88,6 @@ async function main() {
     storedBand: RiskBand
     jevScore: number
     jevBand: RiskBand
-    contact: string
     topSignals: string
   }
   const rows: Row[] = []
@@ -123,7 +122,6 @@ async function main() {
             storedBand: bandFor(job.fraudScore ?? 0),
             jevScore: composed.fraudScore,
             jevBand: composed.riskBand,
-            contact: out.contactChannel,
             topSignals: composed.signals.slice(0, 3).map((s) => `${s.label}${s.weight >= 0 ? "+" : ""}${s.weight}`).join(" "),
           })
         } catch (e) {
@@ -158,7 +156,7 @@ async function main() {
   const worst = [...rows].sort((a, b) => Math.abs(b.jevScore - b.storedScore) - Math.abs(a.jevScore - a.storedScore)).slice(0, 20)
   for (const r of worst) {
     console.log(`${r.workbcId}  stored ${String(r.storedScore).padStart(3)} ${r.storedBand.padEnd(6)} -> jev ${String(r.jevScore).padStart(3)} ${r.jevBand.padEnd(6)} | ${r.title} @ ${r.employer ?? "(hidden)"}`)
-    console.log(`          contact=${r.contact}  ${r.topSignals}`)
+    console.log(`          route=${r.judgments.routePlausibleForEmployer.toFixed(2)}  ${r.topSignals}`)
   }
 
   console.log(`\n=== STORED HIGH THAT JEV DROPS (false-negative risk) ===`)

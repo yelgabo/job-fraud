@@ -2,7 +2,7 @@
 
 Scraping collects raw postings. The orchestrating session fetches pending postings,
 assigns investigation batches and applies verdicts as the single database writer.
-Agents never write to the database.
+Agents never write to the database, and no agent chooses a score.
 
 Use the [judge-postings skill](../.claude/skills/judge-postings/SKILL.md) for the
 maintained procedure, verdict shape and agent prompt. The fetcher writes
@@ -13,7 +13,8 @@ files serially, or apply the directory once after all its batches finish.
 For scraping followed by judging, use the
 [update-postings skill](../.claude/skills/update-postings/SKILL.md).
 
-Scoring policy comes from [the runtime rubric](../lib/ai/scoring.ts). The
-[judge skill's scoring policy](../.claude/skills/judge-postings/SKILL.md#scoring-policy)
-records the approved +35 to +45 address contribution and the shared new-verdict
-validation range. Historical records are preserved; this repair does not rescore data.
+An agent's job is evidence: the employer verdict (`web`) that the composer consumes.
+`npm run judge:apply` stores it, asks Jev the text questions (`TYPESAFE_API_KEY`),
+and composes the score from the weight table in `lib/scoring/weights.ts`, exactly as
+`npm run judge` does. The rules and the measurements behind them are in
+[scoring-algorithm.md](scoring-algorithm.md).

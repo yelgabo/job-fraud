@@ -1,6 +1,10 @@
 # Plan: extract the score composer
 
-Status: plan, nothing implemented. Written 2026-09-21.
+Status: implemented 2026-09-23, with two departures. Stage 2 judgments come from Jev rather than a
+rewritten Haiku prompt (step 3), so `lib/ai/scoring.ts` was deleted instead of rewritten; and the
+published prose is generated after composition from the signals (`lib/scoring/explain.ts`), which
+is the first of the two options under "Risks". Everything else landed as written; the current
+account is `docs/scoring-algorithm.md`. Written 2026-09-21.
 
 Out of scope, deliberately: adopting Jev (see `docs/jev-scoring-sketch.md`), building a labelled
 eval set, and rescoring the existing archive. This plan is worth doing on its own and is a

@@ -10,7 +10,6 @@
     "db:push": "prisma db push",
     "scrape": "tsx --env-file=.env scripts/scrape.ts",
     "judge": "tsx --env-file=.env scripts/judge.ts",
-    "compare-judge": "tsx --env-file=.env scripts/compare-judge.ts",
     "judge:fetch": "tsx --env-file=.env scripts/judge-fetch.ts",
     "judge:apply": "tsx --env-file=.env scripts/judge-apply.ts",
     "rescore-failed": "tsx --env-file=.env scripts/rescore-failed.ts",
@@ -24,7 +23,8 @@
     "local:score:fetch": "tsx --env-file=.env scripts/local-score-fetch.ts",
     "compare-jev": "tsx --env-file=.env scripts/compare-jev.ts",
     "export-labelset": "tsx --env-file=.env scripts/export-labelset.ts",
-    "measure-questions": "tsx --env-file=.env scripts/measure-questions.ts"
+    "measure-questions": "tsx --env-file=.env scripts/measure-questions.ts",
+    "recompose": "tsx --env-file=.env scripts/recompose.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

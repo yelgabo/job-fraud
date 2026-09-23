@@ -36,6 +36,8 @@ function makeJob(overrides: Partial<Job> = {}): Job & { employer: Employer | nul
     riskBand: "low",
     reasoning: "Looks fine.",
     signals: [],
+    judgments: null,
+    scoringVersion: null,
     scoredAt: new Date("2026-07-01T00:00:00Z"),
     scrapedAt: new Date("2026-06-30T00:00:00Z"),
     ...overrides,

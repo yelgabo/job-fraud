@@ -82,8 +82,11 @@ Two real examples:
 
 The ratings are generated in two steps: postings are first collected from WorkBC, then each company
 is researched once (including a web search for its real presence) and each of its postings is rated.
-The research-and-rating step is done with the help of AI. The public site shows only postings that
-have already been reviewed.
+The research step is done with the help of AI, and AI also answers a few fixed questions about the
+posting text, such as whether the way it asks you to apply fits the employer it names. The number
+itself is computed from a fixed, published weight table rather than chosen by a model, so two
+postings with the same evidence get the same rating. The public site shows only postings that have
+already been reviewed.
 
 ---
 

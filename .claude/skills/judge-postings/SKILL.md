@@ -13,8 +13,8 @@ Scraping only collects raw postings (`scoredAt` null = pending). Judging evaluat
 
 `scripts/judge.ts` is a single-process (single DB writer, no races) evaluator that **dedups by
 employer**: Stage 1 web-verifies each DISTINCT pending employer once (`verifyEmployerWeb`) →
-`employer.checks.web`; Stage 2 scores each pending job (`scoreJob`, no web search) reusing that
-verdict + the posting's own flags/NOC/apply fields. Far cheaper/faster at scale than per-job
+`employer.checks.web`; Stage 2 asks Jev the text questions (`TYPESAFE_API_KEY`) and composes the
+score in code (`lib/scoring/verdict.ts`) from that verdict + the posting's own flags/NOC. Far cheaper/faster at scale than per-job
 agents (e.g. ~1,046 employer web-searches for 2,425 jobs instead of 2,425). Use this for bulk and
 for scheduled runs. The agent-orchestrated flow below is an optional "deep per-posting" alternative.
 
@@ -55,9 +55,9 @@ Run from the `job-fraud` project directory.
 5. **Apply (single writer).** Run `npm run judge:apply -- logs/judge-<ts>/`. The argument may be a
    verdicts file or a directory, and several may be passed at once; a directory contributes every
    file matching `/verdicts.*\.json$/i`, so the `batch-*.json` inputs are ignored. It zod-validates
-   each verdict and updates the job (`fraudScore`, `riskBand`, `reasoning`, `signals`, `scoredAt`)
-   and the employer's `checks.web`; `riskBand` is derived from `fraudScore` rather than read from
-   the verdict. Invalid verdicts are skipped, not fatal, and those postings stay pending.
+   each verdict, stores `web` on the employer, asks Jev the text questions, and composes the score
+   (`fraudScore`, `riskBand`, `reasoning`, `signals`, `judgments`, `scoringVersion`, `scoredAt`) the
+   same way `npm run judge` does. Invalid verdicts are skipped, not fatal, and those postings stay pending.
    Apply each completed wave serially using its explicit verdict file paths, or apply the
    directory once after all its waves finish, to avoid reapplying earlier waves.
 
@@ -65,23 +65,19 @@ Run from the `job-fraud` project directory.
 
 ## Scoring policy
 
-[The runtime rubric](../../../lib/ai/scoring.ts) supplies scoring policy. New signal
-weights are integers from -30 to +45. The user confirmed on September 12, 2026 that
-the residential, PO-box and virtual mailing-address signal retains its +35 to +45
-contribution. Other signals retain their listed ranges. Both scoring responses and
-`judge:apply` use [ScoringSignalsSchema](../../../lib/shared/json-schemas.ts).
-Historical records remain readable through the separate SignalsSchema. Do not split
-an address signal into invented signals, tune other weights or rescore existing data
-unless the current task requests it.
+No agent and no model chooses a score. The number is composed by
+[lib/scoring/compose.ts](../../../lib/scoring/compose.ts) from the weight table in
+[lib/scoring/weights.ts](../../../lib/scoring/weights.ts); the residential, PO-box and
+virtual mailing-address signal is +40 with a floor at 70 there. An agent's output is
+the employer verdict below, which is the evidence the composer consumes. Any
+`fraudScore`, `signals` or `reasoning` in a verdict is dropped by `judge:apply`. Do not
+tune weights or rescore existing data unless the current task requests it.
 
 ## Verdict shape (one object per posting; agents return a JSON array of these)
 
 ```json
 {
   "workbcId": "49588691",
-  "fraudScore": 18,
-  "reasoning": "2-4 sentences grounded in the evidence.",
-  "signals": [{ "label": "...", "weight": -20, "evidence": "..." }],
   "web": {
     "websiteUrl": "https://acme.com",
     "websiteReachable": "yes",
@@ -97,14 +93,16 @@ unless the current task requests it.
 
 Enums — `websiteReachable`/`hasJobsListing`: `yes|no|unknown`; `businessMatch`/`locationMatch`:
 `match|mismatch|uncertain`; `applicationAddressType`: `business|residential|po_box|virtual|none|uncertain`.
-`fraudScore` is 0-100. For signal weights, follow the runtime rubric subject to the
-scoring policy above. `web` is optional but expected when an employer name exists.
+`web` is optional but expected when an employer name exists; omit it only when nothing
+could be established, since a present `web` overwrites the employer's cached verdict for
+every posting by that employer.
 
 ## Agent prompt (paste, then append the batch JSON)
 
 You are a fraud analyst auditing WorkBC job postings. For EACH posting in the JSON below, use web
-search to investigate the employer, then score fraud risk. Return ONLY a JSON array of verdicts
-(one per posting, exact shape above) — no prose outside the JSON.
+search to investigate the employer and record what you established. You do not score: the score
+is computed later from your findings. Return ONLY a JSON array of verdicts (one per posting, exact
+shape above) — no prose outside the JSON.
 
 For each posting:
 1. Web-search the employer's official website → `websiteUrl`/`websiteReachable`; note their real
@@ -119,12 +117,12 @@ For each posting:
    to MAIL materials somewhere, web-search that address and classify: business (real office),
    residential (home/apartment/unit), po_box, virtual (mail-forwarding), none, uncertain.
 
-Read `lib/ai/scoring.ts` for the maintained scoring guidance. Keep unknown checks
-neutral and use the posting's actual flags and cited web evidence. Preserve the
-approved address contribution and the other listed signal ranges.
+Report what you could establish and nothing more: `uncertain` / `unknown` are correct answers
+when the search did not settle it, and they are treated as neutral. `summary` is shown on the
+site as evidence, so keep it factual and under 400 characters.
 
-Be skeptical but fair: a real, verifiable company with a normal application method is low risk;
-postings from unverifiable individuals using free email + mail-to-a-home are high risk.
+Be skeptical but fair: `businessMatch` "mismatch" is for fake, shell, parked or impersonating
+entities, not for a company whose industry differs from the role.
 
 ## Scheduling
 

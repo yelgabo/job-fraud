@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { composeScore, type ComposeInput, type Judgments } from "./compose"
-import { BASELINE, DETERMINISTIC, FLOORS, JUDGMENT } from "./weights"
+import { BASELINE, DETERMINISTIC, FLOORS, JUDGMENT, JUDGMENT_NOUL_NEUTRAL, ROUTE_PLAUSIBLE_THRESHOLD } from "./weights"
 import { humanizeSignalLabel } from "../shared/signal-labels"
 
 const CLEAN_JUDGMENTS: Judgments = {
-  specificity: 3,
-  employerSubstantiation: 3,
-  payPlausibility: null,
-  urgency: 0,
-  preHireAsk: 0,
-  moneyHandling: 0,
-  roleCoherence: 1,
+  routePlausibleForEmployer: 0.9,
+  employerIsOrganisation: 0.9,
+  brokerRouting: 0.1,
+  brandProminence: 1,
+  askBeforeHire: 0,
 }
 
 const base = (over: Partial<ComposeInput> = {}): ComposeInput => ({
@@ -24,14 +22,23 @@ const base = (over: Partial<ComposeInput> = {}): ComposeInput => ({
 const weightOf = (input: ComposeInput, label: string) =>
   composeScore(input).signals.find((s) => s.label === label)?.weight
 
+const verifiedBrand = {
+  websiteUrl: "https://timhortons.ca", websiteReachable: "yes" as const,
+  businessMatch: "match" as const, locationMatch: "match" as const,
+  hasJobsListing: "yes" as const, applicationAddressType: "none" as const,
+  confidence: 0.9, summary: "Tim Hortons is a real chain",
+}
+const BRAND_CREDITS = ["apply_address_none", "business_match", "jobs_listing", "location_match"]
+
 describe("composeScore", () => {
   it("scores a posting with no evidence at the baseline", () => {
     const r = composeScore(base())
     expect(r.signals).toEqual([])
     expect(r.fraudScore).toBe(BASELINE)
+    expect(r.routeDisowned).toBeNull()
   })
 
-  it("treats neutral judgments as contributing nothing", () => {
+  it("treats clean judgments as contributing nothing", () => {
     expect(composeScore(base({ judgments: CLEAN_JUDGMENTS })).fraudScore).toBe(BASELINE)
   })
 
@@ -41,7 +48,6 @@ describe("composeScore", () => {
   })
 
   describe("null checks never count against a posting", () => {
-    // The prompt spends five lines and capital letters on this rule; here it is a comparison.
     it.each(["addressGeocoded", "addressMatchesCity", "websiteReachable"] as const)("%s null is neutral", (key) => {
       expect(composeScore(base({ checks: { [key]: null } })).fraudScore).toBe(BASELINE)
     })
@@ -92,33 +98,63 @@ describe("composeScore", () => {
   })
 
   describe("brand credit is conditional on an employer-owned application route", () => {
-    const verifiedBrand = {
-      websiteUrl: "https://timhortons.ca", websiteReachable: "yes" as const,
-      businessMatch: "match" as const, locationMatch: "match" as const,
-      hasJobsListing: "yes" as const, applicationAddressType: "none" as const,
-      confidence: 0.9, summary: "Tim Hortons is a real chain",
-    }
-
     it("credits a verified employer when nothing disowns the route", () => {
       const r = composeScore(base({ checks: { web: verifiedBrand } }))
-      expect(r.signals.map((s) => s.label).sort()).toEqual(["apply_address_none", "business_match", "jobs_listing", "location_match"])
+      expect(r.signals.map((s) => s.label).sort()).toEqual(BRAND_CREDITS)
     })
 
-    it("withholds every brand credit when contact is a free consumer mailbox", () => {
-      const r = composeScore(base({
-        checks: { web: verifiedBrand },
-        flags: [{ flag: "generic_email_domain", evidence: "teamtims@gmail.com" }],
-      }))
-      expect(r.signals.map((s) => s.label)).toEqual(["generic_email_domain"])
-      expect(r.riskBand).toBe("medium")
+    describe("without judgments the flags decide", () => {
+      it("withholds every brand credit when contact is a free consumer mailbox", () => {
+        const r = composeScore(base({
+          checks: { web: verifiedBrand },
+          flags: [{ flag: "generic_email_domain", evidence: "teamtims@gmail.com" }],
+        }))
+        expect(r.signals.map((s) => s.label)).toEqual(["generic_email_domain"])
+        expect(r.riskBand).toBe("medium")
+        expect(r.routeDisowned).toBe("flags")
+      })
+
+      it("still applies the penalties on those same fields", () => {
+        const r = composeScore(base({
+          checks: { web: { ...verifiedBrand, businessMatch: "mismatch", locationMatch: "mismatch" } },
+          flags: [{ flag: "generic_email_domain", evidence: "x@gmail.com" }],
+        }))
+        expect(r.signals.map((s) => s.label).sort()).toEqual(["business_mismatch", "generic_email_domain", "location_mismatch"])
+      })
     })
 
-    it("still applies the penalties on those same fields", () => {
-      const r = composeScore(base({
-        checks: { web: { ...verifiedBrand, businessMatch: "mismatch", locationMatch: "mismatch" } },
-        flags: [{ flag: "generic_email_domain", evidence: "x@gmail.com" }],
-      }))
-      expect(r.signals.map((s) => s.label).sort()).toEqual(["business_mismatch", "generic_email_domain", "location_mismatch"])
+    describe("with judgments the route question decides, graded", () => {
+      const gmail = [{ flag: "generic_email_domain", evidence: "x@gmail.com" }]
+
+      it("a national chain on gmail loses the credits", () => {
+        const r = composeScore(base({
+          checks: { web: verifiedBrand }, flags: gmail,
+          judgments: { ...CLEAN_JUDGMENTS, routePlausibleForEmployer: 0.10, brandProminence: 3 },
+        }))
+        expect(r.signals.map((s) => s.label)).toEqual(["generic_email_domain"])
+        expect(r.routeDisowned).toBe("judgment")
+      })
+
+      it("a neighbourhood pub on gmail keeps them, and still pays the email penalty", () => {
+        const r = composeScore(base({
+          checks: { web: { ...verifiedBrand, summary: "Browns Crafthouse, one pub" } }, flags: gmail,
+          judgments: { ...CLEAN_JUDGMENTS, routePlausibleForEmployer: 0.77, brandProminence: 1 },
+        }))
+        expect(r.signals.map((s) => s.label).sort()).toEqual([...BRAND_CREDITS, "generic_email_domain"].sort())
+        expect(r.routeDisowned).toBeNull()
+      })
+
+      it("the threshold is the boundary", () => {
+        const at = base({ checks: { web: verifiedBrand }, judgments: { ...CLEAN_JUDGMENTS, routePlausibleForEmployer: ROUTE_PLAUSIBLE_THRESHOLD } })
+        const below = base({ checks: { web: verifiedBrand }, judgments: { ...CLEAN_JUDGMENTS, routePlausibleForEmployer: ROUTE_PLAUSIBLE_THRESHOLD - 0.01 } })
+        expect(composeScore(at).routeDisowned).toBeNull()
+        expect(composeScore(below).routeDisowned).toBe("judgment")
+      })
+
+      it("overrides the flags in both directions", () => {
+        const noFlagButImplausible = base({ checks: { web: verifiedBrand }, judgments: { ...CLEAN_JUDGMENTS, routePlausibleForEmployer: 0.2 } })
+        expect(composeScore(noFlagButImplausible).routeDisowned).toBe("judgment")
+      })
     })
 
     it("a private mailing address is never suppressed", () => {
@@ -170,31 +206,32 @@ describe("composeScore", () => {
     })
 
     it("an asserted pre-hire money request lands high", () => {
-      const r = composeScore(base({ judgments: { ...CLEAN_JUDGMENTS, preHireAsk: 0.95 } }))
+      const r = composeScore(base({ judgments: { ...CLEAN_JUDGMENTS, askBeforeHire: 0.95 } }))
       expect(r.fraudScore).toBeGreaterThanOrEqual(FLOORS.pre_hire_ask)
     })
 
     it("leaves an uncertain pre-hire request below the floor", () => {
-      const r = composeScore(base({ judgments: { ...CLEAN_JUDGMENTS, preHireAsk: 0.5 } }))
+      const r = composeScore(base({ judgments: { ...CLEAN_JUDGMENTS, askBeforeHire: 0.5 } }))
       expect(r.fraudScore).toBeLessThan(FLOORS.pre_hire_ask)
     })
   })
 
-  describe("judgment scaling", () => {
-    it("charges nothing at or above the acceptable rubric level", () => {
-      for (const specificity of [2, 3]) {
-        expect(weightOf(base({ judgments: { ...CLEAN_JUDGMENTS, specificity } }), "vague_description")).toBeUndefined()
-      }
+  describe("judgment weights", () => {
+    it("charges the pre-hire ask from the neutral point up to its peak", () => {
+      expect(weightOf(base({ judgments: { ...CLEAN_JUDGMENTS, askBeforeHire: 1 } }), "pre_hire_ask")).toBe(JUDGMENT.pre_hire_ask)
+      expect(weightOf(base({ judgments: { ...CLEAN_JUDGMENTS, askBeforeHire: 0.75 } }), "pre_hire_ask")).toBe(Math.round(0.5 * JUDGMENT.pre_hire_ask))
+      expect(weightOf(base({ judgments: { ...CLEAN_JUDGMENTS, askBeforeHire: JUDGMENT_NOUL_NEUTRAL } }), "pre_hire_ask")).toBeUndefined()
     })
 
-    it("charges the full weight at the worst rubric level", () => {
-      expect(weightOf(base({ judgments: { ...CLEAN_JUDGMENTS, specificity: 0 } }), "vague_description")).toBe(
-        JUDGMENT.vague_description,
-      )
+    it("a clean posting's residual probability never becomes a published claim", () => {
+      // 0.05 * 25 rounds to 1, and the label for that 1 says money was requested.
+      const r = composeScore(base({ judgments: { ...CLEAN_JUDGMENTS, askBeforeHire: 0.05 } }))
+      expect(r.signals).toEqual([])
     })
 
-    it("skips pay entirely when the posting states none", () => {
-      expect(weightOf(base({ judgments: { ...CLEAN_JUDGMENTS, payPlausibility: null } }), "pay_implausible")).toBeUndefined()
+    it("stores but never weights the unmeasured questions", () => {
+      const extreme = base({ judgments: { ...CLEAN_JUDGMENTS, employerIsOrganisation: 0, brokerRouting: 1, brandProminence: 3 } })
+      expect(composeScore(extreme).fraudScore).toBe(BASELINE)
     })
   })
 

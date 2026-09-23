@@ -1,14 +1,17 @@
 // JUDGE (phase 2), step 2 of 2 — APPLY.
-// The SINGLE DB WRITER. Reads a verdicts JSON file produced from the fraud-detection agents and
-// updates jobs + employers sequentially (no concurrent writers -> no races/deadlocks). Each
-// verdict is zod-validated; a bad one is skipped, not fatal.
-// Run: npm run judge:apply -- <verdicts.json>
+// The SINGLE DB WRITER. Reads verdict JSON files produced by the fraud-detection agents, stores
+// each agent's employer verdict, then scores the posting the same way `npm run judge` does:
+// Jev text judgments (when TYPESAFE_API_KEY is set) plus the composer (lib/scoring/verdict.ts).
+// Agents supply evidence; no agent chooses a number. Sequential writes, no races. Each verdict
+// is zod-validated; a bad one is skipped, not fatal.
+// Run: npm run judge:apply -- <verdicts.json | dir> [...]
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { z } from "zod"
 import { prisma } from "../lib/db"
-import { ScoringSignalsSchema, WebVerificationSchema } from "../lib/shared/json-schemas"
-import { bandFor } from "../lib/shared/risk-band"
+import { WebVerificationSchema } from "../lib/shared/json-schemas"
+import { jevClientFromEnv } from "../lib/ai/jev-judgments"
+import { buildVerdict } from "../lib/scoring/verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 /** Expand args into verdict-file paths: a dir contributes its verdicts*.json files. */
@@ -24,11 +27,10 @@ function resolveFiles(args: string[]): string[] {
   return files
 }
 
-const VerdictSchema = z.object({
+// Anything else an agent returns (a fraudScore, signals, prose) is dropped here: the score is
+// composed, never copied. Older verdict files therefore still apply, minus their numbers.
+export const VerdictSchema = z.object({
   workbcId: z.string(),
-  fraudScore: z.number().int().min(0).max(100),
-  reasoning: z.string().min(1),
-  signals: ScoringSignalsSchema,
   web: WebVerificationSchema.optional(),
 })
 
@@ -44,10 +46,12 @@ async function main() {
     if (Array.isArray(raw)) verdicts.push(...raw)
     else verdicts.push(raw)
   }
-  console.log(`[judge:apply] ${verdicts.length} verdicts`)
+  const jev = jevClientFromEnv()
+  console.log(`[judge:apply] ${verdicts.length} verdicts (${jev ? "Jev + composer" : "composer only, no TYPESAFE_API_KEY"})`)
 
   let applied = 0
   let skipped = 0
+  let tokens = 0
   const bands: Record<string, number> = {}
   for (const v of verdicts) {
     const parsed = VerdictSchema.safeParse(v)
@@ -57,25 +61,25 @@ async function main() {
       continue
     }
     const d = parsed.data
-    const band = bandFor(d.fraudScore)
     try {
-      const updated = await prisma.job.update({
-        where: { workbcId: d.workbcId },
-        data: { fraudScore: d.fraudScore, riskBand: band, reasoning: d.reasoning, signals: d.signals as never, scoredAt: new Date() },
-      })
-      if (d.web && updated.employerId) {
-        const emp = await prisma.employer.findUnique({ where: { id: updated.employerId } })
-        const checks = { ...((emp?.checks as Record<string, unknown>) ?? {}), web: d.web }
-        await prisma.employer.update({ where: { id: updated.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
+      const job = await prisma.job.findUnique({ where: { workbcId: d.workbcId }, include: { employer: true } })
+      if (!job) throw new Error("no such posting")
+      let checks = (job.employer?.checks as Record<string, unknown> | null) ?? {}
+      if (d.web && job.employerId) {
+        checks = { ...checks, web: d.web }
+        await prisma.employer.update({ where: { id: job.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
       }
+      const { usage, ...data } = await buildVerdict(jev, { ...job, employerName: job.employer?.nameDisplay ?? null }, checks)
+      tokens += usage.inputTokens
+      await prisma.job.update({ where: { workbcId: d.workbcId }, data })
       applied++
-      bands[band] = (bands[band] ?? 0) + 1
+      bands[data.riskBand] = (bands[data.riskBand] ?? 0) + 1
     } catch (err) {
       skipped++
-      console.error(`  skip (db): ${d.workbcId} — ${(err as Error).message.slice(0, 100)}`)
+      console.error(`  skip: ${d.workbcId} — ${(err as Error).message.slice(0, 100)}`)
     }
   }
-  console.log(`[judge:apply] applied ${applied}, skipped ${skipped} | bands: ${JSON.stringify(bands)}`)
+  console.log(`[judge:apply] applied ${applied}, skipped ${skipped} | bands: ${JSON.stringify(bands)} | Jev input tokens ${tokens}`)
   if (applied > 0) await requestRevalidation()
   await prisma.$disconnect()
 }

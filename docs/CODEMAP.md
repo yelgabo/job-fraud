@@ -63,9 +63,16 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `resolve-impersonation.ts` — `resolveApplyHost()`: glue — runs the apply-host check; on a confirmed
   impersonation re-attributes the posting to the real company + writes a deterministic HIGH score +
   the `apply_host_mismatch` flag + an audit-log row. Shared by `judge` and `rescan-impersonation`.
-- `scoring.ts` — `scoreJob()`: Claude call (no web) that turns the employer verdict + a posting's
-  flags/NOC/apply fields into `{fraudScore, reasoning, signals}`. Holds the scoring rubric/prompt
-  (`temperature: 0`). `makeFailedResult()` for failures.
+- `jev-judgments.ts` — `judgeText()`: the Jev question set (route plausibility, organisation vs
+  household, broker routing, brand prominence, pre-hire ask) answered over the posting text, and
+  `jevClientFromEnv()`, the `TYPESAFE_API_KEY` predicate. Never sees checks, never returns a score.
+
+`lib/scoring/` — where the number comes from (no model):
+- `weights.ts` — the whole tuning surface: weight table, floors, thresholds, `SCORING_VERSION`.
+- `compose.ts` — `composeScore()`: pure, judgments + checks + flags → score, band, signals.
+- `explain.ts` — `explainVerdict()`: the published prose, written from the composed signals.
+- `verdict.ts` — `buildVerdict()`: Jev (optional) → compose → explain; the one pipeline both DB
+  writers (`judge`, `judge:apply`) and the helpers call.
 
 **`lib/shared/` — cross-cutting (web + CLI), SDK-free**
 - `json-schemas.ts` — zod schemas + parsers for the Prisma `Json` columns (`ChecksSchema`,
@@ -117,8 +124,7 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `db.ts` — Prisma client singleton.
 - `env.ts`: zod-validated env. `webEnv` for the app and for `scrape.ts`, which makes no Anthropic
   calls; `loadScrapeEnv()` adds a required `ANTHROPIC_API_KEY` and is imported only by the keyed
-  judge scripts (`judge`, `rescore-failed`, `reverify-mail`, `rescan-impersonation`,
-  `compare-judge`). The check is `z.string().min(1)`, so a placeholder value passes. `AUDIT_TOKEN`
+  judge scripts (`judge`, `reverify-mail`, `rescan-impersonation`). The check is `z.string().min(1)`, so a placeholder value passes. `AUDIT_TOKEN`
   optional, gates `/audit`. Also exports `searchUrlForTerm()`.
 - `utils.ts` — `cn()` classname helper for the UI.
 
@@ -142,9 +148,10 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   *(Preferred judge.)*
 - `judge-fetch.ts` / `judge-apply.ts` — the optional **agent** judge path: fetch dumps pending into
   per-batch files for dispatched fraud agents; apply validates + writes their verdicts (single writer).
-- `rescore-failed.ts` — re-score postings stuck in the `unknown` band.
+- `rescore-failed.ts` — re-score postings stuck in the `unknown` band (Jev + composer, no Anthropic key).
+- `recompose.ts` — recompute every composed row from its stored judgments and the current weight
+  table; dry run by default, `--apply` writes.
 - `reverify-mail.ts` — re-verify + re-score only employers whose postings give a mailing address.
-- `compare-judge.ts` — read-only A/B of the deduped judge vs the agent path (quality check).
 - `rescan-impersonation.ts` — one-time corpus sweep: find apply-host≠employer mismatches, web-check
   each distinct pair, re-attribute + HIGH-score confirmed brand impersonations. `npm run rescan-impersonation`.
 - `backfill-categories.ts` — fill `nocCode`/`nocGroup`/`category` from each posting's stored
@@ -214,7 +221,7 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 
 ## Config & meta
 - `package.json` — scripts (`scrape`, `judge`, `judge:fetch/apply`, `rescore-failed`, `reverify-mail`,
-  `compare-judge`, `rescan-impersonation`, `backfill-categories`, `backfill-posted-date`, `dev`,
+  `recompose`, `rescan-impersonation`, `backfill-categories`, `backfill-posted-date`, `dev`,
   `build`, `test`) + deps.
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.
 - `vitest.config.ts` - only the `@/` path alias and automatic JSX; everything else is vitest defaults.

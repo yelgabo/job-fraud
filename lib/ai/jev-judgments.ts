@@ -1,10 +1,15 @@
 // Produces the text judgments that lib/scoring/compose.ts consumes, using TypeSafe's Jev.
 // Jev answers typed questions about the posting text; it never sees the deterministic checks
 // and never returns a score. Everything numeric happens in the composer.
+//
+// The question set is the one measurement kept (docs/scoring-algorithm.md, stage 2). Each
+// question earned its place by separating bands before it was given a weight; the first set
+// asked seven questions of which four were flat and one ran backwards.
 
-import { TypeSafeClient, choice, noul, score } from "@typesafe-ai/sdk"
+import { TypeSafeClient, noul, score } from "@typesafe-ai/sdk"
 import type { Judgments } from "../scoring/compose"
 
+/** State shape A from addendum 6: the description alone, no pre-parsed apply block. */
 export type PostingState = {
   title: string
   employer: string | null
@@ -13,122 +18,86 @@ export type PostingState = {
   description: string
 }
 
-const SPECIFICITY = score("How concretely the posting describes the actual work.", [
-  "No duties are named at all. The text covers only pay, benefits, or the company in general terms, or runs to a couple of lines.",
-  "Duties appear only as generic phrases that would fit almost any job, such as data entry, admin tasks, or assisting the team. No tools, systems, or deliverables are named.",
-  "Several specific duties are named, with some tools, systems, or processes, but the day-to-day work is still partly unclear.",
-  "Specific duties, the tools or systems used, who the role works with or reports to, and requirements a candidate could be screened against.",
-] as const)
+/** Description characters sent to Jev. Measured at this length; shorter narrowed the margin. */
+export const DESCRIPTION_CHARS = 6000
 
-const EMPLOYER_SUBSTANTIATION = score(
-  "How much checkable detail about the employer the posting text itself carries.",
-  [
-    "Nothing checkable. The employer is named only in passing, or not at all.",
-    "A company name and an industry, with nothing that could be looked up or confirmed.",
-    "Some checkable detail, such as a street address, a named team or manager, or a described benefits plan.",
-    "Several checkable details, such as a street address, a named hiring contact, a licence or registration number, a union or benefits plan, or a described office and team.",
-  ] as const,
-)
+export const QUESTIONS = {
+  // The other half of the impersonation judgment: not whether the channel is a free mailbox,
+  // which a regex already answers, but whether it is the channel this employer would use.
+  routePlausibleForEmployer: noul(
+    "The way this posting says to apply is what an employer of this kind and size would genuinely use for this role.",
+    {
+      true: "The application route fits the employer: a careers portal or company-domain address for a large organisation, or a direct phone, email, or walk-in for a small local business.",
+      false: "The route does not fit the employer named, for example a national chain or a professional firm taking applications only at a free consumer mailbox, a messaging app, or a private home address.",
+    },
+  ),
 
-// Deliberately internal consistency rather than market rates: asking whether pay matches the
-// described skill level is a reading judgment, where asking what the job "should" pay in BC
-// would be a domain fact Jev has no reliable source for.
-const PAY_PLAUSIBILITY = score("How the stated pay compares with the skill level the duties describe.", [
-  "Far above what these duties imply, such as a high rate for unskilled or vaguely described work.",
-  "Somewhat higher than these duties imply, with no explanation in the posting.",
-  "Consistent with the skill level the duties describe.",
-  "At or below what these duties imply.",
-] as const)
+  // The high band is full of private households and one-person "companies". The posting text
+  // says which it is more directly than any check does.
+  employerIsOrganisation: noul(
+    "The employer is a registered business or institution rather than a private individual, a family, or a household.",
+    {
+      true: "A company, franchise, agency, school, hospital, or similar organisation is doing the hiring.",
+      false: "A private person or household is doing the hiring, for example a family seeking a caregiver or an individual named as the employer.",
+    },
+  ),
 
-const URGENCY = noul(
-  "The posting pressures the reader to act or start immediately, for example by saying that positions are filling fast, that hiring is immediate, or that applicants must reply within hours.",
-)
+  // An ordinary employer routing its hiring through an immigration consultancy, which a keyword
+  // on "immigration" cannot separate from an immigration firm hiring its own staff. Stored,
+  // not weighted: n = 8 at the time of writing.
+  brokerRouting: noul(
+    "Applications for this job are handled by a third party whose business is immigration, LMIA, or visa services, rather than by the employer that would actually employ the worker.",
+    {
+      true: "The contact or application route belongs to an immigration consultancy, LMIA agent, or visa service acting for a different employer, for example a restaurant or a household.",
+      false: "The employer handles its own applications, including an immigration firm hiring staff for itself.",
+    },
+  ),
 
-const PRE_HIRE_ASK = noul(
-  "Before any interview or job offer, the posting asks the applicant to send money, banking details, a void cheque, or government identification, or to pay for training, equipment, or a background check.",
-)
+  // Borrowing a brand only pays if the brand is worth borrowing, so prominence is half of the
+  // impersonation judgment. Stored as context, never weighted: the medium band IS big brands.
+  brandProminence: score("How widely known is the employer named in this posting?", [
+    "Not a recognisable business name. It reads as a private individual, a household, or a name with no presence beyond this posting.",
+    "A small local business: one location, known only in its own town or neighbourhood.",
+    "An established regional or provincial business, or a mid-sized company in its industry.",
+    "A nationally or internationally known brand that most people would recognise by name.",
+  ] as const),
 
-// Ordinary cash handling by a cashier, server or store manager is not this signal. What matters
-// is money or goods moving through the worker's own accounts or home, which is the mule pattern.
-const MONEY_HANDLING = noul(
-  "The worker would move money or goods through their own personal bank account, payment app, or home address: receiving funds and forwarding them on, withdrawing and resending payments, buying gift cards for the employer, or accepting parcels at home and reshipping them.",
-  {
-    true: "The posting describes funds or parcels passing through the worker's own account, card, or home address on their way somewhere else.",
-    false: "Any money handling described is ordinary work on the employer's own premises or systems, such as operating a till, taking customer payments, running payroll, or managing a budget.",
-  },
-)
-
-const ROLE_COHERENCE = noul(
-  "The title, the stated duties, the listed requirements, and the pay describe one coherent job.",
-  {
-    true: "Each part of the posting fits the others: the duties match the title, the requirements match the duties, and the pay matches the level of work.",
-    false: "Parts of the posting contradict each other, for example an entry-level title with senior duties, or clerical duties with a professional salary.",
-  },
-)
-
-export const CONTACT_CHANNEL = choice("How the posting tells an applicant to make contact.", {
-  ats_or_portal: "Through an applicant tracking system or a company careers portal.",
-  employer_domain_email: "By email at a domain that belongs to the employer being advertised.",
-  free_consumer_email: "By email at a free consumer provider such as Gmail, Outlook, Yahoo, or Proton.",
-  messaging_app: "Through a messaging app such as WhatsApp, Telegram, or Signal, or by text message.",
-  phone_only: "By telephone only.",
-  postal_mail: "By posting or dropping off physical documents at an address.",
-  in_person: "By attending in person at a stated place and time.",
-  not_stated: "The posting does not say how to make contact.",
-})
+  // Tail insurance: flat on this corpus because WorkBC moderation holds, kept because it is the
+  // only cover for what would matter most if that lapsed.
+  askBeforeHire: noul(
+    "Before any interview or job offer, the posting asks the applicant to send money, banking details, a void cheque, or government identification, or to pay for training, equipment, or a background check.",
+  ),
+}
 
 export type JudgeTextResult = {
   judgments: Judgments
-  contactChannel: string
-  contactConfidence: number
   usage: { inputTokens: number; outputTokens: number }
 }
 
 export async function judgeText(client: TypeSafeClient, posting: PostingState): Promise<JudgeTextResult> {
-  const base = {
-    specificity: SPECIFICITY,
-    employerSubstantiation: EMPLOYER_SUBSTANTIATION,
-    urgency: URGENCY,
-    preHireAsk: PRE_HIRE_ASK,
-    moneyHandling: MONEY_HANDLING,
-    roleCoherence: ROLE_COHERENCE,
-    contactChannel: CONTACT_CHANNEL,
-  }
-
-  if (posting.salary) {
-    const { answers, usage } = await client.systemOne({
-      state: posting,
-      questions: { ...base, payPlausibility: PAY_PLAUSIBILITY },
-    })
-    return {
-      judgments: {
-        specificity: answers.specificity.score,
-        employerSubstantiation: answers.employerSubstantiation.score,
-        payPlausibility: answers.payPlausibility.score,
-        urgency: answers.urgency.noul,
-        preHireAsk: answers.preHireAsk.noul,
-        moneyHandling: answers.moneyHandling.noul,
-        roleCoherence: answers.roleCoherence.noul,
-      },
-      contactChannel: answers.contactChannel.choice,
-      contactConfidence: answers.contactChannel.confidence,
-      usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens },
-    }
-  }
-
-  const { answers, usage } = await client.systemOne({ state: posting, questions: base })
+  const { answers, usage } = await client.systemOne({
+    state: { ...posting, description: posting.description.slice(0, DESCRIPTION_CHARS) },
+    questions: QUESTIONS,
+  })
   return {
     judgments: {
-      specificity: answers.specificity.score,
-      employerSubstantiation: answers.employerSubstantiation.score,
-      payPlausibility: null,
-      urgency: answers.urgency.noul,
-      preHireAsk: answers.preHireAsk.noul,
-      moneyHandling: answers.moneyHandling.noul,
-      roleCoherence: answers.roleCoherence.noul,
+      routePlausibleForEmployer: answers.routePlausibleForEmployer.noul,
+      employerIsOrganisation: answers.employerIsOrganisation.noul,
+      brokerRouting: answers.brokerRouting.noul,
+      brandProminence: answers.brandProminence.score,
+      askBeforeHire: answers.askBeforeHire.noul,
     },
-    contactChannel: answers.contactChannel.choice,
-    contactConfidence: answers.contactChannel.confidence,
     usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens },
   }
+}
+
+/**
+ * The one predicate for whether stage 2 asks Jev: a non-empty TYPESAFE_API_KEY. Without it the
+ * composer runs on deterministic evidence alone and the row is stored with `judgments = null`.
+ */
+export function jevClientFromEnv(env: Record<string, string | undefined> = process.env): TypeSafeClient | null {
+  const apiKey = env.TYPESAFE_API_KEY?.trim()
+  if (!apiKey) return null
+  // Long judge runs ride out rate limits on the SDK's own backoff; concurrency is capped upstream.
+  return new TypeSafeClient({ apiKey, retry: { maxRetries: 4 }, timeout: 30_000 })
 }

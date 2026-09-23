@@ -9,9 +9,10 @@
 // never "fix" one by filtering it out.
 //
 // The plain wording must not assert more than the underlying check does. The vocabulary
-// sources are the scoring rubric in lib/ai/scoring.ts (web.* keys), the deterministic
-// detectors in lib/signals/application-flags.ts (snake_case flags), and
-// lib/shared/json-schemas.ts (enum values).
+// sources are the composer's weight table in lib/scoring/weights.ts (the closed vocabulary
+// every new row uses), the pre-composer model-written labels that historical rows still
+// carry (web.* keys), the deterministic detectors in lib/signals/application-flags.ts
+// (snake_case flags), and lib/shared/json-schemas.ts (enum values).
 
 const PLAIN: Record<string, string> = {
   // web verification keys (WebVerificationSchema) with their enum values
@@ -56,13 +57,7 @@ const PLAIN: Record<string, string> = {
   website_unreachable: "The employer's website could not be reached",
   mail_resume_software_role: "A software role asks for a paper résumé by mail",
   // composed text judgments (lib/scoring/compose.ts)
-  vague_description: "The posting does not describe the actual work concretely",
-  unsubstantiated_employer: "The posting carries little checkable detail about the employer",
-  pay_implausible: "The stated pay does not match the skill level the duties describe",
-  urgency_pressure: "The posting pressures applicants to act immediately",
   pre_hire_ask: "Money, banking details, or ID are requested before any offer",
-  money_handling: "Money or parcels would pass through the worker's own account or home",
-  role_incoherent: "The title, duties, requirements, and pay do not describe one coherent job",
 }
 
 // "web.businessMatch == mismatch" / "businessMatch: mismatch" / "web.hasJobsListing no"

@@ -25,6 +25,10 @@ const webSchema = z.object({
   // call after a successful run. When unset, the endpoint denies every request (deny by
   // default) and the public pages refresh only on their 600 s revalidation timer.
   REVALIDATE_TOKEN: z.string().min(1).optional(),
+  // TypeSafe key for the Jev text judgments in stage 2 of judging. Optional: without it both
+  // judging paths still compose a score, with the route judgment replaced by the regex flags
+  // (lib/scoring/compose.ts). `lib/ai/jev-judgments.ts` owns the predicate.
+  TYPESAFE_API_KEY: z.string().min(1).optional(),
 })
 
 const scrapeSchema = webSchema.extend({

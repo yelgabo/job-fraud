@@ -1,8 +1,8 @@
 // JUDGE (deduped, single-process) — the efficient evaluator for large corpora.
 // Stage 1: verify each DISTINCT pending employer ONCE (Claude web_search) -> employer.checks.web.
-// Stage 2: score each pending job (cheap Claude call, no web) reusing the employer verdict + the
-// posting's own flags/NOC/apply fields. One process = one DB writer (no races). Reuses
-// verifyEmployerWeb + scoreJob. Run: npm run judge -- [--limit N] [--rejudge]
+// Stage 2: judge each pending job's text with Jev (when TYPESAFE_API_KEY is set) and compose the
+// score in code from the employer verdict + the posting's own flags/NOC (lib/scoring/verdict.ts).
+// One process = one DB writer (no races). Run: npm run judge -- [--limit N] [--rejudge]
 //   [--emp-concurrency 4] [--score-concurrency 8]
 import pLimit from "p-limit"
 import Anthropic from "@anthropic-ai/sdk"
@@ -12,10 +12,10 @@ import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
 import { cachedVerdictMissedAnAddress, mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { allApplyHostsMatch, matchedProvider } from "../lib/signals/apply-host"
 import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
-import { scoreJob, makeFailedResult, type ScoreInput } from "../lib/ai/scoring"
 import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
+import { jevClientFromEnv } from "../lib/ai/jev-judgments"
+import { buildVerdict } from "../lib/scoring/verdict"
 import { isBillingError } from "../lib/shared/anthropic-errors"
-import { bandFor } from "../lib/shared/risk-band"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
@@ -39,6 +39,8 @@ async function main() {
   // maxRetries 5 (SDK default 2): long runs must ride out 429/529 bursts with the SDK's own
   // exponential backoff; concurrency caps below are the primary rate limiter.
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 5 })
+  const jev = jevClientFromEnv()
+  console.log(jev ? "[judge] stage 2: Jev text judgments + composer" : "[judge] stage 2: composer only (no TYPESAFE_API_KEY, route judged by flags)")
   const t0 = Date.now()
 
   const jobs = await prisma.job.findMany({
@@ -158,7 +160,7 @@ async function main() {
   if (billingAbort) throw new Error(ABORT_MSG)
   console.log(`[judge] employer verify done: ${toWebVerify.length - vFail} ok, ${vFail} failed | ${toPresume.length} presumed legit (no web search)`)
 
-  // --- Stage 2: score each job (no web; reuses employer verdict + job fields) ---
+  // --- Stage 2: judge text (Jev) + compose (code); reuses employer verdict + job fields ---
   let sDone = 0
   let sFail = 0
   let impostors = 0
@@ -185,35 +187,25 @@ async function main() {
           if (isBillingError(e)) { billingAbort = true; return }
           // other web-check failure — fall through to normal scoring
         }
-        const input: ScoreInput = {
-          title: job.title,
-          employerDisplay: job.employer?.nameDisplay ?? null,
-          location: job.location,
-          salary: job.salary,
-          postedAt: job.postedAt,
-          descriptionMd: job.descriptionMd,
-          employerChecks: job.employerId ? empChecks.get(job.employerId) ?? null : null,
-          applicationFlags: parseFlags(job.applicationFlags),
-          atsProvider: job.atsProvider,
-          externalApplyOk: job.externalApplyOk,
-        }
-        let result
+        let verdict
         try {
-          const out = await scoreJob(client, input)
-          totalIn += out.usage.inputTokens
-          totalOut += out.usage.outputTokens
-          result = out.result
+          verdict = await buildVerdict(
+            jev,
+            { ...job, employerName: job.employer?.nameDisplay ?? null },
+            job.employerId ? empChecks.get(job.employerId) ?? null : null,
+          )
         } catch (err) {
-          if (isBillingError(err)) { billingAbort = true; return } // leave pending, don't mark unknown
+          // A Jev failure leaves the posting pending rather than storing a row of a different
+          // kind (composed without judgments) under the same scoringVersion.
           sFail++
-          result = makeFailedResult((err as Error).message)
+          console.error(`  [score] ${job.workbcId} left pending: ${(err as Error).message.slice(0, 120)}`)
+          return
         }
-        const band = bandFor(result.fraudScore)
-        bands[band] = (bands[band] ?? 0) + 1
-        await prisma.job.update({
-          where: { workbcId: job.workbcId },
-          data: { fraudScore: result.fraudScore, riskBand: band, reasoning: result.reasoning, signals: result.signals as never, scoredAt: new Date() },
-        })
+        const { usage, ...data } = verdict
+        totalIn += usage.inputTokens
+        totalOut += usage.outputTokens
+        bands[data.riskBand] = (bands[data.riskBand] ?? 0) + 1
+        await prisma.job.update({ where: { workbcId: job.workbcId }, data })
         if (++sDone % 200 === 0) console.log(`[score] ${sDone}/${jobs.length} jobs`)
       }),
     ),
@@ -222,9 +214,9 @@ async function main() {
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} failed) | brand-impersonation re-attributed: ${impostors}`)
+  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} left pending) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
-  console.log(`Web-verify tokens: in=${webIn} out=${webOut} | scoring tokens: in=${totalIn} out=${totalOut}`)
+  console.log(`Web-verify tokens: in=${webIn} out=${webOut} | Jev tokens: in=${totalIn} out=${totalOut}`)
   if (jobs.length > 0 || toWebVerify.length > 0) await requestRevalidation()
   await prisma.$disconnect()
 }

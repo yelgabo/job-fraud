@@ -4,8 +4,10 @@ Written 2026-09-22. Supersedes the stage-2 design in `docs/jev-scoring-sketch.md
 text judgments carry most of the signal. Measurement said otherwise; see
 `docs/jev-comparison-findings.md` for the numbers behind every claim here.
 
-Status: stages 0 and 1 are live. The composer in `lib/scoring/` is written and tested but wired
-to nothing. Stage 2 is a recommendation with two of four questions validated.
+Status: all four stages are live as of 2026-09-23. Both judging paths (`npm run judge` and
+`judge:apply`) go through `lib/scoring/verdict.ts`: Jev answers the stage 2 questions when
+`TYPESAFE_API_KEY` is set, `composeScore` produces the number, `explainVerdict` the prose, and the
+row stores `judgments` and `scoringVersion = 1`. `npm run recompose` reweights without inference.
 
 ## Shape
 
@@ -19,8 +21,8 @@ evidence and judgments; code turns those into a number.
 3. compose      pure code -> fraudScore, riskBand, signals[]                     free
 ```
 
-Today stage 1 feeds a Haiku call that reads a prose rubric and returns a score, and the agent
-path lets an agent return a score directly. Both are stage 3 done by a model.
+Before 2026-09-23 stage 1 fed a Haiku call that read a prose rubric and returned a score, and the
+agent path let an agent return a score directly. Rows from that era have `scoringVersion = null`.
 
 ## Stage 0: collect
 
@@ -115,13 +117,18 @@ WorkBC moderation lapsed; keeping it is a tail-risk call, not a claim this data 
 
 6. **Band** via the existing `bandFor`.
 
-### The change stage 2 implies
+### The route threshold
 
-`routeDisowned` is currently a boolean driven by `generic_email_domain`. It should become a
-threshold on `routePlausibleForEmployer`, around 0.57 on current evidence. The binary penalises
-Browns Crafthouse exactly as hard as Tim Hortons; the continuous judgment grades them, and the
-labels say it grades them correctly. **This has not been implemented or measured as a composer
-change**, only the underlying separation has been measured.
+`routeDisowned` is a threshold of 0.57 on `routePlausibleForEmployer` when judgments are present,
+and the `generic_email_domain` / `whatsapp_telegram_only` flags when they are not. Measured end to
+end in the composer (addendum 7 of the findings doc): against the 21 labels the threshold ties the
+live system and the flag switch at 19/21 with the same two misses, keeps all 62 stored highs, and
+leaks 2 of 100 stored lows into medium where the flag switch leaked 13. Agreement with stored
+mediums falls (240 to 217 of 300), which is the intended effect: those are the small businesses on
+gmail the old system and the flag switch both penalised as if they were chains.
+
+Weighted Nouls contribute nothing at or below 0.5. Without that, a clean posting reading 0.05 on
+`askBeforeHire` rounded to a +1 signal whose label said money was requested.
 
 ## Where it stands against reality
 
@@ -142,11 +149,11 @@ fitting. More labels weighted toward medium and high are the gate on everything 
 
 ## Order of work
 
-1. Measure `brokerRouting` properly with `npm run measure-questions`.
-2. Replace the `routeDisowned` boolean with a `routePlausibleForEmployer` threshold and re-measure
-   against the labels.
-3. Wire `composeScore` into both judging paths and delete `fraudScore` from the agent verdict
-   schema, per `docs/score-composer-plan.md`.
-4. Move address classification to a per-address table.
-5. Add Oracle Fusion to the ATS registry.
-6. Fit weights, once there are enough labels to fit them to.
+Done: the route threshold (2), and wiring the composer into both paths with `fraudScore` removed
+from the agent verdict (3).
+
+1. Measure `brokerRouting` properly with `npm run measure-questions`; it is stored on every
+   composed row now, so the next judge run produces the sample for free.
+2. Move address classification to a per-address table.
+3. Add Oracle Fusion to the ATS registry.
+4. Fit weights, once there are enough labels to fit them to. `npm run recompose` applies them.

@@ -490,3 +490,38 @@ Keep A. No change to how the question is asked.
 rather than only the first, which is what the per-address classification table will need to find
 mailing addresses. It is a better source for that than the `mail_physical_resume` flag's
 evidence string, which is whatever the regex happened to match.
+
+---
+
+# Addendum 7: the route threshold, end to end in the composer
+
+Addendum 3 measured that `routePlausibleForEmployer` separates the labels; this run wires it into
+the composer in place of the binary `routeDisowned` switch and asks whether the whole system is
+better for it. Same 300 stratified postings, same 21 labels, state shape A.
+
+| system | 21 labels | 300 stored: agree | high kept | low leaked |
+| --- | --- | --- | --- | --- |
+| live (Claude picks the score) | 19/21 | | | |
+| composer, flag switch | 19/21 | 240 | 62/100 | 13/100 |
+| composer + Jev route, t = 0.50 | 18/21 | 209 | 62/100 | 1/100 |
+| composer + Jev route, t = 0.57 | **19/21** | 217 | 62/100 | 2/100 |
+| composer + Jev route, t = 0.65 | 18/21 | 222 | 62/100 | 4/100 |
+
+"High kept" is how many of the 100 stored highs stay high; "low leaked" how many of the 100 stored
+lows move up a band. Jev cost $0.01 for the 320 postings.
+
+0.57 is the threshold. At 0.50 it drops label #17 (medium to low) and at 0.65 it drops #15 (low to
+medium), which are the two labels either side of the overlap point addendum 3 found. At 0.57 it
+misses the same two the live system and the flag switch miss (#4 and #18, both diagnosed in the
+scoring-algorithm doc), keeps every stored high, and leaks 2 stored lows where the flag switch
+leaked 13.
+
+Agreement with the stored verdicts falls from 240 to 217, all of it in the medium band. Those are
+stored mediums the flag switch reproduced because it withholds brand credit from every gmail
+address, and the route judgment restores because the employer is the kind that would use gmail.
+That is the Browns Crafthouse case from addendum 2 at corpus scale, and the labels say the judgment
+is right and the stored verdicts are wrong about it.
+
+Wired on 2026-09-23. A second thing surfaced in the first dry run of the wired path: a clean
+Shoppers Drug Mart posting read 0.05 on `askBeforeHire`, which rounded to a +1 signal whose plain
+label says money was requested. Weighted Nouls now contribute nothing at or below 0.5.

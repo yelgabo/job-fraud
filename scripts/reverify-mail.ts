@@ -7,12 +7,13 @@ import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags } from "../lib/shared/json-schemas"
 import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
-import { scoreJob, type ScoreInput } from "../lib/ai/scoring"
-import { bandFor } from "../lib/shared/risk-band"
+import { jevClientFromEnv } from "../lib/ai/jev-judgments"
+import { buildVerdict } from "../lib/scoring/verdict"
 
 async function main() {
   const env = loadScrapeEnv()
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+  const jev = jevClientFromEnv()
 
   const jobs = await prisma.job.findMany({ include: { employer: true } })
   const mailJobs = jobs.filter((j) =>
@@ -51,29 +52,9 @@ async function main() {
       )
       // re-score every job for this employer
       for (const job of group) {
-        const input: ScoreInput = {
-          title: job.title,
-          employerDisplay: rep.employer!.nameDisplay,
-          location: job.location,
-          salary: job.salary,
-          postedAt: job.postedAt,
-          descriptionMd: job.descriptionMd,
-          employerChecks: checks,
-          applicationFlags: parseFlags(job.applicationFlags),
-          atsProvider: job.atsProvider,
-          externalApplyOk: job.externalApplyOk,
-        }
-        const s = await scoreJob(client, input)
-        await prisma.job.update({
-          where: { workbcId: job.workbcId },
-          data: {
-            fraudScore: s.result.fraudScore,
-            riskBand: bandFor(s.result.fraudScore),
-            reasoning: s.result.reasoning,
-            signals: s.result.signals as never,
-          },
-        })
-        console.log(`   ${job.workbcId} ${job.title} → ${bandFor(s.result.fraudScore)} ${s.result.fraudScore}`)
+        const { usage: _usage, ...data } = await buildVerdict(jev, { ...job, employerName: rep.employer!.nameDisplay }, checks)
+        await prisma.job.update({ where: { workbcId: job.workbcId }, data })
+        console.log(`   ${job.workbcId} ${job.title} → ${data.riskBand} ${data.fraudScore}`)
       }
     } catch (err) {
       console.error(`  ✗ ${rep.employer!.nameDisplay}: ${(err as Error).message.slice(0, 120)}`)

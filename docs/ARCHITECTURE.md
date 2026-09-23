@@ -36,7 +36,7 @@ Output: every posting sorted into **Low / Medium / High** risk with cited reason
         ┌─────────────────────┼─┴─────────────────────┐
         │  ② JUDGE — offline CLI, AI evaluation        │
         │     Stage 1: web-verify each company (once)  │  Claude + live web search
-        │     Stage 2: score each posting              │  Claude (cheap, no web)
+        │     Stage 2: judge text, compose score       │  Jev (typed answers) + code
         │     + brand-impersonation detection          │  Claude Opus + web search
         └──────────────────────────────────────────────┘
                               │ writes scores
@@ -67,9 +67,12 @@ pipeline). One process writes at a time → no race conditions.
   search** answers *is this a real business? does the application go to a real office or a house/PO
   box? is a known brand being misused?* The verdict is cached on the company and reused by all its
   postings.
-- **Stage 2 — score each posting** (cheap Claude call, no web): combines the company verdict + the
-  posting's own flags into a **0–100 score**, weighted from −30 (legitimacy) to +45 (fraud) →
-  Low / Medium / High band.
+- **Stage 2 — judge the text, compose the score** (no web): TypeSafe's Jev answers a few typed
+  questions about the posting text (does the application route fit this employer? is a private
+  household hiring? is anything asked before an offer?), then **code** combines those answers with
+  the company verdict and the posting's own flags through a fixed weight table into a **0–100
+  score** → Low / Medium / High band. No model chooses the number; a reweight is
+  `npm run recompose`, with no inference.
 - **Brand-impersonation detection:** if a posting names company X but its apply link routes to a
   _different_ company's hiring system, a stronger model (Opus) confirms via web search and
   re-attributes it to the real company.

@@ -11,20 +11,24 @@ import {
   FLOOR_NOUL_THRESHOLD,
   FLOORS,
   JUDGMENT,
+  JUDGMENT_NOUL_NEUTRAL,
   MAX_SIGNAL_WEIGHT,
   MIN_SIGNAL_WEIGHT,
+  ROUTE_PLAUSIBLE_THRESHOLD,
   type DeterministicId,
 } from "./weights"
 
-/** Text judgments. Scores are rubric indices 0..3; nouls are probabilities 0..1. */
+/**
+ * Jev's answers about the posting text. Nouls are probabilities 0..1; `brandProminence` is a
+ * rubric index 0..3. Every field is stored on the row; only `routePlausibleForEmployer` and
+ * `askBeforeHire` currently move the score (weights.ts says why).
+ */
 export type Judgments = {
-  specificity: number
-  employerSubstantiation: number
-  payPlausibility: number | null
-  urgency: number
-  preHireAsk: number
-  moneyHandling: number
-  roleCoherence: number
+  routePlausibleForEmployer: number
+  employerIsOrganisation: number
+  brokerRouting: number
+  brandProminence: number
+  askBeforeHire: number
 }
 
 export type ComposeInput = {
@@ -38,13 +42,34 @@ export type ComposeResult = {
   fraudScore: number
   riskBand: RiskBand
   signals: Signal[]
+  /** Whether the brand credits were withheld, and on whose say-so. */
+  routeDisowned: "judgment" | "flags" | null
 }
 
 const SOFTWARE_CATEGORIES: ReadonlySet<Category> = new Set(["Software & Data", "IT & Infrastructure"])
 
 const clampWeight = (w: number) => Math.max(MIN_SIGNAL_WEIGHT, Math.min(MAX_SIGNAL_WEIGHT, w))
 
-function deterministicSignals(input: ComposeInput): Signal[] {
+/**
+ * Confirming the advertised employer is a real business only vouches for THIS posting when the
+ * application actually goes to that business. A verified brand reached through a free consumer
+ * mailbox is the impersonation shape, not a reassurance: anyone can put "Tim Hortons" on a
+ * posting and collect replies at gmail. So the brand credits are withheld on an unowned route,
+ * while the penalties on the same fields still apply.
+ *
+ * With judgments, "unowned" is Jev's graded answer to whether the route fits this employer,
+ * which is what lets a neighbourhood pub on gmail keep its credits while a national chain on
+ * gmail loses them. Without judgments it falls back to the flags, which cannot tell them apart.
+ */
+function routeDisownedBy(input: ComposeInput): ComposeResult["routeDisowned"] {
+  if (input.judgments) {
+    return input.judgments.routePlausibleForEmployer < ROUTE_PLAUSIBLE_THRESHOLD ? "judgment" : null
+  }
+  const flag = (name: string) => input.flags.some((f) => f.flag === name)
+  return flag("generic_email_domain") || flag("whatsapp_telegram_only") ? "flags" : null
+}
+
+function deterministicSignals(input: ComposeInput, routeDisowned: boolean): Signal[] {
   const out: Signal[] = []
   const add = (id: DeterministicId, evidence: string, weight?: number) =>
     out.push({ label: id, weight: clampWeight(weight ?? DETERMINISTIC[id]), evidence })
@@ -56,12 +81,6 @@ function deterministicSignals(input: ComposeInput): Signal[] {
   const ats = flag("ats_known_provider")
   if (ats) add("ats_known_provider", ats.evidence || "applies through a recognized hiring system")
 
-  // Confirming the advertised employer is a real business only vouches for THIS posting when the
-  // application actually goes to that business. A verified brand reached through a free consumer
-  // mailbox is the impersonation shape, not a reassurance: anyone can put "Tim Hortons" on a
-  // posting and collect replies at gmail. So the brand credits are withheld on an unowned route,
-  // while the penalties on the same fields still apply.
-  const routeDisowned = Boolean(flag("generic_email_domain") ?? flag("whatsapp_telegram_only"))
   const postingMailsApplications = Boolean(flag("mail_physical_resume"))
 
   if (web) {
@@ -112,37 +131,23 @@ function deterministicSignals(input: ComposeInput): Signal[] {
   return out
 }
 
-/**
- * Fraction of a Score dimension's peak weight to charge. Rubric level ACCEPTABLE_LEVEL and above
- * is a clean posting and costs nothing; below it the charge ramps to full at level 0. Without
- * this every ordinary posting pays a few points on every dimension, which just shifts the scale.
- */
-const ACCEPTABLE_LEVEL = 2
-const shortfall = (level: number) => Math.max(0, (ACCEPTABLE_LEVEL - level) / ACCEPTABLE_LEVEL)
+/** Fraction of a Noul's peak weight to charge: nothing up to the neutral point, full at 1. */
+const asserted = (p: number) => Math.max(0, Math.min(1, (p - JUDGMENT_NOUL_NEUTRAL) / (1 - JUDGMENT_NOUL_NEUTRAL)))
 
 function judgmentSignals(j: Judgments): Signal[] {
   const out: Signal[] = []
-  const add = (label: string, fraction: number, peak: number, evidence: string) => {
-    const weight = Math.round(Math.max(0, Math.min(1, fraction)) * peak)
+  const add = (label: keyof typeof JUDGMENT, fraction: number, evidence: string) => {
+    const weight = Math.round(fraction * JUDGMENT[label])
     if (weight !== 0) out.push({ label, weight: clampWeight(weight), evidence })
   }
-
-  add("vague_description", shortfall(j.specificity), JUDGMENT.vague_description, `description specificity ${j.specificity.toFixed(2)} of 3`)
-  add("unsubstantiated_employer", shortfall(j.employerSubstantiation), JUDGMENT.unsubstantiated_employer, `employer detail ${j.employerSubstantiation.toFixed(2)} of 3`)
-  if (j.payPlausibility !== null) {
-    add("pay_implausible", shortfall(j.payPlausibility), JUDGMENT.pay_implausible, `pay plausibility ${j.payPlausibility.toFixed(2)} of 3`)
-  }
-  add("urgency_pressure", j.urgency, JUDGMENT.urgency_pressure, `urgency probability ${j.urgency.toFixed(2)}`)
-  add("pre_hire_ask", j.preHireAsk, JUDGMENT.pre_hire_ask, `pre-hire money or ID request probability ${j.preHireAsk.toFixed(2)}`)
-  add("money_handling", j.moneyHandling, JUDGMENT.money_handling, `money or parcel handling probability ${j.moneyHandling.toFixed(2)}`)
-  add("role_incoherent", 1 - j.roleCoherence, JUDGMENT.role_incoherent, `role coherence probability ${j.roleCoherence.toFixed(2)}`)
-
+  add("pre_hire_ask", asserted(j.askBeforeHire), `pre-hire money or ID request probability ${j.askBeforeHire.toFixed(2)}`)
   return out
 }
 
 export function composeScore(input: ComposeInput): ComposeResult {
+  const routeDisowned = routeDisownedBy(input)
   const signals = [
-    ...deterministicSignals(input),
+    ...deterministicSignals(input, routeDisowned !== null),
     ...(input.judgments ? judgmentSignals(input.judgments) : []),
   ]
 
@@ -152,10 +157,10 @@ export function composeScore(input: ComposeInput): ComposeResult {
   if (signals.some((s) => s.label === "apply_address_private")) {
     fraudScore = Math.max(fraudScore, FLOORS.apply_address_private)
   }
-  if (input.judgments && input.judgments.preHireAsk > FLOOR_NOUL_THRESHOLD) {
+  if (input.judgments && input.judgments.askBeforeHire > FLOOR_NOUL_THRESHOLD) {
     fraudScore = Math.max(fraudScore, FLOORS.pre_hire_ask)
   }
 
   signals.sort((a, b) => b.weight - a.weight)
-  return { fraudScore, riskBand: bandFor(fraudScore), signals }
+  return { fraudScore, riskBand: bandFor(fraudScore), signals, routeDisowned }
 }

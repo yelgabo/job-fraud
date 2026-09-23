@@ -1,6 +1,6 @@
 import Link from "next/link"
 import type { Employer, Job } from "@prisma/client"
-import { parseFlags, parseSignals, parseChecks } from "@/lib/shared/json-schemas"
+import { MAX_SIGNAL_WEIGHT, parseFlags, parseSignals, parseChecks } from "@/lib/shared/json-schemas"
 import { bandFor } from "@/lib/shared/risk-band"
 import { effectivePostedDate, formatPostedDate } from "@/lib/shared/posted-date"
 import { humanizeSignalLabel } from "@/lib/shared/signal-labels"
@@ -122,7 +122,7 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
           <ul className="space-y-2">
             {signals.map((s, i) => {
               const fraud = s.weight >= 0
-              const pct = Math.min(100, (Math.abs(s.weight) / 30) * 100)
+              const pct = Math.min(100, (Math.abs(s.weight) / MAX_SIGNAL_WEIGHT) * 100)
               return (
                 <li key={i} className="text-sm">
                   <div className="flex items-center justify-between gap-3">
