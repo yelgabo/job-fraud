@@ -50,6 +50,7 @@ async function main() {
   })
   console.log(`[judge] ${jobs.length} jobs to evaluate`)
   if (jobs.length === 0) {
+    await resolveRerunRequests()
     await prisma.$disconnect()
     return
   }
@@ -217,8 +218,25 @@ async function main() {
   console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} left pending) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(`Web-verify tokens: in=${webIn} out=${webOut} | Jev tokens: in=${totalIn} out=${totalOut}`)
+  await resolveRerunRequests()
   if (jobs.length > 0 || toWebVerify.length > 0) await requestRevalidation()
   await prisma.$disconnect()
+}
+
+// A "rerun" request is serviced by any pass that re-scores its posting after the request was
+// filed. "deep" requests need a per-posting agent investigation, so they stay open for a session.
+async function resolveRerunRequests() {
+  const open = await prisma.judgeRequest.findMany({ where: { kind: "rerun", resolvedAt: null } })
+  if (open.length === 0) return
+  const scored = await prisma.job.findMany({
+    where: { workbcId: { in: open.map((r) => r.workbcId) }, scoredAt: { not: null } },
+    select: { workbcId: true, scoredAt: true },
+  })
+  const scoredAt = new Map(scored.map((j) => [j.workbcId, j.scoredAt!]))
+  const done = open.filter((r) => (scoredAt.get(r.workbcId)?.getTime() ?? 0) > r.createdAt.getTime()).map((r) => r.id)
+  if (done.length === 0) return
+  await prisma.judgeRequest.updateMany({ where: { id: { in: done } }, data: { resolvedAt: new Date() } })
+  console.log(`[judge] resolved ${done.length} rerun request(s)`)
 }
 
 main().catch((e) => {
