@@ -24,7 +24,9 @@
     "compare-jev": "tsx --env-file=.env scripts/compare-jev.ts",
     "export-labelset": "tsx --env-file=.env scripts/export-labelset.ts",
     "measure-questions": "tsx --env-file=.env scripts/measure-questions.ts",
-    "recompose": "tsx --env-file=.env scripts/recompose.ts"
+    "recompose": "tsx --env-file=.env scripts/recompose.ts",
+    "eval:snapshot": "tsx --env-file=.env scripts/snapshot-labelled-evidence.ts",
+    "eval:labels": "tsx scripts/eval-labels.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

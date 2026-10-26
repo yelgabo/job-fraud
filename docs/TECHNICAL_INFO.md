@@ -242,6 +242,14 @@ Single-process (one DB writer → no races); web-verifies each distinct employer
 call per posting and a composed score. ~1 web search per company instead of per posting. Wrapped by
 the `judge-postings` skill (`.claude/skills/`) for repeatable/scheduled runs.
 
+**Measure a scoring change against the labels.** `npm run eval:labels` composes every labelled
+posting in `docs/labelset.md` from a frozen fixture (`lib/eval/__fixtures__/labelled-evidence.json`)
+and prints agreement, per-band recall, the confusion matrix and each miss with the labeller's
+reason. No database, no network. `lib/eval/labels.test.ts` runs the same measure in `npm test` and
+fails below `lib/eval/baseline.ts`; adding labels fails it too until the baseline is re-measured,
+so every label change lands with its effect. `npm run eval:snapshot -- --ask-jev` re-reads the
+evidence from the database.
+
 **Recompose after a weight change.** `Job.judgments` keeps Jev's raw answers, so changing
 `lib/scoring/weights.ts` never needs inference. Dry run by default:
 

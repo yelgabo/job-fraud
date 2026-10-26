@@ -133,7 +133,8 @@ Weighted Nouls contribute nothing at or below 0.5. Without that, a clean posting
 ## Where it stands against reality
 
 Against 21 human labels: stored scoring 19/21, deterministic composer 19/21, composer with the v1
-Jev questions 17/21. The composer has caught up to the current system without any model in
+Jev questions 17/21. The current composer with the current questions is 19/21 and is now
+measured on every test run (`npm run eval:labels`, `lib/eval/`). The composer has caught up to the current system without any model in
 stage 2, and the v1 questions were costing two.
 
 Both remaining misses are diagnosed. Megacity is the address bug, now fixed upstream. The Thai

@@ -78,6 +78,12 @@ labels does not drop below the current 19/21 (and later, the per-band recall). E
 touches `lib/scoring/` is measured. This is the piece that turns "steer every rubric change"
 into "review a number". One day.
 
+Done 2026-10-26: `lib/eval/` holds the fixture (all 80 worksheet postings, so filling a label
+needs no re-snapshot), the agreement measure, and `labels.test.ts`, which CI runs with the rest
+of `npm test`. Baseline 19/21 with high recall 0/2 (`lib/eval/baseline.ts`). A sweep of
+`BASELINE` in `weights.ts` from 20 to 40 left agreement at 19-20/21 and only 50 tripped the test,
+so with 21 labels the harness catches large regressions, not small ones. More labels sharpen it.
+
 **D. Judge on a schedule.** Done 2026-10-26 as a variant of the keyed option: the
 `job-fraud-scheduler` Railway cron service scrapes and then judges with `--limit $JUDGE_LIMIT`,
 inside Railway rather than GitHub Actions because Postgres was taken off the public internet in
