@@ -235,7 +235,7 @@ There is no `prisma/migrations/` directory. `prisma/schema.prisma` is the only s
   for every composed row (no backup covered them). The columns were re-added empty on
   2026-10-26. Before any `railway up`, run the `migrate diff` above from that checkout and stop
   if it prints a `DROP`. The web service has no GitHub deploy trigger (none has fired since
-  2026-07-30), so it runs whatever was last uploaded; `main` is ahead of it.
+  2026-07-30), so it runs whatever was last uploaded: `main` at 048c2c2 since 2026-10-26.
 
 ## No DB-backed page may be prerendered at build time
 
