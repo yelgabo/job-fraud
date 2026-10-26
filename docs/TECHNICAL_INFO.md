@@ -173,15 +173,35 @@ npm run scrape -- --search-terms "software engineer,software" --limit 500 --conc
 npm run scrape -- --dry-run          # collect without writing
 ```
 
-The routine refresh (weekly term pass, then Victoria city pass) runs automatically every Monday
-via GitHub Actions (`.github/workflows/scrape.yml`, also runnable on demand from the Actions tab).
-The scheduled run scrapes only: it collects postings as `pending` and never judges, so it carries
-no `ANTHROPIC_API_KEY`. The manual commands above remain the right tool for catch-up runs, backfills
-and dry runs.
-
 Then `npm run judge` (which judges only pending postings and web-verifies only the employers that
-need it). Judging is manual on purpose - there is no scheduled judge run, so pending postings wait
-for someone to run the judge path (either variant below).
+need it). The manual commands remain the right tool for catch-up runs, backfills and dry runs.
+
+**Scheduled refresh.** The `job-fraud-scheduler` service in the same Railway project runs
+`scripts/scheduled-refresh.sh` every Monday at 12:17 UTC: the term pass in its full-depth form (so
+a failed week is caught up by the next), the Victoria city pass, then `npm run judge -- --limit
+$JUDGE_LIMIT` if `ANTHROPIC_API_KEY` is set on the service. Without the key it scrapes only and the
+postings wait for a manual judge run. It runs inside Railway and reaches Postgres over the private
+network. Its settings are on the service, not in `railway.json` (new services do not read that
+file), set through the Railway API:
+
+| Setting | Value |
+|---|---|
+| source | `yelgabo/job-fraud`, branch `main` (rebuilds on every push) |
+| build command | `npx prisma generate` (skips `next build`) |
+| start command | `bash scripts/scheduled-refresh.sh` |
+| cron schedule | `17 12 * * 1` (UTC; a run still in progress makes Railway skip the next) |
+| restart policy | `NEVER` (a failed run waits for the next schedule instead of re-scraping) |
+| variables | `DATABASE_URL=${{Postgres-t4uu.DATABASE_URL}}`, `REVALIDATE_TOKEN=${{job-fraud.REVALIDATE_TOKEN}}`, `TYPESAFE_API_KEY`, `JUDGE_LIMIT=1000`, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, and `ANTHROPIC_API_KEY` once added |
+
+```bash
+railway cron list --service job-fraud-scheduler          # recent runs and their outcome
+railway cron run --service job-fraud-scheduler --yes     # run now, off schedule
+railway logs --service job-fraud-scheduler               # output of the latest run
+```
+
+These need a directory linked to the project (see "Deploying" in `AGENTS.md`). `JUDGE_LIMIT` is
+the weekly spend cap: each run judges at most that many pending postings, and the billing-error
+abort leaves the rest pending if credit runs out.
 
 Flags:
 

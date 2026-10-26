@@ -44,13 +44,13 @@ posting that appears and expires between two runs is never collected and is invi
 forever. The interval between runs therefore does not just control freshness, it decides how
 much of the corpus is never seen at all. Choose it with that in mind.
 
-**The scrape half already runs on a schedule.** `.github/workflows/scrape.yml` runs both
-passes of step 1 every Monday (and on manual dispatch from the Actions tab). Judging is not
-scheduled - it stays manual until a spend cap is decided - so scheduled scrapes accumulate
-pending postings and this skill's judge steps (2-4) are how they get drained. Before
-re-running step 1 by hand, check whether the weekly workflow already covered the window; a
-manual scrape is still needed for catch-up gaps longer than a week (the workflow only runs
-the `--recent week` term-pass variant) and for `--recent day` top-ups.
+**The loop already runs on a schedule.** The `job-fraud-scheduler` Railway cron service runs
+both passes of step 1 every Monday (the term pass at full depth), then the keyed judge capped
+at `JUDGE_LIMIT` postings when that service has `ANTHROPIC_API_KEY`. `docs/TECHNICAL_INFO.md`
+("Scheduled refresh") has its settings and the commands to inspect or trigger a run. Before
+running this skill by hand, check `railway cron list --service job-fraud-scheduler`: a manual
+session is for draining a backlog larger than one week's cap, for `deep` review requests
+(step 0), and for runs while the scheduler is failing.
 
 ## Procedure
 

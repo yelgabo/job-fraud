@@ -8,8 +8,8 @@ hand. This says what stands in the way, in order of leverage, and what has to st
 
 | Stage | Runs itself? | What decides |
 | --- | --- | --- |
-| Scrape | Yes, weekly cron (`scrape.yml`) | nothing to decide |
-| Employer verification | No, needs a human to start a run | Claude web search, or an agent session |
+| Scrape | Yes, weekly Railway cron (`job-fraud-scheduler`) | nothing to decide |
+| Employer verification | Yes, same cron, once `ANTHROPIC_API_KEY` is on the service | Claude web search, or an agent session |
 | Text judgments | With the run | Jev, five fixed questions |
 | Score | With the run | `lib/scoring/weights.ts`, pure code |
 | Publish | Automatic once written | 10 minute cache |
@@ -78,7 +78,11 @@ labels does not drop below the current 19/21 (and later, the per-band recall). E
 touches `lib/scoring/` is measured. This is the piece that turns "steer every rubric change"
 into "review a number". One day.
 
-**D. Judge on a schedule.** Two options, not exclusive:
+**D. Judge on a schedule.** Done 2026-10-26 as a variant of the keyed option: the
+`job-fraud-scheduler` Railway cron service scrapes and then judges with `--limit $JUDGE_LIMIT`,
+inside Railway rather than GitHub Actions because Postgres was taken off the public internet in
+the 2026-10-22 credential rotation (`docs/TECHNICAL_INFO.md`, "Scheduled refresh"). The options
+as first written:
 - Keyed: add `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` as repo secrets and a `judge.yml` that
   runs `npm run judge` after the Monday scrape with a `--limit`. Cheapest, deterministic, and the
   billing abort already protects it.

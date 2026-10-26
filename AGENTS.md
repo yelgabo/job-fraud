@@ -229,6 +229,13 @@ There is no `prisma/migrations/` directory. `prisma/schema.prisma` is the only s
 - Locally, `npm run db:push` (`prisma db push`, **without** `--accept-data-loss`) will stop and ask
   before anything destructive. Do not add the flag to the local script to get past a prompt; the
   prompt is the warning.
+- **Deploying an older commit drops newer columns.** This has happened. On 2026-10-23 the
+  incident redeploy used `railway up` from a backport branch whose schema predated
+  `Job.judgments` and `Job.scoringVersion`; its `db push` dropped both, erasing the Jev answers
+  for every composed row (no backup covered them). The columns were re-added empty on
+  2026-10-26. Before any `railway up`, run the `migrate diff` above from that checkout and stop
+  if it prints a `DROP`. The web service has no GitHub deploy trigger (none has fired since
+  2026-07-30), so it runs whatever was last uploaded; `main` is ahead of it.
 
 ## No DB-backed page may be prerendered at build time
 
@@ -285,13 +292,20 @@ page; `prisma/schema.prisma` and `app/audit/` are authoritative.
 
 ## Repository state
 
-`.github/workflows/` holds two workflows: `test.yml` (tsc, vitest, build on push/PR; no DB, no
-network) and `scrape.yml` (the weekly two-pass scrape on a Monday cron plus manual dispatch; it
-scrapes only and carries no `ANTHROPIC_API_KEY` or `TYPESAFE_API_KEY` - judging stays manual, see
-`.claude/skills/update-postings/SKILL.md`). `scrape.yml` writes to the production database via a
-`DATABASE_URL` repo secret and revalidates the site cache via a `REVALIDATE_TOKEN` secret, so a
-green scheduled run publishes new pending rows with no human involved. Beyond those, nothing runs
-automatically on push except the Railway deploy.
+`.github/workflows/test.yml` is the only workflow (tsc, vitest, build on push/PR; no DB, no
+network). The weekly refresh runs inside Railway as the **`job-fraud-scheduler`** cron service
+(Mondays 12:17 UTC, start command `scripts/scheduled-refresh.sh`): both scrape passes, then
+`npm run judge -- --limit $JUDGE_LIMIT` when `ANTHROPIC_API_KEY` is set on that service. It reaches
+Postgres over the private network, so it publishes new verdicts with no human involved and keeps
+working if the public TCP proxy is removed again. Its settings live on the Railway service, not in
+`railway.json`; `docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or
+inspect a run. Postgres was private between 2026-10-22 (credential-rotation incident) and
+2026-10-26, when a new public TCP proxy was added for local runs; an old `.env` holding
+`zephyr.proxy.rlwy.net` points at nothing.
+
+Railway stops reading `railway.json` on **2026-12-01**. The `job-fraud` web service has no
+dashboard start command of its own, so the `prisma db push` start command in that file needs to
+move to the service settings (or Railway IaC) before then.
 
 ## Maintaining this file
 
