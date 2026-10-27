@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache"
 // default config, which does not read tsconfig path aliases.
 import { webEnv } from "../../../lib/env"
 import { DATA_CACHE_TAG } from "../../../lib/shared/cache-tags"
-import { WARM_PATHS } from "../../../lib/shared/warm-targets"
+import { WARM_PATHS, warmOrigin } from "../../../lib/shared/warm-targets"
 
 /** Constant-time comparison over fixed-length digests so neither content nor length leaks. */
 function tokenMatches(given: string, expected: string): boolean {
@@ -79,7 +79,7 @@ export async function POST(req: Request) {
   if (url.searchParams.get("phase") === "warm") {
     // Warm phase: page renders only, no cache invalidation. Must never call
     // revalidateTag/revalidatePath or it would wipe the very entries it just primed.
-    const timings = await warmCaches(url.origin)
+    const timings = await warmCaches(warmOrigin())
     return Response.json({
       warmed: timings.filter((t) => t.ok).length,
       warmFailed: timings.filter((t) => !t.ok).length,

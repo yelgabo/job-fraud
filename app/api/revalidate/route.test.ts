@@ -110,7 +110,8 @@ describe("POST /api/revalidate?phase=warm (warm phase)", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("warms every common combo against its own origin and never touches the cache API", async () => {
+  it("warms every common combo through the server's own port and never touches the cache API", async () => {
+    vi.stubEnv("PORT", "4321")
     const { route, cache } = await loadRoute("right-token")
     const res = await route.POST(post("Bearer right-token", "warm"))
     expect(res.status).toBe(200)
@@ -122,7 +123,7 @@ describe("POST /api/revalidate?phase=warm (warm phase)", () => {
     // One URL per warm path and nothing else (no cross-product blowup).
     expect(fetchMock).toHaveBeenCalledTimes(WARM_PATHS.length)
     const fetched = fetchMock.mock.calls.map((c) => String(c[0]))
-    expect(fetched).toEqual(WARM_PATHS.map((p) => new URL(p, "http://localhost").toString()))
+    expect(fetched).toEqual(WARM_PATHS.map((p) => new URL(p, "http://127.0.0.1:4321").toString()))
 
     // Ordering guarantee, other side: the warm phase must not invalidate anything or it would
     // wipe the very entries it just primed.

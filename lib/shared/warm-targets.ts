@@ -24,3 +24,13 @@ export const WARM_PATHS: readonly string[] = [
 
 /** Hard cap on how many URLs one warm cycle may touch. */
 export const MAX_WARM_PATHS = 15
+
+/**
+ * Where the warm phase sends its page requests: the server's own port on the loopback address.
+ * The request's public origin is not reachable from inside the Railway container, so warming
+ * against it failed every path ("fetch failed") while the purge itself worked. PORT is what
+ * the start command passes to `next start`; 3000 is its fallback there too.
+ */
+export function warmOrigin(port: string | undefined = process.env.PORT): string {
+  return `http://127.0.0.1:${port || 3000}`
+}

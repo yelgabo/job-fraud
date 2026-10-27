@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { WARM_PATHS, MAX_WARM_PATHS } from "./warm-targets"
+import { WARM_PATHS, MAX_WARM_PATHS, warmOrigin } from "./warm-targets"
 
 describe("WARM_PATHS", () => {
   it("stays within the warm-cycle cap", () => {
@@ -21,3 +21,12 @@ describe("WARM_PATHS", () => {
     for (const p of WARM_PATHS) expect(p).not.toMatch(/page=/)
   })
 })
+
+describe("warmOrigin", () => {
+  it("targets the server's own port on loopback, defaulting to 3000 like the start command", () => {
+    expect(warmOrigin("8080")).toBe("http://127.0.0.1:8080")
+    expect(warmOrigin(undefined)).toBe("http://127.0.0.1:3000")
+    expect(warmOrigin("")).toBe("http://127.0.0.1:3000")
+  })
+})
+
