@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import type Anthropic from "@anthropic-ai/sdk"
 import { verifyEmployerWeb, WebVerifyError } from "./verify-employer-web"
+import { VERIFIER_PROFILES, verifierCostUsd } from "./verifier-models"
 
 const VALID = {
   websiteUrl: "https://acme.com",
@@ -108,5 +109,50 @@ describe("verifyEmployerWeb", () => {
   it("throws WebVerifyError when there is no tool_use block", async () => {
     const { client } = mockClient(textResp(), textResp())
     await expect(verifyEmployerWeb(client, INPUT, { retryDelayMs: 0 })).rejects.toBeInstanceOf(WebVerifyError)
+  })
+
+  it("sends the production request unchanged when no profile is given", async () => {
+    const { client, create } = mockClient(toolResp(VALID))
+    await verifyEmployerWeb(client, INPUT, { retryDelayMs: 0 })
+    const req = create.mock.calls[0][0]
+    expect(req).toMatchObject({ model: "claude-haiku-4-5-20251001", max_tokens: 1500, temperature: 0 })
+    expect(req.tools[0]).toEqual({ type: "web_search_20250305", name: "web_search", max_uses: 5 })
+  })
+
+  it("omits temperature and uses the newer search tool for a 5.x profile", async () => {
+    const { client, create } = mockClient(toolResp(VALID))
+    await verifyEmployerWeb(client, INPUT, { retryDelayMs: 0, profile: VERIFIER_PROFILES["opus-5.5"] })
+    const req = create.mock.calls[0][0]
+    expect(req.model).toBe("claude-opus-5-5")
+    expect(req).not.toHaveProperty("temperature")
+    expect(req.tools[0].type).toBe("web_search_20260209")
+  })
+
+  it("resumes a paused search loop and sums usage and billed searches across turns", async () => {
+    const paused = {
+      content: [{ type: "server_tool_use", name: "web_search", id: "stu_1", input: { query: "Acme" } }],
+      stop_reason: "pause_turn",
+      usage: { input_tokens: 100, output_tokens: 10, server_tool_use: { web_search_requests: 3 } },
+    }
+    const done = { ...toolResp(VALID), stop_reason: "tool_use", usage: { input_tokens: 40, output_tokens: 6, server_tool_use: { web_search_requests: 1 } } }
+    const { client, create } = mockClient(paused, done)
+    const out = await verifyEmployerWeb(client, INPUT, { retryDelayMs: 0 })
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(create.mock.calls[1][0].messages[1]).toEqual({ role: "assistant", content: paused.content })
+    expect(out.usage).toEqual({ inputTokens: 140, outputTokens: 16, webSearchRequests: 4 })
+    expect(out.searchLog.queries).toEqual(["Acme"])
+  })
+
+  it("treats a refusal as a failed verification", async () => {
+    const refusal = { content: [], stop_reason: "refusal", usage: { input_tokens: 5, output_tokens: 0 } }
+    const { client } = mockClient(refusal, refusal)
+    await expect(verifyEmployerWeb(client, INPUT, { retryDelayMs: 0 })).rejects.toThrow(/refused/)
+  })
+})
+
+describe("verifierCostUsd", () => {
+  it("prices tokens per million and searches at a cent each", () => {
+    const cost = verifierCostUsd(VERIFIER_PROFILES["opus-5.5"], { inputTokens: 1_000_000, outputTokens: 100_000, webSearchRequests: 5 })
+    expect(cost).toBeCloseTo(4 + 2 + 0.05, 10)
   })
 })

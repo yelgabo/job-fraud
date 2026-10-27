@@ -9,8 +9,9 @@ import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
-import { cachedVerdictMissedAnAddress, mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
-import { allApplyHostsMatch, matchedProvider } from "../lib/signals/apply-host"
+import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
+import { matchedProvider } from "../lib/signals/apply-host"
+import { verificationAction } from "../lib/signals/verification-plan"
 import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
 import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
@@ -75,18 +76,8 @@ async function main() {
   // "ats-tenant-match" verdict is upgraded to a real web-verify if a NEW non-matching posting appears.
   type Decision = { id: string; list: typeof jobs; action: "web" | "presume" | "reuse" }
   const decisions: Decision[] = [...byEmployer.entries()].map(([id, list]) => {
-    const employerName = list[0].employer?.nameDisplay ?? null
-    const allMatch = allApplyHostsMatch(employerName, list.map((j) => j.externalApplyUrl))
     const web = (list[0].employer?.checks as { web?: WebVerification } | undefined)?.web
-    let action: Decision["action"]
-    if (args.rejudge) action = "web"
-    else if (web) {
-      const staleAts = web.source === "ats-tenant-match" && !allMatch
-      // A cached "none" only means the representative posting we sent last time carried no
-      // mailing address. If any posting does, the address has never actually been looked at.
-      const missedAddress = cachedVerdictMissedAnAddress(web.applicationAddressType, list)
-      action = staleAts || missedAddress ? "web" : "reuse"
-    } else action = allMatch ? "presume" : "web"
+    const action = verificationAction(list[0].employer?.nameDisplay ?? null, list, web, { rejudge: args.rejudge })
     return { id, list, action }
   })
   const toWebVerify = decisions.filter((d) => d.action === "web")

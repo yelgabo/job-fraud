@@ -1,8 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { WebVerificationSchema, type WebVerification } from "../shared/json-schemas"
 import { retryOnce } from "../shared/retry"
-
-const MODEL = "claude-haiku-4-5-20251001"
+import { DEFAULT_VERIFIER, VERIFIER_PROFILES, type VerifierProfile, type VerifierUsage } from "./verifier-models"
 
 export type WebVerifyInput = {
   employerName: string
@@ -23,7 +22,7 @@ export type SearchLog = {
 
 export type WebVerifyOutput = {
   result: WebVerification
-  usage: { inputTokens: number; outputTokens: number }
+  usage: VerifierUsage
   searchLog: SearchLog
 }
 
@@ -47,9 +46,11 @@ export function extractSearchLog(content: unknown[]): SearchLog {
   return { queries, blocks }
 }
 
-// Server-side web search tool. Confirm the exact `type` version string against the installed
-// @anthropic-ai/sdk at implementation time (e.g. "web_search_20250305").
-const webSearchTool = { type: "web_search_20250305", name: "web_search", max_uses: 5 } as const
+const webSearchTool = (type: VerifierProfile["webSearchTool"]) => ({ type, name: "web_search", max_uses: 5 })
+
+// The server-side search loop stops with pause_turn after 10 iterations; re-sending the turn
+// resumes it. Bounded so a model that never settles cannot run up searches indefinitely.
+const MAX_CONTINUATIONS = 3
 
 const recordTool: Anthropic.Tool = {
   name: "record_web_verification",
@@ -117,14 +118,27 @@ Do a smell test on the COMPANY (do NOT try to find this exact posting):
 Use "uncertain"/"unknown" when you genuinely cannot tell. Then call record_web_verification.`
 }
 
-async function callOnce(client: Anthropic, input: WebVerifyInput): Promise<WebVerifyOutput> {
-  const resp = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1500,
-    temperature: 0,
-    tools: [webSearchTool, recordTool] as unknown as Anthropic.ToolUnion[],
-    messages: [{ role: "user", content: buildPrompt(input) }],
-  })
+async function callOnce(client: Anthropic, input: WebVerifyInput, profile: VerifierProfile): Promise<WebVerifyOutput> {
+  const user: Anthropic.MessageParam = { role: "user", content: buildPrompt(input) }
+  const content: unknown[] = []
+  const usage: VerifierUsage = { inputTokens: 0, outputTokens: 0, webSearchRequests: 0 }
+  let resp: Anthropic.Message
+  for (let turn = 0; ; turn++) {
+    resp = await client.messages.create({
+      model: profile.model,
+      max_tokens: profile.maxTokens,
+      ...(profile.temperature !== undefined ? { temperature: profile.temperature } : {}),
+      tools: [webSearchTool(profile.webSearchTool), recordTool] as unknown as Anthropic.ToolUnion[],
+      messages: turn === 0 ? [user] : [user, { role: "assistant", content: resp!.content }],
+    })
+    content.push(...resp.content)
+    const u = resp.usage as Anthropic.Usage & { server_tool_use?: { web_search_requests?: number } }
+    usage.inputTokens += u.input_tokens
+    usage.outputTokens += u.output_tokens
+    usage.webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
+    if ((resp.stop_reason as string) !== "pause_turn" || turn >= MAX_CONTINUATIONS) break
+  }
+  if ((resp.stop_reason as string) === "refusal") throw new WebVerifyError("model refused the verification request")
   const block = resp.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_web_verification",
   )
@@ -133,15 +147,16 @@ async function callOnce(client: Anthropic, input: WebVerifyInput): Promise<WebVe
   if (!parsed.success) throw new WebVerifyError("tool input failed zod validation: " + parsed.error.message)
   return {
     result: parsed.data,
-    usage: { inputTokens: resp.usage.input_tokens, outputTokens: resp.usage.output_tokens },
-    searchLog: extractSearchLog(resp.content),
+    usage,
+    searchLog: extractSearchLog(content),
   }
 }
 
 export async function verifyEmployerWeb(
   client: Anthropic,
   input: WebVerifyInput,
-  opts: { retryDelayMs?: number } = {},
+  opts: { retryDelayMs?: number; profile?: VerifierProfile } = {},
 ): Promise<WebVerifyOutput> {
-  return retryOnce(() => callOnce(client, input), opts.retryDelayMs ?? 2000)
+  const profile = opts.profile ?? VERIFIER_PROFILES[DEFAULT_VERIFIER]
+  return retryOnce(() => callOnce(client, input, profile), opts.retryDelayMs ?? 2000)
 }

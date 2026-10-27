@@ -27,7 +27,8 @@
     "recompose": "tsx --env-file=.env scripts/recompose.ts",
     "eval:snapshot": "tsx --env-file=.env scripts/snapshot-labelled-evidence.ts",
     "eval:labels": "tsx scripts/eval-labels.ts",
-    "backfill-ats": "tsx --env-file=.env scripts/backfill-ats.ts"
+    "backfill-ats": "tsx --env-file=.env scripts/backfill-ats.ts",
+    "compare-verifiers": "tsx --env-file=.env scripts/compare-verifiers.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
