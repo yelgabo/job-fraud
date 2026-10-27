@@ -24,8 +24,7 @@ import {
 import { cn } from "@/lib/utils"
 
 // Reading searchParams makes this route render dynamically per request, so route-level
-// `revalidate` cannot cache it; the time-based cache lives on loadPostings below instead, keyed
-// per (band, cat, posted, page) combination.
+// `revalidate` cannot cache it; the time-based caches live on loadCounts and loadRows below.
 export const dynamic = "force-dynamic"
 
 function tabClass(active: boolean) {
@@ -36,25 +35,32 @@ function tabClass(active: boolean) {
 }
 
 /**
- * Everything one render of the postings list needs, fetched in one place and fully serializable
- * (the cache stores JSON, so a Date would come back a string on a hit). The tab counts are
- * whole-corpus aggregates composed in lib/shared/postings-filter.ts; only the row query is paged.
- * Do not add skip/take to any count query: the tab numbers must not change as the visitor pages
- * through the rows under them.
+ * The data one render of the postings list needs, split in two caches so a page change reuses
+ * the tab counts. Everything is fully serializable (the cache stores JSON, so a Date would come
+ * back a string on a hit). The tab counts are whole-corpus aggregates composed in
+ * lib/shared/postings-filter.ts; only the row query is paged. Do not add skip/take to any count
+ * query: the tab numbers must not change as the visitor pages through the rows under them.
  *
- * unstable_cache keys on its arguments, so each (band, cat, posted, page) combination is its own
- * entry, each serving up to 10 minutes stale. That staleness is accepted for visitors; the
- * token-gated /audit pages stay uncached.
+ * unstable_cache keys on its arguments, each entry serving up to 10 minutes stale. That staleness
+ * is accepted for visitors; the token-gated /audit pages stay uncached.
  */
-const loadPostings = unstable_cache(loadPostingsUncached, ["postings-list"], {
+// Keyed without the page: the dozen count queries were most of the database work on an edge
+// cache miss, and a load test of uncached deep pages saturated Postgres recomputing them
+// (docs/launch-runbook.md).
+const loadCounts = unstable_cache(loadCountsUncached, ["postings-counts"], {
   revalidate: 600,
   tags: [DATA_CACHE_TAG],
 })
 
-async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWindowKey, page: number) {
+const loadRows = unstable_cache(loadRowsUncached, ["postings-rows"], {
+  revalidate: 600,
+  tags: [DATA_CACHE_TAG],
+})
+
+async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWindowKey) {
   const q = buildPostingsQuery({ band, cat, posted, now: new Date() })
 
-  const [grouped, catGrouped, postedCounts, total, scored, agg, filteredTotal, rows] = await Promise.all([
+  const [grouped, catGrouped, postedCounts, total, scored, agg, filteredTotal] = await Promise.all([
     prisma.job.groupBy({ by: ["riskBand"], _count: true, where: q.bandCountWhere }),
     prisma.job.groupBy({ by: ["category"], _count: true, where: q.catCountWhere }),
     Promise.all(
@@ -66,21 +72,6 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
     prisma.job.count({ where: { scoredAt: { not: null }, riskBand: { in: ["high", "medium", "low"] } } }),
     prisma.job.aggregate({ _max: { scrapedAt: true } }),
     prisma.job.count({ where: q.rowsWhere }),
-    prisma.job.findMany({
-      where: q.rowsWhere,
-      orderBy: POSTINGS_ORDER_BY,
-      ...pageArgs(page),
-      // Only what a list row renders. Location and application flags moved to the detail page
-      // the title links to; selecting them here would bloat the cache entry and the RSC payload.
-      select: {
-        workbcId: true,
-        title: true,
-        fraudScore: true,
-        postedDate: true,
-        scrapedAt: true,
-        employer: { select: { id: true, nameDisplay: true } },
-      },
-    }),
   ])
 
   const counts: Record<string, number> = { all: 0 }
@@ -100,19 +91,38 @@ async function loadPostingsUncached(band: BandKey, cat: string, posted: PostedWi
     scored,
     lastScraped: agg._max.scrapedAt?.toISOString() ?? null,
     filteredTotal,
-    rows: rows.map((job) => {
-      const p = effectivePostedDate({ postedDate: job.postedDate, scrapedAt: job.scrapedAt })
-      return {
-        workbcId: job.workbcId,
-        title: job.title,
-        fraudScore: job.fraudScore,
-        employerId: job.employer?.id ?? null,
-        employerName: job.employer?.nameDisplay ?? null,
-        day: p.day,
-        estimated: p.estimated,
-      }
-    }),
   }
+}
+
+async function loadRowsUncached(band: BandKey, cat: string, posted: PostedWindowKey, page: number) {
+  const q = buildPostingsQuery({ band, cat, posted, now: new Date() })
+  const rows = await prisma.job.findMany({
+    where: q.rowsWhere,
+    orderBy: POSTINGS_ORDER_BY,
+    ...pageArgs(page),
+    // Only what a list row renders. Location and application flags moved to the detail page
+    // the title links to; selecting them here would bloat the cache entry and the RSC payload.
+    select: {
+      workbcId: true,
+      title: true,
+      fraudScore: true,
+      postedDate: true,
+      scrapedAt: true,
+      employer: { select: { id: true, nameDisplay: true } },
+    },
+  })
+  return rows.map((job) => {
+    const p = effectivePostedDate({ postedDate: job.postedDate, scrapedAt: job.scrapedAt })
+    return {
+      workbcId: job.workbcId,
+      title: job.title,
+      fraudScore: job.fraudScore,
+      employerId: job.employer?.id ?? null,
+      employerName: job.employer?.nameDisplay ?? null,
+      day: p.day,
+      estimated: p.estimated,
+    }
+  })
 }
 
 export default async function HomePage({
@@ -126,8 +136,11 @@ export default async function HomePage({
   const activePosted: PostedWindowKey = parsePostedWindow(posted)
   const activePage = parsePage(page)
 
-  const { counts, catCounts, catAll, dateCounts, total, scored, lastScraped, filteredTotal, rows } =
-    await loadPostings(active, activeCat, activePosted, activePage)
+  const [{ counts, catCounts, catAll, dateCounts, total, scored, lastScraped, filteredTotal }, rows] =
+    await Promise.all([
+      loadCounts(active, activeCat, activePosted),
+      loadRows(active, activeCat, activePosted, activePage),
+    ])
 
   const pageCount = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))
 
