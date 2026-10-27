@@ -62,6 +62,12 @@ Goal: the site stays up through the first spike after the public announcement, w
    | Uncached `?band=…&page=N` | 10/s, then 25/s | 198 and 494 × 200 | 297 ms, 218 ms | 493 ms, 460 ms |
    | Same list | 50/s for 20 s | 995 × 200 | 116 ms | 297 ms |
 
+   The full-rate run on the same day (`-q 1000 -c 300`, 60 s) reached 470/s: 27,889 × 200, no
+   errors, median 523 ms. The limit was the test machine's downlink: it pulled 13.6 MB/s, the
+   same as a plain download from that connection (11 to 15 MB/s). The origin did not notice;
+   Railway's metrics for that minute show 0.025 vCPU and 0.001 GB sent, because the edge served the
+   777 MiB. Reaching 1,000/s needs a second machine or a cloud VM with a faster link.
+
    The p95 tails come mostly from new TLS connections, which took 210 to 380 ms from the test
    machine. The tracking-parameter redirects are `x-cache: DYNAMIC`, so every one of them reaches
    the middleware on the origin. The 50/s uncached run reused a URL list that earlier runs had
