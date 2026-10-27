@@ -54,7 +54,7 @@ speculatively to "see what happens".
 | `npm run judge-keyless:apply` | The single DB writer for the keyless judge. Stores each agent `web` verdict on its employer, then asks Jev (when keyed) and composes every posting the fetch grouped under it: overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`judgments`/`scoringVersion`/`scoredAt`. Publishes verdicts. `--dry-run` validates and reports what it would score without writing. |
 | `npm run backfill-categories` | No API calls, but it updates **every** Job row. |
 | `npm run backfill-ats` | No API calls. Re-classifies stored apply hosts after an ATS registry change. Pending rows only by default (publishes nothing); `--include-judged` also rewrites judged rows' flags, which then need `recompose`. Dry run is the default. |
-| `npm run recheck-cached-verdicts` | Re-checks with Opus 5.5 the cached employer verdicts that the tiered rule would have escalated but no Opus run confirmed (pre-2026-10-27 verdicts), for employers with pending postings. One Opus call per employer (about $0.19); replaces `checks.web`, so it changes how every later posting by that employer scores. Dry run by default; `--apply` needs `ANTHROPIC_API_KEY` in the environment. First run 2026-10-27: 73 verdicts, 47 no longer alarming. |
+| `npm run recheck-cached-verdicts` | Re-checks with Opus 5.5 the cached employer verdicts that the tiered rule would have escalated but no Opus run confirmed (verdicts from before the tiers), for employers with **judged** postings, then re-scores those postings (from stored Jev judgments, or a fresh Jev call when none are stored; confirmed impersonations are skipped). Pending postings need no script: `verificationAction` sends an unconfirmed verdict back to the web on the next judge run. One Opus call per employer (about $0.19); `--apply` rewrites published ratings of named employers. Dry run by default; `--apply` needs `ANTHROPIC_API_KEY` in the environment. Runs 2026-10-27: 73 pending-side verdicts (47 no longer alarming), then 218 published-side employers. |
 | `npm run backfill-posted-date` | No API calls, and it touches no published judgement (only `Job.postedDate`, which drives the site's date filter), but `--apply` can update **every** Job row. Dry run is the default: a bare run reports counts and writes nothing. |
 | `npm run judge-keyless:fetch` | The only genuinely safe one: read-only, writes files under `logs/` and nothing else. |
 
@@ -73,7 +73,7 @@ the text questions when **`TYPESAFE_API_KEY`** is set (otherwise the route judgm
 regex flags and the row stores `judgments = null`), and `lib/scoring/verdict.ts` composes the number.
 Both group pending postings by employer with `planByEmployer` / `verificationAction`
 (`lib/signals/verification-plan.ts`), so each employer is investigated once, cached verdicts are
-reused, and an employer whose postings all apply through its own ATS tenant is presumed legitimate.
+reused (except one that breaks the tier rule, which is checked again), and an employer whose postings all apply through its own ATS tenant is presumed legitimate.
 Both use the **tiered employer check**: Haiku 5.5 first, and Opus 5.5 instead whenever
 `needsEscalation` (`lib/ai/verify-employer-web.ts`) says so: a business or location `mismatch`, a
 residential / P.O. box / virtual address, or a mailing address the first model left `uncertain`.

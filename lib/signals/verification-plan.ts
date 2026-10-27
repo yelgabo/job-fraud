@@ -3,7 +3,8 @@
 // and compare-verifiers uses it so a model comparison runs on the employers a real run would check.
 
 import type { WebVerification } from "../shared/json-schemas"
-import { cachedVerdictMissedAnAddress, pickRepresentative } from "../shared/mail-evidence"
+import { cachedVerdictMissedAnAddress, mailEvidence, pickRepresentative } from "../shared/mail-evidence"
+import { tierViolation } from "../ai/verify-employer-web"
 import { allApplyHostsMatch, matchedProvider } from "./apply-host"
 
 export type VerificationAction = "web" | "presume" | "reuse"
@@ -21,7 +22,10 @@ export function verificationAction(
   // A cached "none" only means the representative posting we sent last time carried no
   // mailing address. If any posting does, the address has never actually been looked at.
   const missedAddress = cachedVerdictMissedAnAddress(cachedWeb.applicationAddressType, postings)
-  return staleAts || missedAddress ? "web" : "reuse"
+  // Verdicts stored before the tiered check can raise a rating with no escalation
+  // model behind them; on the first 73 re-checked, Opus overturned 47.
+  const unconfirmed = tierViolation(cachedWeb, mailEvidence(pickRepresentative(postings).applicationFlags)) !== null
+  return staleAts || missedAddress || unconfirmed ? "web" : "reuse"
 }
 
 /** The verdict written, without a web search, for an employer verificationAction() presumes. */

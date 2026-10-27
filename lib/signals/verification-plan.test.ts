@@ -38,6 +38,16 @@ describe("verificationAction", () => {
     expect(verificationAction("Acme", [ownTenant, online], web({ source: "ats-tenant-match" }))).toBe("web")
   })
 
+  it("re-verifies an alarming cached verdict that no escalation model confirmed", () => {
+    expect(verificationAction("Acme", [online], web({ businessMatch: "mismatch" }))).toBe("web")
+    expect(verificationAction("Acme", [mailing], web({ applicationAddressType: "uncertain", verifiedBy: "haiku-5.5" }))).toBe("web")
+  })
+
+  it("reuses an alarming cached verdict the escalation model gave", () => {
+    expect(verificationAction("Acme", [online], web({ businessMatch: "mismatch", verifiedBy: "opus-5.5" }))).toBe("reuse")
+    expect(verificationAction("Acme", [mailing], web({ applicationAddressType: "residential", verifiedBy: "haiku-5.5>opus-5.5" }))).toBe("reuse")
+  })
+
   it("re-verifies everything on a rejudge", () => {
     expect(verificationAction("Acme", [online], web(), { rejudge: true })).toBe("web")
   })
