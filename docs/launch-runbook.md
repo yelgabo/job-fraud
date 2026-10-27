@@ -76,6 +76,10 @@ Goal: the site stays up through the first spike after the public announcement, w
    0.7 for the app: every uncached page runs about a dozen count and group-by queries for the
    tabs, which do not depend on the page number.
 
+   After a9b06fa cached the tab counts per filter instead of per page, the same 10 s run over
+   the same 1,080 cold pages gave 984 × 200, median 208 ms, p90 829 ms, p99 1.4 s, with Postgres
+   at about 0.7 vCPU instead of 4.
+
    The p95 tails come mostly from new TLS connections, which took 210 to 380 ms from the test
    machine. The tracking-parameter redirects are `x-cache: DYNAMIC`, so every one of them reaches
    the middleware on the origin. The 50/s uncached run reused a URL list that earlier runs had
