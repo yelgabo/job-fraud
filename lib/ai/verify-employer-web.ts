@@ -126,8 +126,18 @@ Do a smell test on the COMPANY (do NOT try to find this exact posting):
 Use "uncertain"/"unknown" when you genuinely cannot tell. Then call record_web_verification.`
 }
 
-async function callOnce(client: Anthropic, input: WebVerifyInput, profile: VerifierProfile): Promise<WebVerifyOutput> {
-  const user: Anthropic.MessageParam = { role: "user", content: buildPrompt(input) }
+/**
+ * One request that may use server-side web search, sent with a model profile's settings. A paused
+ * search loop is resumed (bounded), and usage, including billed searches, is summed across turns.
+ * Shared by the employer check and the impersonation check so both get the same model handling.
+ */
+export async function createWithWebSearch(
+  client: Anthropic,
+  profile: VerifierProfile,
+  prompt: string,
+  recordTool: Anthropic.Tool,
+): Promise<{ resp: Anthropic.Message; content: unknown[]; usage: VerifierUsage; refused: boolean }> {
+  const user: Anthropic.MessageParam = { role: "user", content: prompt }
   const content: unknown[] = []
   const usage: VerifierUsage = { inputTokens: 0, outputTokens: 0, webSearchRequests: 0 }
   let resp: Anthropic.Message
@@ -146,7 +156,12 @@ async function callOnce(client: Anthropic, input: WebVerifyInput, profile: Verif
     usage.webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
     if ((resp.stop_reason as string) !== "pause_turn" || turn >= MAX_CONTINUATIONS) break
   }
-  if ((resp.stop_reason as string) === "refusal") throw new WebVerifyError("model refused the verification request")
+  return { resp, content, usage, refused: (resp.stop_reason as string) === "refusal" }
+}
+
+async function callOnce(client: Anthropic, input: WebVerifyInput, profile: VerifierProfile): Promise<WebVerifyOutput> {
+  const { resp, content, usage, refused } = await createWithWebSearch(client, profile, buildPrompt(input), recordTool)
+  if (refused) throw new WebVerifyError("model refused the verification request")
   const block = resp.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_web_verification",
   )

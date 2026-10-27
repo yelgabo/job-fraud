@@ -106,7 +106,7 @@ pipeline). One process writes at a time → no race conditions.
 
 Next.js 15 (App Router, server components) · Prisma + PostgreSQL (Railway) · Claude
 (employer checks tiered: `haiku-5-5` first, `opus-5-5` re-checking any verdict that would raise a
-rating; `opus-4-8` for impersonation reasoning; all with the server-side `web_search` tool) · zod (validation) · p-limit (concurrency) · marked (README-to-`/about` rendering) · Vitest
+rating; `opus-5-5` for impersonation reasoning; all with the server-side `web_search` tool) · zod (validation) · p-limit (concurrency) · marked (README-to-`/about` rendering) · Vitest
 (unit tests, `npm test`).
 
 ## 8. Why it's built this way (talking points)

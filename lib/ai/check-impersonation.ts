@@ -3,14 +3,16 @@
 // (LexisNexis applying via RELX's Workday) is cleared, while true brand misuse is confirmed.
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
-import { extractSearchLog, type SearchLog } from "./verify-employer-web"
+import { createWithWebSearch, extractSearchLog, type SearchLog } from "./verify-employer-web"
+import { VERIFIER_PROFILES, type VerifierUsage } from "./verifier-models"
 import { retryOnce } from "../shared/retry"
 
-// Stronger model than the rest of the pipeline (which is Haiku): this is a rare call (only on an
-// apply-host mismatch) and demands corporate-genealogy synthesis across web sources — exactly where
-// a small model under-performs (it mislabeled CapWest Build, Onni Group's construction division, as
-// an impersonation). Opus 4.8 rejects temperature/top_p/top_k, so none are set below.
-const MODEL = "claude-opus-4-8"
+// The strongest model, not the cheap first tier: this is a rare call (only on an apply-host
+// mismatch) whose confirmed answer writes a High rating directly, and it needs corporate-genealogy
+// synthesis across web sources, exactly where a small model under-performs (Haiku mislabeled
+// CapWest Build, Onni Group's construction division, as an impersonation). Moved from Opus 4.8 to
+// Opus 5.5 on 2026-10-27 without a side-by-side comparison; no labelled impersonation cases exist.
+const PROFILE = VERIFIER_PROFILES["opus-5.5"]
 
 export type ImpersonationInput = {
   claimedEmployer: string
@@ -35,13 +37,11 @@ export type ImpersonationResult = z.infer<typeof ImpersonationSchema>
 
 export type ImpersonationOutput = {
   result: ImpersonationResult
-  usage: { inputTokens: number; outputTokens: number }
+  usage: VerifierUsage
   searchLog: SearchLog
 }
 
 export class ImpersonationError extends Error {}
-
-const webSearchTool = { type: "web_search_20250305", name: "web_search", max_uses: 5 } as const
 
 const recordTool: Anthropic.Tool = {
   name: "record_impersonation_check",
@@ -80,12 +80,8 @@ Choose "impersonation" ONLY if you are confident the two are genuinely unrelated
 }
 
 async function callOnce(client: Anthropic, input: ImpersonationInput): Promise<ImpersonationOutput> {
-  const resp = await client.messages.create({
-    model: MODEL,
-    max_tokens: 3000, // headroom for web-search rounds + the tool call on Opus
-    tools: [webSearchTool, recordTool] as unknown as Anthropic.ToolUnion[],
-    messages: [{ role: "user", content: buildPrompt(input) }],
-  })
+  const { resp, content, usage, refused } = await createWithWebSearch(client, PROFILE, buildPrompt(input), recordTool)
+  if (refused) throw new ImpersonationError("model refused the impersonation check")
   const block = resp.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_impersonation_check",
   )
@@ -94,8 +90,8 @@ async function callOnce(client: Anthropic, input: ImpersonationInput): Promise<I
   if (!parsed.success) throw new ImpersonationError("tool input failed zod validation: " + parsed.error.message)
   return {
     result: parsed.data,
-    usage: { inputTokens: resp.usage.input_tokens, outputTokens: resp.usage.output_tokens },
-    searchLog: extractSearchLog(resp.content),
+    usage,
+    searchLog: extractSearchLog(content),
   }
 }
 

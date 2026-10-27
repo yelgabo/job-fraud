@@ -5,7 +5,7 @@ Developer/operator documentation for the Job Fraud Scanner. For the system-archi
 a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
 
 **Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-5-5` for employer
-verification with `claude-opus-5-5` re-checking verdicts that need it (`needsEscalation`), `claude-opus-4-8` for
+verification with `claude-opus-5-5` re-checking verdicts that need it (`needsEscalation`), `claude-opus-5-5` for
 brand-impersonation checks, incl. the `web_search` tool) ·
 TypeSafe Jev (typed text judgments, `@typesafe-ai/sdk`) · zod ·
 p-limit · Vitest. Data comes from WorkBC's JSON APIs (no browser/HTML scraping). **Live:**
@@ -43,7 +43,7 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
   is upgraded to a real web-verify if a new non-matching posting later appears.
 - *Stage 1.5 — brand-impersonation pre-check.* For each posting, if its apply URL routes to a
   different company's ATS tenant than the claimed employer (`lib/signals/apply-host.ts`), a Claude
-  (`opus-4-8`) `web_search` call (`lib/ai/check-impersonation.ts`) classifies the relationship
+  (`opus-5-5`) `web_search` call (`lib/ai/check-impersonation.ts`) classifies the relationship
   (`same`/`affiliate`/`impersonation`/`uncertain`); a confirmed impersonation is re-attributed to the
   real company and scored HIGH (`lib/ai/resolve-impersonation.ts`).
 - *Stage 2 — judge text, compose score.* Jev (`lib/ai/jev-judgments.ts`, needs `TYPESAFE_API_KEY`)

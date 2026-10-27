@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import type Anthropic from "@anthropic-ai/sdk"
 import { checkImpersonation, ImpersonationError } from "./check-impersonation"
 
@@ -65,3 +65,15 @@ describe("checkImpersonation", () => {
     ).rejects.toBeInstanceOf(ImpersonationError)
   })
 })
+
+describe("checkImpersonation request", () => {
+  it("asks Opus 5.5 with room to think, the newer search tool and no sampling settings", async () => {
+    const create = vi.fn(async () => toolResp(VALID))
+    await checkImpersonation({ messages: { create } } as unknown as Anthropic, INPUT, { retryDelayMs: 0 })
+    const req = (create.mock.calls[0] as unknown[])[0] as Record<string, unknown> & { tools: Array<{ type: string }> }
+    expect(req).toMatchObject({ model: "claude-opus-5-5", max_tokens: 16000 })
+    expect(req).not.toHaveProperty("temperature")
+    expect(req.tools[0].type).toBe("web_search_20260209")
+  })
+})
+

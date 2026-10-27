@@ -59,7 +59,7 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   company for a given model profile (`verifier-models.ts`) using the `web_search` tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType,
   websiteUrl, …}`. Also returns `searchLog` (raw queries + result blocks); exports `extractSearchLog`.
 - `check-impersonation.ts` — `checkImpersonation()`: on a tenant≠employer mismatch, a Claude
-  **(`opus-4-8`)** + `web_search` call classifies the relationship `same | affiliate | impersonation
+  **(`opus-5-5`)** + `web_search` call classifies the relationship `same | affiliate | impersonation
   | uncertain` and names the real company (stronger model — corporate-genealogy synthesis).
 - `resolve-impersonation.ts` — `resolveApplyHost()`: glue — runs the apply-host check; on a confirmed
   impersonation re-attributes the posting to the real company + writes a deterministic HIGH score +

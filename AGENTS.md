@@ -91,7 +91,7 @@ What still differs:
 | | API judge | Keyless judge |
 |---|---|---|
 | Tier escalation | done by code (`verifyEmployerTiered`) | done by the orchestrating session (skill step 3b); `judge-keyless:apply` **rejects** a verdict needing escalation unless `verifiedBy` is `opus-5.5` or `haiku-5.5>opus-5.5` |
-| Brand-impersonation check (Opus 4.8) | yes, per posting | **no** (needs the key) |
+| Brand-impersonation check (Opus 5.5, API call) | yes, per posting | **no** (needs the key) |
 | Web search limit | per-search billing ($10 / 1,000), none per session | Claude Code's WebSearch: about 200 per session, refilling about 100 an hour |
 | Prompt | `lib/ai/verify-employer-web.ts` | the skill's "Agent prompt" |
 
@@ -197,7 +197,9 @@ Haiku 5.5 checks every employer, and when its verdict would raise a rating (a bu
 address `uncertain`, Opus 5.5 checks again and its verdict is used instead (`needsEscalation`, `verifyEmployerTiered`; models and prices in `lib/ai/verifier-models.ts`,
 the evidence in `docs/verifier-model-eval.md`). Each verdict records `web.verifiedBy`. The keyless
 agent path does the same with Haiku and Opus helper agents (`.claude/skills/judge-postings/SKILL.md`,
-step 3b). `claude-opus-4-8` still runs the impersonation check (`lib/ai/check-impersonation.ts`), and
+step 3b). Opus 5.5 also runs the brand-impersonation check (`lib/ai/check-impersonation.ts`, an
+API call in the API judge and `rescan-impersonation` only; moved from Opus 4.8 on 2026-10-27 without
+a side-by-side comparison), and
 TypeSafe's default Jev model for the text judgments (`lib/ai/jev-judgments.ts`). Nothing scores:
 `scoringVersion` on the row says which era produced its number (null = a model chose it).
 
