@@ -34,8 +34,10 @@ agent path let an agent return a score directly. Rows from that era have `scorin
 The ATS registry recognises Oracle Fusion candidate sites (`<code>.fa.<region>.oraclecloud.com`)
 as `oraclefusion`, so Marriott and other Fusion employers now get the -25 credit. The flag is
 stored on the row at scrape time, so postings scraped before this change keep `atsProvider:
-"unknown"` and no `ats_known_provider` flag until their flags are recomputed from
-`externalApplyHost`. Fusion is left out of tenant-to-employer matching
+"unknown"` and no `ats_known_provider` flag until `npm run backfill-ats` recomputes them from
+`externalApplyHost`. On 2026-10-26 that was applied to the 236 pending Fusion rows; the 366
+judged ones are untouched, because re-scoring them (`backfill-ats -- --include-judged --apply`,
+then `recompose -- --apply`) changes published ratings. Fusion is left out of tenant-to-employer matching
 (`lib/signals/apply-host.ts`) because its tenant is an opaque Oracle code, not a company name.
 
 ## Stage 1: retrieve
@@ -85,6 +87,12 @@ free-mailbox group, so it is not just re-reading the ATS flag.
 email mentions immigration or LMIA, it scores 0.89-0.92 where an ordinary employer routes hiring
 through a consultancy and 0.16-0.19 where an immigration firm hires its own staff. A keyword
 cannot make that split. n = 8, so it needs a proper discrimination run before it gets a weight.
+On the 80 worksheet postings (2026-10-26, fresh answers) the claim could not be tested: only #18
+(Thai Green Elephant, 0.91) is a broker case, a regex on the contact email catches it too, none
+of the 80 is an immigration firm hiring its own staff, and 8 of the 10 others above 0.3 are
+generic-mailbox postings with no immigration link. A real test needs a drawn sample: every
+posting whose contact route mentions immigration, LMIA, visa or consulting, postings whose named
+employer is such a firm, and generic-email controls, about 20 of each kind, labelled by hand.
 
 **`brandProminence`** (Score) is stored, never weighted. It reads 2.30 on human-labelled lows and
 2.37 on mediums, because the medium band **is** big brands. It is an input to a comparison, not a
@@ -155,8 +163,8 @@ fitting. More labels weighted toward medium and high are the gate on everything 
 ## Order of work
 
 Done: the route threshold (2), wiring the composer into both paths with `fraudScore` removed
-from the agent verdict (3), and Oracle Fusion in the ATS registry (item 3 below; rows scraped
-before it still need their flags recomputed).
+from the agent verdict (3), and Oracle Fusion in the ATS registry (item 3 below; pending rows
+backfilled, judged rows not yet).
 
 1. Measure `brokerRouting` properly with `npm run measure-questions`; it is stored on every
    composed row now, so the next judge run produces the sample for free.

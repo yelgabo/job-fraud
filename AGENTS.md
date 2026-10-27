@@ -52,6 +52,7 @@ speculatively to "see what happens".
 | `npm run eval:snapshot` | Read-only against the DB; rewrites the label-harness fixture in `lib/eval/__fixtures__/`, which moves the evidence under every label, so re-measure `lib/eval/baseline.ts` in the same commit. `--ask-jev` adds a Jev call per posting without stored judgments. (`npm run eval:labels` is free: fixture only.) |
 | `npm run judge:apply` | The single DB writer for the agent path. Stores the agent's `web` verdict on the employer, then asks Jev (when keyed) and composes: overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`judgments`/`scoringVersion`/`scoredAt`. Publishes verdicts. |
 | `npm run backfill-categories` | No API calls, but it updates **every** Job row. |
+| `npm run backfill-ats` | No API calls. Re-classifies stored apply hosts after an ATS registry change. Pending rows only by default (publishes nothing); `--include-judged` also rewrites judged rows' flags, which then need `recompose`. Dry run is the default. |
 | `npm run backfill-posted-date` | No API calls, and it touches no published judgement (only `Job.postedDate`, which drives the site's date filter), but `--apply` can update **every** Job row. Dry run is the default: a bare run reports counts and writes nothing. |
 | `npm run judge:fetch` | The only genuinely safe one: read-only, writes files under `logs/` and nothing else. |
 

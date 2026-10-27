@@ -114,14 +114,16 @@ verifying against the live API before anything is built on it.
 **G. Measure `brokerRouting`.** Every composed row now stores it. `npm run measure-questions`
 over the 973 gives the stratified sample the doc has been waiting for, at no Jev cost since the
 answers are already in `Job.judgments`. If it separates, it gets a weight through C.
+(The 973 rows' judgments were lost on 2026-10-23, and the 80-posting fixture holds one broker
+case, so this now needs the drawn sample described in `docs/scoring-algorithm.md`.)
 
 **H. The known structural gaps** from `docs/scoring-algorithm.md`: address
 classification per address rather than per employer (Subway's 32 addresses share one verdict;
 this run's Subway postings overwrote each other's cached verdict three times) and aggregator
 mislocations (Houston TX listed as Houston BC, Delta PA as
 Delta BC) which currently score as a location mismatch rather than being recognised as not a BC
-job at all. Oracle Fusion in the ATS registry was the third gap and is fixed; rows scraped
-before the fix still carry the old flags.
+job at all. Oracle Fusion in the ATS registry was the third gap and is fixed; pending rows were
+backfilled with `npm run backfill-ats`, the 366 judged Fusion rows were not.
 
 ## What should stay human, and why
 
