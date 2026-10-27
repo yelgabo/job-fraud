@@ -340,7 +340,8 @@ Railway's Postgres logs show every connection and its source address. Rotating t
 password is planned in `docs/postgres-credential-rotation-plan.md`, not done.
 
 The `job-fraud` web service deploys from GitHub: every push to `main` deploys once the Tests
-workflow passes. Its build and start settings live on the service, not in the repo (there is no
+workflow passes, except a push that only touches `docs/`, `AGENTS.md`, `CLAUDE.md`, `.claude/` or
+`.agents/` (the service's watch paths, set 2026-10-27). `README.md` still deploys: `/about` reads it. Its build and start settings live on the service, not in the repo (there is no
 `railway.json`); read them with `railway api` on `serviceInstance` before changing them.
 
 ## Maintaining this file
