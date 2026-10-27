@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { composeScore, type ComposeInput, type Judgments } from "./compose"
+import type { WebVerification } from "../shared/json-schemas"
 import { BASELINE, DETERMINISTIC, FLOORS, JUDGMENT, JUDGMENT_NOUL_NEUTRAL, ROUTE_PLAUSIBLE_THRESHOLD } from "./weights"
 import { humanizeSignalLabel } from "../shared/signal-labels"
 
@@ -203,6 +204,29 @@ describe("composeScore", () => {
       const r = composeScore(privateAddress)
       expect(r.fraudScore).toBeGreaterThanOrEqual(FLOORS.apply_address_private)
       expect(r.riskBand).toBe("high")
+    })
+
+    // Watts Plumbing & Drains, 2026-10-27: a real plumber whose published office is a condo unit.
+    const homeBusiness = (over: Partial<WebVerification> = {}) => base({
+      checks: { web: { websiteUrl: "https://example.ca", websiteReachable: "yes", businessMatch: "match", locationMatch: "match", hasJobsListing: "no", applicationAddressType: "home_business", confidence: 0.85, summary: "its own published office, a condo unit", ...over } },
+      flags: [{ flag: "mail_physical_resume", evidence: "By mail: Room 415, 3277 Quadra St" }],
+    })
+
+    it("a home address the verified business publishes counts against it without the floor", () => {
+      // Jev judged Watts's mail-to-home route implausible, which withholds the business credits.
+      const r = composeScore({ ...homeBusiness(), judgments: { ...CLEAN_JUDGMENTS, routePlausibleForEmployer: 0.2 } })
+      expect(r.signals.map((s) => s.label)).toContain("apply_address_home_business")
+      expect(r.signals.map((s) => s.label)).not.toContain("apply_address_private")
+      expect(r.fraudScore).toBe(BASELINE + DETERMINISTIC.apply_address_home_business)
+      expect(r.riskBand).toBe("medium")
+    })
+
+    it("a home_business verdict on an employer not verified on both counts is scored as residential", () => {
+      for (const over of [{ businessMatch: "uncertain" as const }, { locationMatch: "uncertain" as const }]) {
+        const r = composeScore(homeBusiness(over))
+        expect(r.signals.map((s) => s.label)).toContain("apply_address_private")
+        expect(r.riskBand).toBe("high")
+      }
     })
 
     it("an asserted pre-hire money request lands high", () => {

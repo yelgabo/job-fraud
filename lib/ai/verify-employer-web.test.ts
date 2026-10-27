@@ -228,6 +228,10 @@ describe("needsEscalation", () => {
     expect(needsEscalation({ ...v, applicationAddressType: "uncertain" }, "")).toBe(false)
     expect(needsEscalation({ ...v, applicationAddressType: "business" }, "Mail to 724 Lorimer Rd")).toBe(false)
   })
+
+  it("escalates home_business, the verdict that lowers a rating relative to residential", () => {
+    expect(needsEscalation({ ...v, applicationAddressType: "home_business" }, "Mail to 415-3277 Quadra St")).toBe(true)
+  })
 })
 
 describe("verifyEmployerTiered on a mailing address", () => {

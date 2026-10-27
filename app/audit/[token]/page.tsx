@@ -2,6 +2,7 @@ import Link from "next/link"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { requireAuditToken } from "./guard"
+import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
 
 export const dynamic = "force-dynamic"
 
@@ -90,7 +91,7 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
             {employers.map((e) => {
               const web = parseChecks(e.checks).web
               const addr = web?.applicationAddressType
-              const flagged = addr === "residential" || addr === "po_box" || addr === "virtual"
+              const flagged = web ? isPrivateAddress(scoredAddressType(web)) : false
               return (
                 <tr key={e.id} className="hover:bg-zinc-50">
                   <td className="px-4 py-2">

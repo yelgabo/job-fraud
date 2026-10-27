@@ -76,7 +76,8 @@ Both group pending postings by employer with `planByEmployer` / `verificationAct
 reused (except one that breaks the tier rule, which is checked again), and an employer whose postings all apply through its own ATS tenant is presumed legitimate.
 Both use the **tiered employer check**: Haiku 5.5 first, and Opus 5.5 instead whenever
 `needsEscalation` (`lib/ai/verify-employer-web.ts`) says so: a business or location `mismatch`, a
-residential / P.O. box / virtual address, or a mailing address the first model left `uncertain`.
+residential / P.O. box / virtual / `home_business` address, or a mailing address the first model
+left `uncertain`.
 On 1,000 pending postings that matched an all-Opus run on every band at about an eighth of the
 cost (`docs/verifier-model-eval.md`). Every verdict records `web.verifiedBy`.
 
@@ -171,7 +172,7 @@ Verdict shape (authoritative schemas: `scripts/judge-keyless-apply.ts` + `lib/sh
 `web` overwrites the employer's cached `checks.web`, so a careless verdict poisons every later posting
 by that employer. Enums: `websiteReachable`/`hasJobsListing` `yes|no|unknown`;
 `businessMatch`/`locationMatch` `match|mismatch|uncertain`; `applicationAddressType`
-`business|residential|po_box|virtual|none|uncertain`. `WebVerificationSchema` requires
+`business|residential|home_business|po_box|virtual|none|uncertain`. `WebVerificationSchema` requires
 `websiteReachable`, `businessMatch`, `locationMatch`, `hasJobsListing`, `confidence` and `summary`;
 `websiteUrl` is required but nullable; `applicationAddressType` defaults to `"none"`; `source` and
 `verifiedBy` are optional. A partial `web` object fails zod and the posting stays pending.

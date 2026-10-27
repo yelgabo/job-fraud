@@ -124,7 +124,7 @@ WorkBC moderation lapsed; keeping it is a tail-risk call, not a claim this data 
 
 4. **Judgment contributions**, each scaled so a rubric level at or above acceptable costs zero.
 
-5. **Floors.** A private mailing address floors the score at 70. "Any serious violation" is not a
+5. **Floors.** A private mailing address (residential, P.O. box, mail-forwarding) floors the score at 70. A residence that the verified employer publishes as its own address (`home_business`) is +25 with no floor, and counts as residential unless `businessMatch` and `locationMatch` are both `match` (`lib/shared/address-type.ts`; adopted 2026-10-27, `docs/home-business-address-plan.md`). "Any serious violation" is not a
    weighted sum, and a prompt could only ever ask a model to honour it.
 
 6. **Band** via the existing `bandFor`.

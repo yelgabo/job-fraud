@@ -1,6 +1,6 @@
 # Plan: a separate address type for home-based businesses
 
-Status: proposed 2026-10-27, not adopted. Adopting it changes published ratings of named employers.
+Status: adopted 2026-10-27 at +25, with the guard requiring both `businessMatch` and `locationMatch` to be `match`. The owner checked both cases: Watts publishes the same address on its own site (home business); Inex Reno has nothing tying it to the address (residential).
 
 ## The problem
 
@@ -45,7 +45,7 @@ private home") reads as concealment when the address is the one the business adv
    counts against the posting, for the reason above; it no longer forces High.
 
 3. **Guard in the composer**: `home_business` counts as `home_business` only when
-   `businessMatch === "match"`. Otherwise it is scored as `residential`, floor included, so a
+   `businessMatch` and `locationMatch` are both `"match"`. Otherwise it is scored as `residential`, floor included, so a
    verifier that over-uses the new value cannot lower the rating of an employer it could not
    verify. Inex Reno (`businessMatch: "uncertain"`) stays High under this rule.
 
@@ -103,7 +103,6 @@ second look", rather than Low, which matches the "something unusual" definition 
 - Whether to make the change at all, given the cost described under "what a change gives up".
 - The weight: +25 keeps a home-based business in Medium; +15 does the same with less margin from
   Low; 0 treats mailing to a published home office as neutral.
-- Whether `locationMatch: "match"` should also be required by the guard.
 
 There is no labelled evidence on home-based businesses (the 21 labels hold 2 Highs), so the weight
 is a judgement, like every other number in `weights.ts`.

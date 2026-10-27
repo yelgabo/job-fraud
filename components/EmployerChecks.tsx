@@ -1,4 +1,5 @@
 import type { Checks } from "@/lib/shared/json-schemas"
+import { scoredAddressType } from "@/lib/shared/address-type"
 
 // Keyed, plain-language rendering of an employer's verification record, replacing the raw
 // JSON dump the posting page used to show. Every known field of ChecksSchema has a row here;
@@ -29,6 +30,7 @@ const MATCH_TEXT: Record<string, string> = {
 const ADDRESS_TYPE_TEXT: Record<string, string> = {
   business: "a business address",
   residential: "a residential address",
+  home_business: "the home address the business publishes as its own",
   po_box: "a PO box",
   virtual: "a virtual office or mail-forwarding service",
   none: "none - the posting has no mailing address",
@@ -80,7 +82,7 @@ export function EmployerChecks({ checks, checkedAt }: { checks: Checks; checkedA
     })
     rows.push({
       label: "Mail-application address",
-      value: ADDRESS_TYPE_TEXT[web.applicationAddressType] ?? web.applicationAddressType,
+      value: ADDRESS_TYPE_TEXT[scoredAddressType(web)] ?? web.applicationAddressType,
     })
     rows.push({
       label: "How it was verified",

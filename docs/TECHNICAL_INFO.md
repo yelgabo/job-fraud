@@ -94,7 +94,7 @@ the employer published: a compact `~date` (with a footnote) in the list, the ful
    and the NOC-derived job-type `category` (`lib/signals/job-category.ts`).
 3. **Employer web verification** (`lib/ai/verify-employer-web.ts`) — once per company, Claude's
    `web_search` tool returns `businessMatch`, `locationMatch`, `hasJobsListing`,
-   `applicationAddressType` (`business|residential|po_box|virtual|none|uncertain`), `websiteUrl`,
+   `applicationAddressType` (`business|residential|home_business|po_box|virtual|none|uncertain`), `websiteUrl`,
    `confidence`, `summary`. Cached on the employer and reused across its postings.
 
 ## Scoring logic
@@ -107,6 +107,7 @@ applies the floors and clamps to 0–100. The full account, with the measurement
 | Signal | Weight |
 |---|---|
 | `apply_address_private` (residential / po_box / virtual mailing address, on a posting that mails) | **+40, floors the score at 70** |
+| `apply_address_home_business` (a residence the employer publishes as its own address, counted only when business and location both match; otherwise scored as residential) | +25, no floor |
 | `business_mismatch` (fake/shell/impersonation) · `crypto_payment` · `banking_info_upfront` | +25 |
 | `generic_email_domain` (free provider) | +20, +5 more when the website is unreachable |
 | `fee_to_apply` · `id_upfront` · `whatsapp_telegram_only` · `mail_resume_software_role` · `address_not_geocoded` | +20 |

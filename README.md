@@ -59,7 +59,8 @@ The signals above are combined into a risk rating:
 
 - **🟢 Low** — a real, verifiable company taking applications through its normal channels (its own
   website or a standard, recognized hiring system).
-- **🟡 Medium** — broadly plausible, but with something unusual worth a second look.
+- **🟡 Medium** — broadly plausible, but with something unusual worth a second look, such as
+  applications mailed to a home that a verified small business publicly lists as its own office.
 - **🔴 High** — strong warning signs, such as: being told to **mail your application to a private
   home or PO box**, a "company" that **can't be found anywhere**, or a posting that uses a
   **well-known company's name but routes applications to an unrelated free email address**.

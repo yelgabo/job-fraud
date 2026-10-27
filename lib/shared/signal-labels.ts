@@ -31,6 +31,7 @@ const PLAIN: Record<string, string> = {
   "websitereachable false": "The employer's website could not be reached",
   "applicationaddresstype business": "Applications are mailed to a business address",
   "applicationaddresstype residential": "Applications are mailed to a residential address",
+  "applicationaddresstype home_business": "Applications are mailed to the home address the business publishes as its own",
   "applicationaddresstype po_box": "Applications are mailed to a PO box",
   "applicationaddresstype virtual": "Applications are mailed to a virtual office or mail-forwarding address",
   // deterministic application flags (lib/signals/application-flags.ts)
@@ -51,6 +52,7 @@ const PLAIN: Record<string, string> = {
   apply_address_business: "Applications are mailed to a business address",
   apply_address_none: "The posting asks for no mailed materials",
   apply_address_private: "Applications are mailed to a private home, PO box, or mail-forwarding address",
+  apply_address_home_business: "Applications are mailed to a home address the business publishes as its own",
   address_not_geocoded: "The employer's stated address could not be located",
   address_city_match: "The employer's address is in the city the posting names",
   address_city_mismatch: "The employer's address is in a different city than the posting names",

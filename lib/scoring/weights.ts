@@ -12,7 +12,7 @@ import { MIN_SIGNAL_WEIGHT, MAX_SIGNAL_WEIGHT } from "../shared/json-schemas"
  * compose.ts means two rows with the same inputs could carry different numbers; rows scored
  * before the composer have null.
  */
-export const SCORING_VERSION = 1
+export const SCORING_VERSION = 2
 
 /** Fires from a deterministic check or a regex flag. Each is a plain integer contribution. */
 export const DETERMINISTIC = {
@@ -25,6 +25,10 @@ export const DETERMINISTIC = {
   apply_address_business: -5,
   apply_address_none: -4,
   apply_address_private: 40,
+  // A residence the verified employer publishes as its own address: still a paper-only route to a
+  // home, so it counts, but it is not the unexplained home the floor is for. 2026-10-27, owner's
+  // call; no labels cover it (docs/home-business-address-plan.md).
+  apply_address_home_business: 25,
   address_not_geocoded: 20,
   address_city_match: -5,
   address_city_mismatch: 15,

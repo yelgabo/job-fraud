@@ -17,6 +17,7 @@ import {
   ROUTE_PLAUSIBLE_THRESHOLD,
   type DeterministicId,
 } from "./weights"
+import { isPrivateAddress, scoredAddressType } from "../shared/address-type"
 
 /**
  * Jev's answers about the posting text. Nouls are probabilities 0..1; `brandProminence` is a
@@ -95,11 +96,14 @@ function deterministicSignals(input: ComposeInput, routeDisowned: boolean): Sign
     // that posts a street address decides the verdict for every sibling posting: dentalcorp has
     // 47 postings and one address, Wendy's 32 and one. A sibling that applies online is telling
     // the truth when it says no mailed materials are involved.
-    const addr = postingMailsApplications ? web.applicationAddressType : "none"
+    const addr = postingMailsApplications ? scoredAddressType(web) : "none"
     if (addr === "business" && !routeDisowned) add("apply_address_business", web.summary)
     if (addr === "none" && !routeDisowned) add("apply_address_none", "the posting asks for no mailed materials")
-    if (addr === "residential" || addr === "po_box" || addr === "virtual") {
+    if (isPrivateAddress(addr)) {
       add("apply_address_private", `applications are mailed to a ${addr} address: ${web.summary}`)
+    }
+    if (addr === "home_business") {
+      add("apply_address_home_business", `applications are mailed to the home address the business publishes: ${web.summary}`)
     }
   }
 

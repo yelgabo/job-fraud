@@ -57,7 +57,7 @@ Run from the `job-fraud` project directory.
    the measurements behind the split.
 
 3b. **Escalate to Opus.** A Haiku verdict needs escalation when `businessMatch` or `locationMatch`
-   is `"mismatch"`; when `applicationAddressType` is `"residential"`, `"po_box"` or `"virtual"`;
+   is `"mismatch"`; when `applicationAddressType` is `"residential"`, `"home_business"`, `"po_box"` or `"virtual"`;
    or when the posting's `flags` include `mail_physical_resume` and `applicationAddressType` is
    `"uncertain"` (the same rule as `needsEscalation` in `lib/ai/verify-employer-web.ts`). Collect
    those items from the batch files into one or more new batches and dispatch helpers with
@@ -120,7 +120,7 @@ tune weights or rescore existing data unless the current task requests it.
 ```
 
 Enums — `websiteReachable`/`hasJobsListing`: `yes|no|unknown`; `businessMatch`/`locationMatch`:
-`match|mismatch|uncertain`; `applicationAddressType`: `business|residential|po_box|virtual|none|uncertain`.
+`match|mismatch|uncertain`; `applicationAddressType`: `business|residential|home_business|po_box|virtual|none|uncertain`.
 `web` is optional but expected when an employer name exists; omit it only when nothing
 could be established, since a present `web` overwrites the employer's cached verdict for
 every posting by that employer.
@@ -143,7 +143,10 @@ For each posting:
    this exact posting)
 5. `applicationAddressType`: if the posting (see `flags` evidence / description) tells applicants
    to MAIL materials somewhere, web-search that address and classify: business (real office),
-   residential (home/apartment/unit), po_box, virtual (mail-forwarding), none, uncertain.
+   residential (home/apartment/unit), home_business (a home/apartment/unit that the company's own
+   website AND at least one independent listing such as BBB, a business directory or a registry
+   give as its business address; if you cannot show both, it is residential), po_box,
+   virtual (mail-forwarding), none, uncertain.
 
 Report what you could establish and nothing more: `uncertain` / `unknown` are correct answers
 when the search did not settle it, and they are treated as neutral. If web search is unavailable

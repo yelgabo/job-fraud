@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { requireAuditToken } from "../guard"
+import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
 
 export const dynamic = "force-dynamic"
 
@@ -75,7 +76,7 @@ export default async function AuditDetailPage({
             <span>jobs page: <b>{web.hasJobsListing}</b></span>
             <span>
               mail-to:{" "}
-              <b className={["residential", "po_box", "virtual"].includes(web.applicationAddressType ?? "") ? "text-red-700" : ""}>
+              <b className={isPrivateAddress(scoredAddressType(web)) ? "text-red-700" : ""}>
                 {web.applicationAddressType}
               </b>
             </span>

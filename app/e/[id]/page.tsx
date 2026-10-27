@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
+import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
 
 // Rendered on demand per employer, then cached up to 10 minutes; a re-judged verdict appears
 // within that window. The empty generateStaticParams opts the route into on-demand static
@@ -123,10 +124,13 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
             {checks.web.hasJobsListing === "yes" && (
               <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">has careers page</span>
             )}
-            {["residential", "po_box", "virtual"].includes(checks.web.applicationAddressType ?? "") && (
+            {isPrivateAddress(scoredAddressType(checks.web)) && (
               <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                ⚠ mail-to: {(checks.web.applicationAddressType ?? "").replace("_", " ")} address
+                ⚠ mail-to: {scoredAddressType(checks.web).replace("_", " ")} address
               </span>
+            )}
+            {scoredAddressType(checks.web) === "home_business" && (
+              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">mail-to: the business&apos;s own home address</span>
             )}
             {checks.web.applicationAddressType === "business" && (
               <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">business mailing address</span>
