@@ -80,6 +80,13 @@ Goal: the site stays up through the first spike after the public announcement, w
    the same 1,080 cold pages gave 984 × 200, median 208 ms, p90 829 ms, p99 1.4 s, with Postgres
    at about 0.7 vCPU instead of 4.
 
+   After ab4191c added the `[fraudScore desc, title, workbcId]` and `[scoredAt, riskBand]`
+   indexes, the same run gave 983 × 200, median 219 ms, p90 587 ms, p99 1.1 s. The unfiltered
+   rows query at page 41 went from 34 ms (full scan and sort) to 11 ms (score index). The
+   whole-corpus counts still use a full scan (20 ms): Postgres has not chosen the index-only scan,
+   probably because the table has not been vacuumed since, and `jobfraud_local` cannot run
+   `VACUUM` or `ANALYZE`.
+
    The p95 tails come mostly from new TLS connections, which took 210 to 380 ms from the test
    machine. The tracking-parameter redirects are `x-cache: DYNAMIC`, so every one of them reaches
    the middleware on the origin. The 50/s uncached run reused a URL list that earlier runs had
