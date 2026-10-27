@@ -54,7 +54,7 @@ export function extractSearchLog(content: unknown[]): SearchLog {
   return { queries, blocks }
 }
 
-const webSearchTool = (type: VerifierProfile["webSearchTool"]) => ({ type, name: "web_search", max_uses: 5 })
+const webSearchTool = (profile: VerifierProfile) => ({ type: profile.webSearchTool, name: "web_search", max_uses: profile.maxSearches })
 
 // The server-side search loop stops with pause_turn after 10 iterations; re-sending the turn
 // resumes it. Bounded so a model that never settles cannot run up searches indefinitely.
@@ -146,7 +146,7 @@ export async function createWithWebSearch(
       model: profile.model,
       max_tokens: profile.maxTokens,
       ...(profile.temperature !== undefined ? { temperature: profile.temperature } : {}),
-      tools: [webSearchTool(profile.webSearchTool), recordTool] as unknown as Anthropic.ToolUnion[],
+      tools: [webSearchTool(profile), recordTool] as unknown as Anthropic.ToolUnion[],
       messages: turn === 0 ? [user] : [user, { role: "assistant", content: resp!.content }],
     })
     content.push(...resp.content)

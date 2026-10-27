@@ -8,6 +8,8 @@ export type VerifierProfile = {
   outputPerMTok: number
   webSearchTool: "web_search_20250305" | "web_search_20260209"
   maxTokens: number
+  /** The web_search tool's max_uses per request. */
+  maxSearches: number
   /** Only for models that accept a non-default value; the 5.x models reject one with a 400. */
   temperature?: number
 }
@@ -22,6 +24,7 @@ export const VERIFIER_PROFILES = {
     outputPerMTok: 5,
     webSearchTool: "web_search_20250305",
     maxTokens: 1500,
+    maxSearches: 5,
     temperature: 0,
   },
   // Billed at $0.50 / $2.50 instead once a prompt passes 100K tokens. A single verification is
@@ -32,6 +35,7 @@ export const VERIFIER_PROFILES = {
     outputPerMTok: 0.5,
     webSearchTool: "web_search_20250305",
     maxTokens: 16000,
+    maxSearches: 5,
   },
   "sonnet-5.5": {
     model: "claude-sonnet-5-5",
@@ -39,6 +43,7 @@ export const VERIFIER_PROFILES = {
     outputPerMTok: 10,
     webSearchTool: "web_search_20260209",
     maxTokens: 16000,
+    maxSearches: 5,
   },
   "opus-5.5": {
     model: "claude-opus-5-5",
@@ -46,6 +51,9 @@ export const VERIFIER_PROFILES = {
     outputPerMTok: 20,
     webSearchTool: "web_search_20260209",
     maxTokens: 16000,
+    // Opus gets the hard cases. At 5, 39 of the 584 verdicts stored on 2026-10-27 said the search
+    // was cut off, and some came back "uncertain" for that reason alone.
+    maxSearches: 10,
   },
 } as const satisfies Record<string, VerifierProfile>
 

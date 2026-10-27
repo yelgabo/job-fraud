@@ -126,6 +126,7 @@ describe("verifyEmployerWeb", () => {
     expect(req.model).toBe("claude-opus-5-5")
     expect(req).not.toHaveProperty("temperature")
     expect(req.tools[0].type).toBe("web_search_20260209")
+    expect(req.tools[0].max_uses).toBe(10)
   })
 
   it("resumes a paused search loop and sums usage and billed searches across turns", async () => {
