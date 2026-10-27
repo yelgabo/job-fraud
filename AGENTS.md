@@ -229,7 +229,9 @@ railway up --service job-fraud --detach
 ```
 
 Normal deploys come from GitHub push (the service's source is `yelgabo/job-fraud`, trigger reconnected 2026-10-26). `railway up` is
-only the fallback when auto-deploy does not fire. **Data refreshes never need a deploy** - the site
+only the fallback when auto-deploy does not fire. The web service also sits behind Railway's edge
+CDN cache (enabled 2026-10-26, resting state `auto`); what it caches, the escalation levers and the
+purge command are documented in `docs/TECHNICAL_INFO.md` ("Railway edge CDN"). **Data refreshes never need a deploy** - the site
 serves pages cached up to 10 minutes, so refreshed data appears within the revalidation window (or
 immediately, when the run could call `POST /api/revalidate` with `REVALIDATE_TOKEN` set).
 

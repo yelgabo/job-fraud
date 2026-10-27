@@ -314,3 +314,32 @@ then sends a second `?phase=warm` request that re-renders the common filter page
 endpoint is unreachable, the run logs one warning and the 600 s timer remains the backstop
 (`lib/shared/request-revalidation.ts`, `app/api/revalidate/route.ts`). If
 GitHub auto-deploy doesn't pick up a push, `railway up --detach` forces a deploy.
+
+### Railway edge CDN (enabled 2026-10-26)
+
+The `job-fraud` service has Railway's edge CDN caching on: `auto` mode (edge caches what the
+origin's `Cache-Control` marks cacheable), `staleWhileRevalidate` on, `purgeOnDeploy: html`.
+No repo file configures it — it is service settings, read/write with the CLI:
+
+```bash
+railway cdn status --service job-fraud          # also --project <id> --environment production
+railway cdn update --html-caching force --default-ttl 1800   # escalation lever (see below)
+railway cdn purge html                          # service-wide only, no per-URL purge
+```
+
+What the edge caches, by origin directive:
+
+- `/_next/static/*` (JS/CSS): `public, max-age=1yr, immutable` → cached ~forever, effectively free.
+- `/j/[id]`, `/e/[id]` HTML: `s-maxage=600, stale-while-revalidate` → edge-cached 600 s, then served
+  stale while refreshing. This is what absorbs crawler/link fan-out over many postings.
+- `/`, `/companies`, `/analysis`, `/audit/*`: `private, no-cache, no-store` → never edge-cached.
+  List pages stay on the origin's own `unstable_cache`; audit pages stay origin-only (deliberate).
+- POSTs (`/api/revalidate`) are never cached.
+
+Semantics worth knowing: a cached unit is a complete response keyed by full URL **including query
+string** (every filter combination is a distinct key); the minimum `force`-mode TTL is 30 min
+(1800 s), which is why the resting state is `auto` — `force` would add up to a 30-minute lag to
+newly judged verdicts. Levers when traffic actually hurts: `--html-caching force` for a sustained
+load event (then `railway cdn purge html` for instant refresh), and
+`railway waf under-attack enable --duration 1h` for an active flood (browser-challenges visitors,
+`disable` after).
