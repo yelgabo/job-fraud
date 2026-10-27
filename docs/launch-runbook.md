@@ -43,6 +43,15 @@ Goal: the site stays up through the first spike after the public announcement, w
    ```
 
    A second run should show `HIT` on every line.
+
+   After a data change (a judge run) without a deploy, `HIT` is not enough: check the numbers.
+   Once a data-cache entry is older than 10 minutes, Next serves the old data to the first
+   request on each replica and refreshes in the background, and the edge can store that stale
+   render for another 10 minutes or more. On 2026-10-27, `/?band=low` showed the pre-judge counts
+   for 50 minutes after the run. What worked: send a few `RSC: 1` requests per page (the edge
+   passes them to the origin, which refreshes both replicas), then
+   `railway cdn purge html --service job-fraud`, then warm and compare each page's
+   "N postings" with the database.
 4. **Load test** the same URLs, including tracking-parameter variants, and check that the error
    rate is zero and the edge answers nearly everything:
 
