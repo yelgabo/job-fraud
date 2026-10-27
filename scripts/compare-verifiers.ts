@@ -19,7 +19,7 @@ import { prisma } from "../lib/db"
 import type { WebVerification } from "../lib/shared/json-schemas"
 import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { verificationAction } from "../lib/signals/verification-plan"
-import { verifyEmployerWeb, type WebVerifyInput } from "../lib/ai/verify-employer-web"
+import { isAlarmingVerdict, verifyEmployerWeb, type WebVerifyInput } from "../lib/ai/verify-employer-web"
 import { VERIFIER_PROFILES, verifierCostUsd, type VerifierName, type VerifierUsage } from "../lib/ai/verifier-models"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 
@@ -43,9 +43,6 @@ function parseArgs() {
   return a
 }
 
-/** Haiku's verdicts that would raise a posting's risk, and so get a second opinion in the hybrid. */
-const alarming = (w: WebVerification) =>
-  w.businessMatch === "mismatch" || w.locationMatch === "mismatch" || ["residential", "po_box", "virtual"].includes(w.applicationAddressType)
 
 async function main() {
   const args = parseArgs()
@@ -75,12 +72,14 @@ async function main() {
   writeFileSync(join(dir, "employers.json"), JSON.stringify(chosen, null, 1))
   console.log(`[compare] ${jobs.length} pending postings, ${byEmp.size} employers, ${targets.length} need a web check; running ${chosen.length} x ${args.models.join(", ")} -> ${dir}`)
 
+  // Each model has its own rate-limit pool, so the models run side by side, each capped at
+  // --concurrency calls. One billing error stops all of them.
   const rows = new Map<VerifierName, Map<string, Row>>()
-  for (const model of args.models) {
+  let billingAbort = false
+  await Promise.all(args.models.map(async (model) => {
     const profile = VERIFIER_PROFILES[model]
     const out = new Map<string, Row>()
     rows.set(model, out)
-    let billingAbort = false
     const limit = pLimit(args.concurrency)
     await Promise.all(chosen.map((t) => limit(async () => {
       if (billingAbort) return
@@ -96,8 +95,8 @@ async function main() {
       out.set(t.employerId, row)
       appendFileSync(join(dir, `${model}.jsonl`), JSON.stringify(row) + "\n")
     })))
-    if (billingAbort) throw new Error(`billing error during ${model}: out of credit. Partial results are in ${dir}.`)
-  }
+  }))
+  if (billingAbort) throw new Error(`billing error: out of credit. Partial results are in ${dir}.`)
 
   const summary: Record<string, unknown> = {}
   const ref = rows.get(args.reference)
@@ -108,7 +107,7 @@ async function main() {
       const v = a.get(id)
       if (!r.ok || !v) continue
       both++
-      if (alarming(v) === alarming(r.result!)) alarmSame++
+      if (isAlarmingVerdict(v) === isAlarmingVerdict(r.result!)) alarmSame++
       for (const f of FIELDS) if (v[f] === r.result![f]) counts[f] = (counts[f] ?? 0) + 1
     }
     return { both, alarmSame, counts }
@@ -130,7 +129,7 @@ async function main() {
     for (const [id, r] of c) {
       if (!r.ok) continue
       cost += r.costUsd!
-      if (alarming(r.result!)) {
+      if (isAlarmingVerdict(r.result!)) {
         escalated++
         const sr = s.get(id)
         cost += sr?.costUsd ?? 0
