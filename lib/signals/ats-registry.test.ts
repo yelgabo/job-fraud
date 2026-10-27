@@ -8,6 +8,15 @@ describe("classifyHost", () => {
     expect(classifyHost("boards.greenhouse.io")).toBe("greenhouse")
     expect(classifyHost("jobs.lever.co")).toBe("lever")
     expect(classifyHost("acme.bamboohr.com")).toBe("bamboohr")
+    expect(classifyHost("ejwl.fa.us2.oraclecloud.com")).toBe("oraclefusion")
+    expect(classifyHost("EJWL.FA.EM2.ORACLECLOUD.COM")).toBe("oraclefusion")
+  })
+
+  it("does not treat other oraclecloud.com hosts as Oracle Fusion", () => {
+    expect(classifyHost("objectstorage.us-ashburn-1.oraclecloud.com")).toBe("unknown")
+    expect(classifyHost("myapp.oraclecloud.com")).toBe("unknown")
+    expect(classifyHost("fa.us2.oraclecloud.com")).toBe("unknown")
+    expect(classifyHost("ejwl.fa.us2.oraclecloud.com.evil.com")).toBe("unknown")
   })
 
   it("returns 'unknown' for unrecognized hosts", () => {

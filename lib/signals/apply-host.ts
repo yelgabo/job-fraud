@@ -60,6 +60,9 @@ export function extractAtsTenant(applyUrl: string): ApplyTenant | null {
   m = host.match(/^([a-z0-9-]+)\.bamboohr\.com$/)
   if (m && m[1] !== "www") return { provider: "bamboohr", tenant: m[1] }
 
+  // Oracle Fusion (<code>.fa.<region>.oraclecloud.com) is deliberately absent: its tenant is an
+  // opaque Oracle-assigned code (Marriott is "ejwl"), so comparing it to the employer name would
+  // call every Fusion employer a "mismatch" and send it down the impersonation path.
   return null
 }
 

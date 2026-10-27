@@ -31,8 +31,12 @@ agent path let an agent return a score directly. Rows from that era have `scorin
 `whatsapp_telegram_only`. `lib/signals/ats-registry.ts` classifies the apply host, and
 `categoryForNoc` buckets the occupation. Deterministic, already running at scrape time.
 
-Known gap: the ATS registry knows Oracle's Taleo but not Oracle Fusion
-(`*.fa.*.oraclecloud.com`), so Marriott and every other Fusion employer loses the -25 credit.
+The ATS registry recognises Oracle Fusion candidate sites (`<code>.fa.<region>.oraclecloud.com`)
+as `oraclefusion`, so Marriott and other Fusion employers now get the -25 credit. The flag is
+stored on the row at scrape time, so postings scraped before this change keep `atsProvider:
+"unknown"` and no `ats_known_provider` flag until their flags are recomputed from
+`externalApplyHost`. Fusion is left out of tenant-to-employer matching
+(`lib/signals/apply-host.ts`) because its tenant is an opaque Oracle code, not a company name.
 
 ## Stage 1: retrieve
 
@@ -150,11 +154,12 @@ fitting. More labels weighted toward medium and high are the gate on everything 
 
 ## Order of work
 
-Done: the route threshold (2), and wiring the composer into both paths with `fraudScore` removed
-from the agent verdict (3).
+Done: the route threshold (2), wiring the composer into both paths with `fraudScore` removed
+from the agent verdict (3), and Oracle Fusion in the ATS registry (item 3 below; rows scraped
+before it still need their flags recomputed).
 
 1. Measure `brokerRouting` properly with `npm run measure-questions`; it is stored on every
    composed row now, so the next judge run produces the sample for free.
 2. Move address classification to a per-address table.
-3. Add Oracle Fusion to the ATS registry.
+3. Add Oracle Fusion to the ATS registry. Done.
 4. Fit weights, once there are enough labels to fit them to. `npm run recompose` applies them.

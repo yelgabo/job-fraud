@@ -31,6 +31,10 @@ describe("extractAtsTenant", () => {
     })
   })
 
+  it("returns null for Oracle Fusion, whose tenant is an opaque code, not a company name", () => {
+    expect(extractAtsTenant("https://ejwl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/MI_CS_1/job/26094038")).toBeNull()
+  })
+
   it("returns null for non-ATS or unparseable URLs", () => {
     expect(extractAtsTenant("https://www.example.com/careers")).toBeNull()
     expect(extractAtsTenant("not a url")).toBeNull()
@@ -68,6 +72,18 @@ describe("tenantEmployerMatch", () => {
     expect(tenantEmployerMatch("Remitly", "https://www.example.com/careers").result).toBe("no-tenant")
     expect(tenantEmployerMatch(null, "https://relx.wd3.myworkdayjobs.com/x").result).toBe("no-tenant")
     expect(tenantEmployerMatch("Remitly", null).result).toBe("no-tenant")
+  })
+})
+
+describe("Oracle Fusion apply URLs", () => {
+  const fusion = "https://ejwl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/MI_CS_1/job/26094038"
+
+  it("are no-tenant, never a mismatch, so they cannot trigger the impersonation check", () => {
+    expect(tenantEmployerMatch("Marriott", fusion).result).toBe("no-tenant")
+  })
+
+  it("still leave the employer to web verification", () => {
+    expect(allApplyHostsMatch("Marriott", [fusion])).toBe(false)
   })
 })
 

@@ -7,6 +7,9 @@ const RULES: AtsRule[] = [
   { test: (h) => /\.bamboohr\.com$/i.test(h), provider: "bamboohr" },
   { test: (h) => /\.icims\.com$/i.test(h), provider: "icims" },
   { test: (h) => /\.taleo\.net$/i.test(h), provider: "taleo" },
+  // Only Fusion's candidate-site shape: the rest of oraclecloud.com is general Oracle Cloud
+  // hosting that anyone can rent, so it says nothing about the employer's hiring system.
+  { test: (h) => /^[a-z0-9-]+\.fa\.[a-z0-9-]+\.oraclecloud\.com$/i.test(h), provider: "oraclefusion" },
   { test: (h) => /^jobs\.smartrecruiters\.com$/i.test(h), provider: "smartrecruiters" },
   { test: (h) => /^jobs\.ashbyhq\.com$/i.test(h), provider: "ashby" },
 ]
