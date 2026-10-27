@@ -5,5 +5,6 @@ import { defineConfig } from "vitest/config"
 // stays on vitest defaults.
 export default defineConfig({
   resolve: { alias: { "@": path.resolve(__dirname) } },
-  esbuild: { jsx: "automatic" },
+  // tsconfig keeps "jsx": "preserve" for Next, which Vite would otherwise inherit.
+  oxc: { jsx: { runtime: "automatic" } },
 })
