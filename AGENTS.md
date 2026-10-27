@@ -272,7 +272,8 @@ There is no `prisma/migrations/` directory. `prisma/schema.prisma` is the only s
 The Railway builder has no private-network route to Postgres and the service's `DATABASE_URL` is
 `*.railway.internal`, so a page that queries the database during `next build` fails every future
 deploy. That is why `/`, `/companies` and `/analysis` keep `force-dynamic` and cache via
-`unstable_cache`, and why `/j/[id]`/`/e/[id]` use an **empty** `generateStaticParams` for their
+`unstable_cache` (`middleware.ts` makes `/` and `/companies` edge-cacheable and canonicalises their
+URLs; `docs/TECHNICAL_INFO.md`, "Railway edge CDN"), and why `/j/[id]`/`/e/[id]` use an **empty** `generateStaticParams` for their
 ISR. Check the build-output route markers before merging a page change: any DB-backed route shown
 as `○ (Static)` or prerendered `● (SSG)` will break the deploy. Design and cache semantics:
 `docs/superpowers/specs/2026-07-29-pagination-and-caching-design.md`.

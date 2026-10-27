@@ -13,17 +13,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <header className="border-b border-zinc-200 bg-white">
           <div className="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-4 px-4 py-4">
-            <Link href="/" className="text-lg font-semibold tracking-tight text-zinc-900">
+            <a href="/" className="text-lg font-semibold tracking-tight text-zinc-900">
               🛡️ Job Fraud Scanner
-            </Link>
+            </a>
             <nav className="flex gap-3 text-sm">
-              <Link href="/" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+              {/* Plain <a> for the edge-cached list pages, and no prefetch for /analysis, which renders
+                  per request: a Link here prefetches on every page view of the site. */}
+              <a href="/" className="text-zinc-500 hover:text-zinc-900 hover:underline">
                 Postings
-              </Link>
-              <Link href="/companies" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+              </a>
+              <a href="/companies" className="text-zinc-500 hover:text-zinc-900 hover:underline">
                 Companies
-              </Link>
-              <Link href="/analysis" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+              </a>
+              <Link href="/analysis" prefetch={false} className="text-zinc-500 hover:text-zinc-900 hover:underline">
                 Analysis
               </Link>
               <Link href="/about" className="text-zinc-500 hover:text-zinc-900 hover:underline">

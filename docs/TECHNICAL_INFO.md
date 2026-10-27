@@ -332,8 +332,16 @@ What the edge caches, by origin directive:
 - `/_next/static/*` (JS/CSS): `public, max-age=1yr, immutable` → cached ~forever, effectively free.
 - `/j/[id]`, `/e/[id]` HTML: `s-maxage=600, stale-while-revalidate` → edge-cached 600 s, then served
   stale while refreshing. This is what absorbs crawler/link fan-out over many postings.
-- `/`, `/companies`, `/analysis`, `/audit/*`: `private, no-cache, no-store` → never edge-cached.
-  List pages stay on the origin's own `unstable_cache`; audit pages stay origin-only (deliberate).
+- `/`, `/companies` (every filter and page URL): `s-maxage=600, stale-while-revalidate`, set by
+  `middleware.ts` because the pages themselves are `force-dynamic` (since 2026-10-27, for the
+  public launch). The middleware also 308-redirects any non-canonical URL (tracking parameters
+  such as `fbclid`/`utm_*`, defaults, unknown values, parameter order) to the one form in
+  `lib/shared/canonical-url.ts`, for these pages and `/j`, `/e`: the edge keys on the full URL, so
+  without it every Facebook click (a fresh `fbclid` each time) missed the cache.
+- List pages link with plain `<a>`, not `<Link>`: a Link prefetch or client navigation is an
+  `?_rsc=` request, which the edge always passes to the origin (`x-cache: DYNAMIC`). With
+  `prefetch={true}` on the tabs, one homepage view cost about 30 origin renders.
+- `/analysis`, `/audit/*`: `private, no-cache, no-store` → never edge-cached (owner pages).
 - POSTs (`/api/revalidate`) are never cached.
 
 Semantics worth knowing: a cached unit is a complete response keyed by full URL **including query

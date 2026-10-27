@@ -13,6 +13,7 @@ import {
   POSTED_WINDOWS,
   POSTINGS_ORDER_BY,
   buildPostingsQuery,
+  homeHref,
   pageArgs,
   parseBand,
   parsePage,
@@ -130,17 +131,9 @@ export default async function HomePage({
 
   const pageCount = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))
 
-  // Build a href preserving the other active dimensions. Changing any filter resets to page 1 so
-  // a visitor is never dropped past the end of a shorter result set.
-  const hrefFor = (nextBand: BandKey, nextCat: string, nextPosted: PostedWindowKey, nextPage = 1) => {
-    const p = new URLSearchParams()
-    if (nextBand !== "all") p.set("band", nextBand)
-    if (nextCat !== "all") p.set("cat", nextCat)
-    if (nextPosted !== "any") p.set("posted", nextPosted)
-    if (nextPage > 1) p.set("page", String(nextPage))
-    const qs = p.toString()
-    return qs ? `/?${qs}` : "/"
-  }
+  // Changing any filter resets to page 1 so a visitor is never dropped past the end of a shorter
+  // result set.
+  const hrefFor = homeHref
   const pageHref = (n: number) => hrefFor(active, activeCat, activePosted, n)
 
   const anyEstimated = rows.some((r) => r.estimated)
@@ -155,16 +148,16 @@ export default async function HomePage({
         </p>
       </div>
 
-      {/* Filter tabs carry prefetch={true}: this route is force-dynamic with no loading.js, so
-          the default prefetch stops before any data and a click pays a full server round-trip.
-          Full prefetch is scoped to the tab/pager links only - the 50 posting rows below keep the
-          default, or every page view would fan out 100+ speculative renders. */}
+      {/* Plain <a>, not <Link>: a full page load is served from the edge cache, while a Link
+          prefetch or client navigation sends an ?_rsc= request the edge cannot reuse, which
+          renders on the origin. With prefetch on, one view of this page cost about 30 origin
+          renders (middleware.ts). */}
       <nav className="mb-3 flex flex-wrap items-center gap-2">
         {BANDS.map((b) => (
-          <Link key={b} href={hrefFor(b, activeCat, activePosted)} prefetch={true} className={tabClass(b === active)}>
+          <a key={b} href={hrefFor(b, activeCat, activePosted)} className={tabClass(b === active)}>
             {b[0].toUpperCase() + b.slice(1)}
             <span className="ml-1.5 text-xs opacity-70">{counts[b] ?? 0}</span>
-          </Link>
+          </a>
         ))}
         <Link
           href={`/about#${RATING_ANCHOR}`}
@@ -175,28 +168,27 @@ export default async function HomePage({
       </nav>
 
       <nav className="mb-3 flex flex-wrap gap-2">
-        <Link href={hrefFor(active, "all", activePosted)} prefetch={true} className={tabClass(activeCat === "all")}>
+        <a href={hrefFor(active, "all", activePosted)} className={tabClass(activeCat === "all")}>
           All types<span className="ml-1.5 text-xs opacity-70">{catAll}</span>
-        </Link>
+        </a>
         {CATEGORIES.filter((c) => (catCounts[c] ?? 0) > 0 || c === activeCat).map((c) => (
-          <Link key={c} href={hrefFor(active, c, activePosted)} prefetch={true} className={tabClass(c === activeCat)}>
+          <a key={c} href={hrefFor(active, c, activePosted)} className={tabClass(c === activeCat)}>
             {c}
             <span className="ml-1.5 text-xs opacity-70">{catCounts[c] ?? 0}</span>
-          </Link>
+          </a>
         ))}
       </nav>
 
       <nav className="mb-5 flex flex-wrap gap-2">
         {POSTED_WINDOWS.map((w) => (
-          <Link
+          <a
             key={w.key}
             href={hrefFor(active, activeCat, w.key)}
-            prefetch={true}
             className={tabClass(w.key === activePosted)}
           >
             {w.label}
             <span className="ml-1.5 text-xs opacity-70">{dateCounts[w.key] ?? 0}</span>
-          </Link>
+          </a>
         ))}
       </nav>
 
@@ -209,9 +201,9 @@ export default async function HomePage({
           ) : (
             <>
               Nothing on page {activePage}.{" "}
-              <Link href={pageHref(1)} className="underline hover:text-zinc-900">
+              <a href={pageHref(1)} className="underline hover:text-zinc-900">
                 Back to page 1
-              </Link>
+              </a>
             </>
           )}
         </div>
@@ -237,15 +229,15 @@ export default async function HomePage({
                       <ScoreChip score={job.fraudScore ?? 0} />
                     </td>
                     <td>
-                      <Link href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">
+                      <a href={`/j/${job.workbcId}`} className="font-medium text-zinc-900 hover:underline">
                         {job.title}
-                      </Link>
+                      </a>
                     </td>
                     <td className="text-zinc-600">
                       {job.employerId ? (
-                        <Link href={`/e/${job.employerId}`} className="hover:underline">
+                        <a href={`/e/${job.employerId}`} className="hover:underline">
                           {job.employerName}
-                        </Link>
+                        </a>
                       ) : (
                         <span className="italic text-zinc-400">employer hidden</span>
                       )}

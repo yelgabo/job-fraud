@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { cn } from "@/lib/utils"
 
 function pillClass(active: boolean) {
@@ -18,9 +17,8 @@ function pageNumbers(page: number, pageCount: number): number[] {
  * Prev/number/Next pagination pills, styled like the filter tabs, plus a "Page X of Y · summary"
  * caption so the paged-away rows never feel hidden. Renders nothing when there is a single page.
  *
- * The pills carry prefetch={true}: the list pages are force-dynamic with no loading.js, so the
- * default prefetch fetches no data and a click pays a full server round-trip. The pager is a
- * handful of links at most, so full viewport prefetch stays bounded.
+ * Plain <a> pills: a full page load is served from the edge cache, where a Link prefetch or
+ * client navigation would render on the origin (see the comment on the homepage's filter tabs).
  */
 export function PaginationNav({
   page,
@@ -37,24 +35,24 @@ export function PaginationNav({
   return (
     <nav className="mt-4 flex flex-wrap items-center gap-2" aria-label="Pagination">
       {page > 1 ? (
-        <Link href={hrefFor(page - 1)} prefetch={true} className={pillClass(false)}>
+        <a href={hrefFor(page - 1)} className={pillClass(false)}>
           ← Prev
-        </Link>
+        </a>
       ) : (
         <span className="rounded-full px-3 py-1.5 text-sm font-medium text-zinc-300">← Prev</span>
       )}
       {pageNumbers(page, pageCount).map((n, i, arr) => (
         <span key={n} className="flex items-center gap-2">
           {i > 0 && arr[i - 1] !== n - 1 ? <span className="text-zinc-400">…</span> : null}
-          <Link href={hrefFor(n)} prefetch={true} className={pillClass(n === page)}>
+          <a href={hrefFor(n)} className={pillClass(n === page)}>
             {n}
-          </Link>
+          </a>
         </span>
       ))}
       {page < pageCount ? (
-        <Link href={hrefFor(page + 1)} prefetch={true} className={pillClass(false)}>
+        <a href={hrefFor(page + 1)} className={pillClass(false)}>
           Next →
-        </Link>
+        </a>
       ) : (
         <span className="rounded-full px-3 py-1.5 text-sm font-medium text-zinc-300">Next →</span>
       )}

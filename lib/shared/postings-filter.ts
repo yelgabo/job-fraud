@@ -55,6 +55,21 @@ export function pageArgs(page: number, pageSize: number = PAGE_SIZE): { skip: nu
   return { skip: (page - 1) * pageSize, take: pageSize }
 }
 
+/**
+ * The homepage URL for a filter state, in the one canonical form: defaults omitted, parameters in
+ * band/cat/posted/page order. The edge cache keys on the full URL, so the page's links and the
+ * middleware's redirects must agree on this exactly, or one view gets several cache entries.
+ */
+export function homeHref(band: BandKey, cat: string, posted: PostedWindowKey, page = 1): string {
+  const p = new URLSearchParams()
+  if (band !== "all") p.set("band", band)
+  if (cat !== "all") p.set("cat", cat)
+  if (posted !== "any") p.set("posted", posted)
+  if (page > 1) p.set("page", String(page))
+  const qs = p.toString()
+  return qs ? `/?${qs}` : "/"
+}
+
 export function parsePostedWindow(raw: string | null | undefined): PostedWindowKey {
   return POSTED_KEYS.includes(raw ?? "") ? (raw as PostedWindowKey) : "any"
 }

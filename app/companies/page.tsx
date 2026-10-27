@@ -122,9 +122,9 @@ export default async function CompaniesPage({
           ) : (
             <>
               Nothing on page {activePage}.{" "}
-              <Link href={pageHref(1)} className="underline hover:text-zinc-900">
+              <a href={pageHref(1)} className="underline hover:text-zinc-900">
                 Back to page 1
-              </Link>
+              </a>
             </>
           )}
         </div>
@@ -144,9 +144,9 @@ export default async function CompaniesPage({
               {rows.map((r) => (
                 <tr key={r.id} className="hover:bg-zinc-50">
                   <td className="px-4 py-3 align-top">
-                    <Link href={`/e/${r.id}`} className="font-medium text-zinc-900 hover:underline">
+                    <a href={`/e/${r.id}`} className="font-medium text-zinc-900 hover:underline">
                       {r.name}
-                    </Link>
+                    </a>
                   </td>
                   <td className="px-4 py-3 align-top tabular-nums text-zinc-600">{r.count}</td>
                   <td className="px-4 py-3 align-top">
