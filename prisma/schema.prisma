@@ -79,7 +79,12 @@ model Job {
   scrapedAt         DateTime  @default(now())
 
   @@index([riskBand, fraudScore])
+  // Matches POSTINGS_ORDER_BY, so the unfiltered list reads its page in index order instead of
+  // sorting every judged row.
+  @@index([fraudScore(sort: Desc), title, workbcId])
   @@index([scoredAt])
+  // Lets the whole-corpus counts and the band group-by skip the wide rows (index-only scan).
+  @@index([scoredAt, riskBand])
   @@index([category])
   @@index([postedDate])
 }
