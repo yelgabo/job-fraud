@@ -254,9 +254,9 @@ There is no `prisma/migrations/` directory. `prisma/schema.prisma` is the only s
   when this merges?" `prisma migrate diff` is read-only and answers it:
   `npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`
   prints the SQL that the deploy would apply. Read it before merging.
-- Locally, `npm run db:push` (`prisma db push`, **without** `--accept-data-loss`) will stop and ask
-  before anything destructive. Do not add the flag to the local script to get past a prompt; the
-  prompt is the warning.
+- Locally, `npm run db:push` fails: the local login (`jobfraud_local`, below) cannot change the
+  schema, by design. Schema changes reach production only through a deploy. CI fails a push whose
+  schema diff contains a `DROP` unless the message says `[allow-schema-drop]`.
 - **Deploying an older commit drops newer columns.** This has happened. On 2026-10-23 the
   incident redeploy used `railway up` from a backport branch whose schema predated
   `Job.judgments` and `Job.scoringVersion`; its `db push` dropped both, erasing the Jev answers
@@ -329,7 +329,12 @@ working if the public TCP proxy is removed again. Its settings live on the Railw
 `docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or
 inspect a run. Postgres was private between 2026-10-22 (credential-rotation incident) and
 2026-10-26, when a new public TCP proxy was added for local runs; an old `.env` holding
-`zephyr.proxy.rlwy.net` points at nothing.
+`zephyr.proxy.rlwy.net` points at nothing. Since 2026-10-27 local `.env` files connect as
+**`jobfraud_local`**, a login that can only read and write rows in the app's tables (no DDL, no
+superuser, no `TRUNCATE`), with `sslmode=require`; default privileges cover tables a deploy adds.
+The `postgres` superuser password lives only in Railway's variables. `log_connections` is on, so
+Railway's Postgres logs show every connection and its source address. Rotating the superuser
+password is planned in `docs/postgres-credential-rotation-plan.md`, not done.
 
 The `job-fraud` web service deploys from GitHub: every push to `main` deploys once the Tests
 workflow passes. Its build and start settings live on the service, not in the repo (there is no

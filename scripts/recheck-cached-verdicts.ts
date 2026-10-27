@@ -9,13 +9,15 @@
 // - --residential: every cached "residential" verdict, so the verifier can tell a home the
 //   employer publishes as its own address (home_business) from any other home. Run once when
 //   home_business was introduced (docs/home-business-address-plan.md).
+// - --ids F: the employers whose ids are listed in F (a JSON array), whatever their verdict. Used
+//   2026-10-27 to re-check the verdicts whose search was cut off at 5 searches.
 //
 // Steps, so a person can review verdicts before they are published:
 //   (no flag)          list the employers it would check; free
 //   --propose          run Opus and write the proposed verdicts to logs/; no database writes
 //   --apply --from F   store the verdicts in F and re-score; no model calls for the verdicts
 //   --apply            run Opus and store in one go
-// Run: ANTHROPIC_API_KEY=... npm run recheck-cached-verdicts -- [--residential] [--propose | --apply [--from F]] [--limit N] [--concurrency 4]
+// Run: ANTHROPIC_API_KEY=... npm run recheck-cached-verdicts -- [--residential | --ids F] [--propose | --apply [--from F]] [--limit N] [--concurrency 4]
 import Anthropic from "@anthropic-ai/sdk"
 import pLimit from "p-limit"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -45,6 +47,8 @@ async function main() {
   const apply = argv.includes("--apply")
   const propose = argv.includes("--propose")
   const residential = argv.includes("--residential")
+  const idsFile = arg(argv, "--ids")
+  const ids = idsFile ? new Set(JSON.parse(readFileSync(idsFile, "utf8")) as string[]) : null
   const from = arg(argv, "--from")
   const limit = parseInt(arg(argv, "--limit") ?? "", 10) || Infinity
   const concurrency = Math.max(1, parseInt(arg(argv, "--concurrency") ?? "", 10) || 4)
@@ -64,7 +68,9 @@ async function main() {
     if (!web || web.source === "ats-tenant-match") continue
     const judged = list.filter((j) => j.scoredAt)
     const rep = pickRepresentative(residential ? list : judged.length ? judged : list)
-    const selected = residential
+    const selected = ids
+      ? ids.has(employerId)
+      : residential
       ? web.applicationAddressType === "residential"
       : judged.length > 0 && tierViolation(web, mailEvidence(rep.applicationFlags)) !== null
     if (selected) candidates.push({ employerId, name: list[0].employer!.nameDisplay, postings: list, judged, web, rep })
@@ -73,7 +79,7 @@ async function main() {
   const chosen = candidates.slice(0, limit)
   const affected = chosen.reduce((n, c) => n + c.judged.length, 0)
   console.log(
-    `[recheck] ${residential ? "residential verdicts" : "unconfirmed alarming verdicts on judged employers"}: ${candidates.length}; ` +
+    `[recheck] ${ids ? `employers listed in ${idsFile}` : residential ? "residential verdicts" : "unconfirmed alarming verdicts on judged employers"}: ${candidates.length}; ` +
       `${from ? "applying from file for" : "checking"} ${chosen.length}, covering ${affected} judged postings` +
       (from ? "" : `, about $${(chosen.length * EST_USD_PER_CHECK).toFixed(2)} of ${TIERED_VERIFIER.escalation}`),
   )
@@ -135,7 +141,7 @@ async function main() {
 
   if (propose && !apply) {
     mkdirSync("logs", { recursive: true })
-    const file = `logs/recheck-${residential ? "residential" : "tier"}-proposals-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
+    const file = `logs/recheck-${ids ? "ids" : residential ? "residential" : "tier"}-proposals-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
     writeFileSync(file, JSON.stringify([...proposals.values()], null, 2))
     for (const p of proposals.values()) {
       if (moved(p)) console.log(`  ${p.name}: ${p.before.applicationAddressType} -> ${p.web.applicationAddressType} (biz=${p.web.businessMatch} loc=${p.web.locationMatch}) | ${p.web.summary}`)
