@@ -14,21 +14,18 @@
 import Anthropic from "@anthropic-ai/sdk"
 import pLimit from "p-limit"
 import { prisma } from "../lib/db"
-import { parseChecks, type WebVerification } from "../lib/shared/json-schemas"
+import type { WebVerification } from "../lib/shared/json-schemas"
 import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { tierViolation, verifyEmployerWeb } from "../lib/ai/verify-employer-web"
 import { TIERED_VERIFIER, VERIFIER_PROFILES, verifierCostUsd } from "../lib/ai/verifier-models"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { isBillingError } from "../lib/shared/anthropic-errors"
-import { buildVerdict, composeVerdict } from "../lib/scoring/verdict"
-import type { Judgments } from "../lib/scoring/compose"
+import { rescoreVerdict } from "../lib/scoring/verdict"
+import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 // Measured on the 2026-10-27 API comparison: Opus 5.5 averaged $0.193 per employer check.
 const EST_USD_PER_CHECK = 0.19
-
-// resolve-impersonation.ts writes these rows directly, outside the composer.
-const isImpersonation = (reasoning: string | null) => reasoning?.startsWith("Brand impersonation:") ?? false
 
 async function main() {
   const argv = process.argv.slice(2)
@@ -41,7 +38,7 @@ async function main() {
   const judged = await prisma.job.findMany({ where: { scoredAt: { not: null }, employerId: { not: null } }, include: { employer: true } })
   const byEmployer = new Map<string, typeof judged>()
   for (const j of judged) {
-    if (isImpersonation(j.reasoning)) continue
+    if (isImpersonationVerdict(j.reasoning)) continue
     byEmployer.set(j.employerId!, [...(byEmployer.get(j.employerId!) ?? []), j])
   }
 
@@ -106,10 +103,7 @@ async function main() {
     const bandsBefore: string[] = [], bandsAfter: string[] = []
     for (const job of c.postings) {
       try {
-        const judgments = job.judgments as Judgments | null
-        const { usage: _usage, ...data } = judgments
-          ? composeVerdict(job, parseChecks(checks), judgments)
-          : await buildVerdict(jev, { ...job, employerName: c.name }, checks)
+        const { usage: _usage, ...data } = await rescoreVerdict(jev, { ...job, employerName: c.name }, checks)
         await prisma.job.update({ where: { workbcId: job.workbcId }, data })
         rescored++
         const key = `${job.riskBand ?? "?"}->${data.riskBand}`

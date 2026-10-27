@@ -9,6 +9,10 @@ import { checkImpersonation, type ImpersonationResult } from "./check-impersonat
 import { parseFlags } from "../shared/json-schemas"
 import { bandFor } from "../shared/risk-band"
 
+// Rows written here bypass the composer, so re-scoring scripts must leave them alone.
+const IMPERSONATION_PREFIX = "Brand impersonation:"
+export const isImpersonationVerdict = (reasoning: string | null) => reasoning?.startsWith(IMPERSONATION_PREFIX) ?? false
+
 export type JobForCheck = {
   workbcId: string
   title: string
@@ -118,7 +122,7 @@ export async function resolveApplyHost(
     })
   }
   const score = 90
-  const reasoning = `Brand impersonation: this posting presents as "${employerName}" but its application link routes to ${displayName}'s ${m.provider} hiring system (tenant "${m.tenant}"), an unrelated company. Re-attributed to ${displayName}. ${verdict.summary}`
+  const reasoning = `${IMPERSONATION_PREFIX} this posting presents as "${employerName}" but its application link routes to ${displayName}'s ${m.provider} hiring system (tenant "${m.tenant}"), an unrelated company. Re-attributed to ${displayName}. ${verdict.summary}`
   const signals = [
     {
       label: "apply_host_mismatch",

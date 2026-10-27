@@ -68,3 +68,16 @@ export async function buildVerdict(
   })
   return { ...composeVerdict(job, checks, out.judgments), usage: out.usage }
 }
+
+/**
+ * Re-score a published row after its evidence changed: from its stored Jev judgments when it has
+ * them (no API call), otherwise by asking Jev again, as the judge would.
+ */
+export async function rescoreVerdict(
+  jev: TypeSafeClient | null,
+  job: JobForVerdict & { employerName: string | null; judgments: unknown },
+  employerChecks: unknown,
+): Promise<StoredVerdict> {
+  const judgments = job.judgments as Judgments | null
+  return judgments ? composeVerdict(job, parseChecks(employerChecks), judgments) : buildVerdict(jev, job, employerChecks)
+}
