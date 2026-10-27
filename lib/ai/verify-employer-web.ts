@@ -1,7 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { WebVerificationSchema, type WebVerification } from "../shared/json-schemas"
 import { retryOnce } from "../shared/retry"
-import { DEFAULT_VERIFIER, VERIFIER_PROFILES, type VerifierProfile, type VerifierUsage } from "./verifier-models"
+import {
+  DEFAULT_VERIFIER,
+  TIERED_VERIFIER,
+  VERIFIER_PROFILES,
+  verifierCostUsd,
+  type VerifierName,
+  type VerifierProfile,
+  type VerifierUsage,
+} from "./verifier-models"
 
 export type WebVerifyInput = {
   employerName: string
@@ -159,4 +167,55 @@ export async function verifyEmployerWeb(
 ): Promise<WebVerifyOutput> {
   const profile = opts.profile ?? VERIFIER_PROFILES[DEFAULT_VERIFIER]
   return retryOnce(() => callOnce(client, input, profile), opts.retryDelayMs ?? 2000)
+}
+
+/**
+ * A verdict that would raise a posting's risk: the business or its location doesn't check out, or
+ * the mailing address is a home, P.O. box or mail drop. These are the answers worth a second,
+ * stronger look before they reach a published rating; everything else adds no risk.
+ */
+export function isAlarmingVerdict(w: WebVerification): boolean {
+  return (
+    w.businessMatch === "mismatch" ||
+    w.locationMatch === "mismatch" ||
+    ["residential", "po_box", "virtual"].includes(w.applicationAddressType)
+  )
+}
+
+export type TieredVerifyOutput = WebVerifyOutput & { escalated: boolean; costUsd: number }
+
+/**
+ * The employer check the judging paths use: the primary model first, and the escalation model in
+ * its place when the primary's verdict is alarming. A failed escalation throws rather than keep
+ * the unconfirmed alarm, so the caller treats it like any other failed verification.
+ */
+export async function verifyEmployerTiered(
+  client: Anthropic,
+  input: WebVerifyInput,
+  opts: { retryDelayMs?: number; primary?: VerifierName; escalation?: VerifierName } = {},
+): Promise<TieredVerifyOutput> {
+  const primaryName = opts.primary ?? TIERED_VERIFIER.primary
+  const escalationName = opts.escalation ?? TIERED_VERIFIER.escalation
+  const primary = VERIFIER_PROFILES[primaryName]
+  const escalation = VERIFIER_PROFILES[escalationName]
+  const first = await verifyEmployerWeb(client, input, { retryDelayMs: opts.retryDelayMs, profile: primary })
+  const firstCost = verifierCostUsd(primary, first.usage)
+  if (!isAlarmingVerdict(first.result)) {
+    return { ...first, result: { ...first.result, verifiedBy: primaryName }, escalated: false, costUsd: firstCost }
+  }
+  const second = await verifyEmployerWeb(client, input, { retryDelayMs: opts.retryDelayMs, profile: escalation })
+  return {
+    result: { ...second.result, verifiedBy: `${primaryName}>${escalationName}` },
+    usage: {
+      inputTokens: first.usage.inputTokens + second.usage.inputTokens,
+      outputTokens: first.usage.outputTokens + second.usage.outputTokens,
+      webSearchRequests: first.usage.webSearchRequests + second.usage.webSearchRequests,
+    },
+    searchLog: {
+      queries: [...first.searchLog.queries, ...second.searchLog.queries],
+      blocks: [...first.searchLog.blocks, ...second.searchLog.blocks],
+    },
+    escalated: true,
+    costUsd: firstCost + verifierCostUsd(escalation, second.usage),
+  }
 }

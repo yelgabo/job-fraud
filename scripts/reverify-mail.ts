@@ -6,7 +6,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags } from "../lib/shared/json-schemas"
-import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
+import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 
@@ -34,7 +34,7 @@ async function main() {
     const mailEvidence =
       parseFlags(rep.applicationFlags).find((f) => f.flag === "mail_physical_resume")?.evidence ?? ""
     try {
-      const out = await verifyEmployerWeb(client, {
+      const out = await verifyEmployerTiered(client, {
         employerName: rep.employer!.nameDisplay,
         jobTitle: rep.title,
         location: rep.location,
@@ -48,7 +48,7 @@ async function main() {
         data: { employerId, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
       })
       console.log(
-        `\n${rep.employer!.nameDisplay}: applicationAddressType=${out.result.applicationAddressType} | ${out.result.summary.slice(0, 120)}`,
+        `\n${rep.employer!.nameDisplay} [${out.result.verifiedBy}, $${out.costUsd.toFixed(3)}]: applicationAddressType=${out.result.applicationAddressType} | ${out.result.summary.slice(0, 120)}`,
       )
       // re-score every job for this employer
       for (const job of group) {

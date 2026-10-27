@@ -54,8 +54,9 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
   `nocFromDescription()` extract the code. Drives the `?cat=` filter and the `/analysis` page.
 
 **`lib/ai/` — Claude evaluation (all `@anthropic-ai/sdk` usage lives here)**
-- `verify-employer-web.ts` — `verifyEmployerWeb()`: one Claude (`haiku-4-5`) call per company using
-  the `web_search` tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType,
+- `verify-employer-web.ts` — `verifyEmployerTiered()` (what the judging paths call): Haiku 5.5,
+  then Opus 5.5 when `isAlarmingVerdict()`; built on `verifyEmployerWeb()`, one Claude call per
+  company for a given model profile (`verifier-models.ts`) using the `web_search` tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType,
   websiteUrl, …}`. Also returns `searchLog` (raw queries + result blocks); exports `extractSearchLog`.
 - `check-impersonation.ts` — `checkImpersonation()`: on a tenant≠employer mismatch, a Claude
   **(`opus-4-8`)** + `web_search` call classifies the relationship `same | affiliate | impersonation

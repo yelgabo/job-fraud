@@ -12,7 +12,8 @@ import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
 import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { matchedProvider } from "../lib/signals/apply-host"
 import { verificationAction } from "../lib/signals/verification-plan"
-import { verifyEmployerWeb } from "../lib/ai/verify-employer-web"
+import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
+import { TIERED_VERIFIER } from "../lib/ai/verifier-models"
 import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
@@ -116,6 +117,9 @@ async function main() {
   let vFail = 0
   let webIn = 0
   let webOut = 0
+  let webSearches = 0
+  let webCost = 0
+  let escalated = 0
   const vLimit = pLimit(args.empConcurrency)
   await Promise.all(
     toWebVerify.map((d) =>
@@ -125,7 +129,7 @@ async function main() {
         // is the heaviest signal the check produces and it can only judge an address it is given.
         const rep = pickRepresentative(d.list)
         try {
-          const out = await verifyEmployerWeb(client, {
+          const out = await verifyEmployerTiered(client, {
             employerName: rep.employer!.nameDisplay,
             jobTitle: rep.title,
             location: rep.location,
@@ -134,6 +138,9 @@ async function main() {
           })
           webIn += out.usage.inputTokens
           webOut += out.usage.outputTokens
+          webSearches += out.usage.webSearchRequests
+          webCost += out.costUsd
+          if (out.escalated) escalated++
           const checks = { ...((rep.employer!.checks as Record<string, unknown>) ?? {}), web: out.result }
           await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
           // Append the raw web_search audit trail (separate table; not read by prod pages).
@@ -208,7 +215,10 @@ async function main() {
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} left pending) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
-  console.log(`Web-verify tokens: in=${webIn} out=${webOut} | Jev tokens: in=${totalIn} out=${totalOut}`)
+  console.log(
+    `Web-verify (${TIERED_VERIFIER.primary}, alarming verdicts re-checked by ${TIERED_VERIFIER.escalation}): ${escalated} escalated | tokens in=${webIn} out=${webOut} | searches ${webSearches} | ~$${webCost.toFixed(2)} at list price`,
+  )
+  console.log(`Jev tokens: in=${totalIn} out=${totalOut}`)
   await resolveRerunRequests()
   if (jobs.length > 0 || toWebVerify.length > 0) await requestRevalidation()
   await prisma.$disconnect()

@@ -12,7 +12,8 @@ Scraping only collects raw postings (`scoredAt` null = pending). Judging evaluat
 `npm run judge -- [--limit N] [--rejudge] [--emp-concurrency 4] [--score-concurrency 8]`
 
 `scripts/judge.ts` is a single-process (single DB writer, no races) evaluator that **dedups by
-employer**: Stage 1 web-verifies each DISTINCT pending employer once (`verifyEmployerWeb`) →
+employer**: Stage 1 web-verifies each DISTINCT pending employer once (`verifyEmployerTiered`:
+Haiku 5.5 first, and Opus 5.5 in its place when Haiku's verdict would raise a rating) →
 `employer.checks.web`; Stage 2 asks Jev the text questions (`TYPESAFE_API_KEY`) and composes the
 score in code (`lib/scoring/verdict.ts`) from that verdict + the posting's own flags/NOC. Far cheaper/faster at scale than per-job
 agents (e.g. ~1,046 employer web-searches for 2,425 jobs instead of 2,425). Use this for bulk and
@@ -47,6 +48,24 @@ Run from the `job-fraud` project directory.
    to separate top-level sessions.
    Give each helper the **Agent prompt** below followed by its batch as JSON. Each helper returns a
    JSON array of verdicts. Do NOT let helpers write to the database.
+   **Run these helpers on Haiku** (`model: "haiku"` on the Agent call). This is the first tier of
+   the employer check; step 3b sends the doubtful ones to Opus. `docs/verifier-model-eval.md` has
+   the measurements behind the split.
+
+3b. **Escalate alarming verdicts to Opus.** A verdict is alarming when `businessMatch` or
+   `locationMatch` is `"mismatch"`, or `applicationAddressType` is `"residential"`, `"po_box"` or
+   `"virtual"` (the same rule as `isAlarmingVerdict` in `lib/ai/verify-employer-web.ts`). Collect
+   those postings from the batch files into one or more new batches and dispatch helpers with
+   `model: "opus"` and the same Agent prompt. Each Opus verdict replaces the Haiku one. Set
+   `web.verifiedBy` on every verdict before writing it: `"haiku-5.5"` for a kept Haiku verdict,
+   `"haiku-5.5>opus-5.5"` for a replaced one. An alarming verdict whose Opus re-check fails is
+   dropped, not kept, so that posting stays pending.
+
+   **Search budget.** Claude Code's WebSearch tool allows about 200 searches per session, shared
+   by every helper, refilling at about 100 an hour (the API path has no such cap). At two to three
+   searches per employer that is roughly 40 employers an hour, so size waves accordingly. A helper
+   that could not search a posting must leave it out of its array (the prompt says so): an
+   uninvestigated `uncertain` verdict would be cached on the employer and reused by every later run.
 
 4. **Assemble.** The owning worker `Write`s each helper's returned verdict array as
    `verdicts-<n>.json` **inside the same `logs/judge-<ts>/` directory**. Merging everything into
@@ -118,7 +137,9 @@ For each posting:
    residential (home/apartment/unit), po_box, virtual (mail-forwarding), none, uncertain.
 
 Report what you could establish and nothing more: `uncertain` / `unknown` are correct answers
-when the search did not settle it, and they are treated as neutral. `summary` is shown on the
+when the search did not settle it, and they are treated as neutral. If web search is unavailable
+or refused for a posting (for example a search budget message), leave that posting out of the
+array entirely rather than returning a verdict you did not investigate. `summary` is shown on the
 site as evidence, so keep it factual and under 400 characters.
 
 Be skeptical but fair: `businessMatch` "mismatch" is for fake, shell, parked or impersonating

@@ -4,8 +4,9 @@ Developer/operator documentation for the Job Fraud Scanner. For the system-archi
 [ARCHITECTURE.md](ARCHITECTURE.md); for the plain-language overview see [README.md](../README.md); for
 a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
 
-**Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-4-5` for employer
-verification, `claude-opus-4-8` for brand-impersonation checks, incl. the `web_search` tool) ·
+**Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-5-5` for employer
+verification with `claude-opus-5-5` re-checking alarming verdicts, `claude-opus-4-8` for
+brand-impersonation checks, incl. the `web_search` tool) ·
 TypeSafe Jev (typed text judgments, `@typesafe-ai/sdk`) · zod ·
 p-limit · Vitest. Data comes from WorkBC's JSON APIs (no browser/HTML scraping). **Live:**
 https://job-fraud-production.up.railway.app
@@ -30,8 +31,11 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
 **Phase 2 — judge** (evaluate; deduped, single DB writer) · `scripts/judge.ts`
 
 - *Stage 1 — verify each distinct employer once (tiered).* Claude's `web_search` tool researches the
-  company (`lib/ai/verify-employer-web.ts`); the verdict (`businessMatch`, `locationMatch`,
-  `applicationAddressType`, …) is cached on the employer and reused by all its postings. **Tiering
+  company (`lib/ai/verify-employer-web.ts`, `verifyEmployerTiered`): Haiku 5.5 first, and Opus 5.5
+  in its place when Haiku's verdict is alarming (`isAlarmingVerdict`: a business or location
+  `mismatch`, or a residential / P.O. box / virtual mailing address). The verdict (`businessMatch`,
+  `locationMatch`, `applicationAddressType`, `verifiedBy`, …) is cached on the employer and reused
+  by all its postings. `npm run judge` prints escalations, searches and list-price cost at the end. **Tiering
   (cost):** an employer whose pending postings *all* apply via its own matching ATS tenant
   (`lib/signals/apply-host.ts` `allApplyHostsMatch`) is presumed legit with a deterministic verdict
   (`businessMatch=match`, `source=ats-tenant-match`) and **skips the web search**; web-verify is spent

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import type Anthropic from "@anthropic-ai/sdk"
-import { verifyEmployerWeb, WebVerifyError } from "./verify-employer-web"
+import { isAlarmingVerdict, verifyEmployerTiered, verifyEmployerWeb, WebVerifyError } from "./verify-employer-web"
 import { VERIFIER_PROFILES, verifierCostUsd } from "./verifier-models"
 
 const VALID = {
@@ -156,3 +156,48 @@ describe("verifierCostUsd", () => {
     expect(cost).toBeCloseTo(4 + 2 + 0.05, 10)
   })
 })
+
+describe("verifyEmployerTiered", () => {
+  const priced = (input: unknown, inTok: number, searches: number) => ({
+    ...toolResp(input),
+    usage: { input_tokens: inTok, output_tokens: 0, server_tool_use: { web_search_requests: searches } },
+  })
+
+  it("keeps the primary verdict when it raises no risk, and makes one call", async () => {
+    const { client, create } = mockClient(priced(VALID, 1_000_000, 2))
+    const out = await verifyEmployerTiered(client, INPUT, { retryDelayMs: 0 })
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(create.mock.calls[0][0].model).toBe("claude-haiku-5-5")
+    expect(out.escalated).toBe(false)
+    expect(out.result.verifiedBy).toBe("haiku-5.5")
+    expect(out.costUsd).toBeCloseTo(0.1 + 0.02, 10)
+  })
+
+  it("replaces an alarming primary verdict with the escalation model's", async () => {
+    const alarm = { ...VALID, businessMatch: "mismatch" }
+    const { client, create } = mockClient(priced(alarm, 1_000_000, 2), priced(VALID, 1_000_000, 3))
+    const out = await verifyEmployerTiered(client, INPUT, { retryDelayMs: 0 })
+    expect(create.mock.calls.map((c) => c[0].model)).toEqual(["claude-haiku-5-5", "claude-opus-5-5"])
+    expect(out.escalated).toBe(true)
+    expect(out.result.businessMatch).toBe("match")
+    expect(out.result.verifiedBy).toBe("haiku-5.5>opus-5.5")
+    expect(out.usage).toEqual({ inputTokens: 2_000_000, outputTokens: 0, webSearchRequests: 5 })
+    expect(out.costUsd).toBeCloseTo(0.1 + 0.02 + 4 + 0.03, 10)
+  })
+
+  it("fails instead of keeping an unconfirmed alarm when the escalation fails", async () => {
+    const { client } = mockClient(priced({ ...VALID, applicationAddressType: "residential" }, 10, 1), textResp(), textResp())
+    await expect(verifyEmployerTiered(client, INPUT, { retryDelayMs: 0 })).rejects.toBeInstanceOf(WebVerifyError)
+  })
+})
+
+describe("isAlarmingVerdict", () => {
+  it("flags only the answers that add risk", () => {
+    const v = { ...VALID } as Parameters<typeof isAlarmingVerdict>[0]
+    expect(isAlarmingVerdict(v)).toBe(false)
+    expect(isAlarmingVerdict({ ...v, locationMatch: "mismatch" })).toBe(true)
+    expect(isAlarmingVerdict({ ...v, applicationAddressType: "po_box" })).toBe(true)
+    expect(isAlarmingVerdict({ ...v, businessMatch: "uncertain", locationMatch: "uncertain", applicationAddressType: "uncertain" })).toBe(false)
+  })
+})
+

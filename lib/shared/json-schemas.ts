@@ -21,6 +21,9 @@ export const WebVerificationSchema = z.object({
   // = a deterministic presumption (all the employer's postings apply via its own matching ATS tenant,
   // so we skipped the web search). Lets the judge re-verify if a later non-matching posting appears.
   source: z.enum(["web", "ats-tenant-match"]).optional(),
+  // Which verifier produced a web verdict: a profile name from lib/ai/verifier-models.ts, or
+  // "haiku-5.5>opus-5.5" when the first model's alarming verdict was replaced by the second's.
+  verifiedBy: z.string().optional(),
 })
 
 export type WebVerification = z.infer<typeof WebVerificationSchema>

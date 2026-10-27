@@ -65,8 +65,9 @@ pipeline). One process writes at a time → no race conditions.
 
 - **Stage 1 — verify each distinct company _once_** (deduplicated): a Claude call with **live web
   search** answers *is this a real business? does the application go to a real office or a house/PO
-  box? is a known brand being misused?* The verdict is cached on the company and reused by all its
-  postings.
+  box? is a known brand being misused?* Haiku 5.5 answers first; an answer that would raise a
+  rating is checked again by Opus 5.5, whose verdict is kept. The verdict is cached on the company
+  and reused by all its postings.
 - **Stage 2 — judge the text, compose the score** (no web): TypeSafe's Jev answers a few typed
   questions about the posting text (does the application route fit this employer? is a private
   household hiring? is anything asked before an offer?), then **code** combines those answers with
@@ -103,8 +104,8 @@ pipeline). One process writes at a time → no race conditions.
 ## 7. Tech stack
 
 Next.js 15 (App Router, server components) · Prisma + PostgreSQL (Railway) · Claude
-(`haiku-4-5` for bulk, `opus-4-8` for impersonation reasoning, with the server-side `web_search`
-tool) · zod (validation) · p-limit (concurrency) · marked (README-to-`/about` rendering) · Vitest
+(employer checks tiered: `haiku-5-5` first, `opus-5-5` re-checking any verdict that would raise a
+rating; `opus-4-8` for impersonation reasoning; all with the server-side `web_search` tool) · zod (validation) · p-limit (concurrency) · marked (README-to-`/about` rendering) · Vitest
 (unit tests, `npm test`).
 
 ## 8. Why it's built this way (talking points)

@@ -176,8 +176,13 @@ stages out of order is not possible from the CLI; the sequencing risk is the *he
 (`rescore-failed`, `reverify-mail`, `rescan-impersonation`), which assume postings already have
 scores and employers already have verdicts. Run `judge` first.
 
-Models are pinned in the source, not in env: `claude-haiku-4-5-20251001` for employer
-verification, `claude-opus-4-8` for the impersonation check (grep `const MODEL` in `lib/ai/`), and
+Models are pinned in the source, not in env. Employer verification is **tiered** since 2026-10-26:
+Haiku 5.5 checks every employer, and when its verdict would raise a rating (a business or location
+`mismatch`, or a residential / P.O. box / virtual mailing address) Opus 5.5 checks again and its
+verdict is used instead (`verifyEmployerTiered`, models and prices in `lib/ai/verifier-models.ts`,
+the evidence in `docs/verifier-model-eval.md`). Each verdict records `web.verifiedBy`. The keyless
+agent path does the same with Haiku and Opus helper agents (`.claude/skills/judge-postings/SKILL.md`,
+step 3b). `claude-opus-4-8` still runs the impersonation check (`lib/ai/check-impersonation.ts`), and
 TypeSafe's default Jev model for the text judgments (`lib/ai/jev-judgments.ts`). Nothing scores:
 `scoringVersion` on the row says which era produced its number (null = a model chose it).
 
