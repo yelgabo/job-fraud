@@ -225,7 +225,6 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   `build`, `test`) + deps.
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.
 - `vitest.config.ts` - only the `@/` path alias and automatic JSX; everything else is vitest defaults.
-- `railway.json` — Railway deploy (RAILPACK; `prisma db push` then `next start`).
 - `.env.example` — required env vars.
 - `__fixtures__/` — saved WorkBC HTML (only used by the legacy parser tests).
 - `docs/` — `ARCHITECTURE.md` (system overview), `TECHNICAL_INFO.md` (stack/setup/rubric), this

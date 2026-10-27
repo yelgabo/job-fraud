@@ -202,14 +202,15 @@ and a `railway link` there can attach the project without a service. In that sta
 railway up --service job-fraud --detach
 ```
 
-Normal deploys come from GitHub push (the service's source is `yelgabo/job-fraud`). `railway up` is
+Normal deploys come from GitHub push (the service's source is `yelgabo/job-fraud`, trigger reconnected 2026-10-26). `railway up` is
 only the fallback when auto-deploy does not fire. **Data refreshes never need a deploy** - the site
 serves pages cached up to 10 minutes, so refreshed data appears within the revalidation window (or
 immediately, when the run could call `POST /api/revalidate` with `REVALIDATE_TOKEN` set).
 
 ## `prisma db push --accept-data-loss` runs on every deploy
 
-`railway.json` `deploy.startCommand` is:
+The `job-fraud` service's start command (a service setting since 2026-10-26; `railway.json` was
+removed because Railway stops reading it on 2026-12-01) is:
 
 ```
 npx prisma db push --accept-data-loss --skip-generate && npx next start -p ${PORT:-3000}
@@ -298,15 +299,15 @@ network). The weekly refresh runs inside Railway as the **`job-fraud-scheduler`*
 (Mondays 12:17 UTC, start command `scripts/scheduled-refresh.sh`): both scrape passes, then
 `npm run judge -- --limit $JUDGE_LIMIT` when `ANTHROPIC_API_KEY` is set on that service. It reaches
 Postgres over the private network, so it publishes new verdicts with no human involved and keeps
-working if the public TCP proxy is removed again. Its settings live on the Railway service, not in
-`railway.json`; `docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or
+working if the public TCP proxy is removed again. Its settings live on the Railway service;
+`docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or
 inspect a run. Postgres was private between 2026-10-22 (credential-rotation incident) and
 2026-10-26, when a new public TCP proxy was added for local runs; an old `.env` holding
 `zephyr.proxy.rlwy.net` points at nothing.
 
-Railway stops reading `railway.json` on **2026-12-01**. The `job-fraud` web service has no
-dashboard start command of its own, so the `prisma db push` start command in that file needs to
-move to the service settings (or Railway IaC) before then.
+The `job-fraud` web service deploys from GitHub: every push to `main` deploys once the Tests
+workflow passes. Its build and start settings live on the service, not in the repo (there is no
+`railway.json`); read them with `railway api` on `serviceInstance` before changing them.
 
 ## Maintaining this file
 

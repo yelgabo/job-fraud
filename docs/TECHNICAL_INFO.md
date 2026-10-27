@@ -181,8 +181,7 @@ need it). The manual commands remain the right tool for catch-up runs, backfills
 a failed week is caught up by the next), the Victoria city pass, then `npm run judge -- --limit
 $JUDGE_LIMIT` if `ANTHROPIC_API_KEY` is set on the service. Without the key it scrapes only and the
 postings wait for a manual judge run. It runs inside Railway and reaches Postgres over the private
-network. Its settings are on the service, not in `railway.json` (new services do not read that
-file), set through the Railway API:
+network. Its settings are on the service, set through the Railway API:
 
 | Setting | Value |
 |---|---|
@@ -297,8 +296,8 @@ npm test          # vitest — helpers, parsers, schema, mocked-SDK scoring/veri
 npm run build     # prisma generate + next build (full type-check)
 ```
 
-GitHub-connected Railway service (`railway.json`, RAILPACK; start = `prisma db push` then
-`next start`). Web service needs only `DATABASE_URL` (reference to the Postgres service). Refresh
+GitHub-connected Railway service: each push to `main` deploys after the Tests workflow passes.
+Build and start are service settings (RAILPACK; start = `prisma db push` then `next start`). Web service needs only `DATABASE_URL` (reference to the Postgres service). Refresh
 prod data by running `scrape`/`judge` locally against the same DB: the site serves pages cached
 up to 10 minutes (`revalidate`/`unstable_cache` 600 s on the public pages), so data updates appear
 without a deploy, within the revalidation window. When `REVALIDATE_TOKEN` is set locally (matching
