@@ -1,16 +1,10 @@
-import { createHash, timingSafeEqual } from "node:crypto"
 import { revalidatePath, revalidateTag } from "next/cache"
 // Relative imports (not "@/...") so the colocated route.test.ts resolves them under vitest's
 // default config, which does not read tsconfig path aliases.
 import { webEnv } from "../../../lib/env"
 import { DATA_CACHE_TAG } from "../../../lib/shared/cache-tags"
 import { WARM_PATHS, warmOrigin } from "../../../lib/shared/warm-targets"
-
-/** Constant-time comparison over fixed-length digests so neither content nor length leaks. */
-function tokenMatches(given: string, expected: string): boolean {
-  const h = (s: string) => createHash("sha256").update(s).digest()
-  return timingSafeEqual(h(given), h(expected))
-}
+import { tokenMatches } from "../../../lib/shared/token-match"
 
 /**
  * Bearer-token gate shared by both phases, following the AUDIT_TOKEN pattern: when the env var

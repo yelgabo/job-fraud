@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { webEnv } from "@/lib/env"
+import { tokenMatches } from "@/lib/shared/token-match"
 
 // The app's only write path. Every action re-verifies the audit token server-side (the page
 // guard alone doesn't protect POSTs) and throws rather than 404s so a bad token can't silently
 // mutate. Notes and requests are append-only; the Job row is only touched to clear scoredAt.
 function requireToken(token: string): void {
-  if (!webEnv.AUDIT_TOKEN || token !== webEnv.AUDIT_TOKEN) throw new Error("forbidden")
+  if (!webEnv.AUDIT_TOKEN || !tokenMatches(token, webEnv.AUDIT_TOKEN)) throw new Error("forbidden")
 }
 
 export async function addNote(token: string, workbcId: string, formData: FormData): Promise<void> {

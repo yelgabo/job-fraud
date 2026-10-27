@@ -22,6 +22,8 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -30,6 +32,27 @@ jobs:
 
       # postinstall runs prisma generate, which tsc and the build both need.
       - run: npm ci
+
+      # Every deploy runs `prisma db push --accept-data-loss`, so a schema change that drops a
+      # column or table destroys production data at deploy time with no prompt (2026-10-23).
+      # Diffing the schema files needs no database. A deliberate drop is allowed when the commit
+      # message (push) or PR title contains [allow-schema-drop].
+      - name: Schema drop check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          MESSAGE: ${{ github.event.pull_request.title || github.event.head_commit.message }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE:prisma/schema.prisma" 2>/dev/null; then
+            echo "no base schema to compare"; exit 0
+          fi
+          git show "$BASE:prisma/schema.prisma" > /tmp/base.prisma
+          npx prisma migrate diff --from-schema-datamodel /tmp/base.prisma \
+            --to-schema-datamodel prisma/schema.prisma --script > /tmp/schema.sql
+          cat /tmp/schema.sql
+          if grep -qiE '\bDROP\b' /tmp/schema.sql; then
+            case "$MESSAGE" in *"[allow-schema-drop]"*) echo "drop allowed by [allow-schema-drop]";;
+              *) echo "::error::this schema change drops data on deploy (see SQL above)"; exit 1;; esac
+          fi
 
       - name: Type-check
         run: npx tsc --noEmit
