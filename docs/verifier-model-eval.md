@@ -15,12 +15,12 @@ the database, written by the API path on Haiku 4.5.
 
 ## Result
 
-| Verifier | Labels agree | High caught | Bands equal to Opus | Tokens for 21 postings | Web searches (approx.) |
+| Verifier | Labels agree | High caught | Bands equal to Opus | Tokens for 21 postings | Web searches |
 |---|---|---|---|---|---|
 | Stored (API, Haiku 4.5) | 19/21 | 0/2 | 20/21 | n/a | n/a |
-| Haiku 5.5 | 19/21 | 1/2 | 20/21 | 146.6k | 29 |
-| Sonnet 5.5 | 19/21 | 0/2 | 20/21 | 116.4k | 13 |
-| Opus 5.5 | **20/21** | **1/2** | 21/21 | 134.1k | 26 |
+| Haiku 5.5 | 19/21 | 1/2 | 20/21 | 146.6k | 25 |
+| Sonnet 5.5 | 19/21 | 0/2 | 20/21 | 116.4k | 9 |
+| Opus 5.5 | **20/21** | **1/2** | 21/21 | 134.1k | 22 |
 | Haiku 5.5, alarming verdicts re-checked by Opus | **20/21** | **1/2** | 21/21 | Haiku + 2 of 21 on Opus | |
 
 What decided it was two postings:
@@ -32,7 +32,7 @@ What decided it was two postings:
   company. Haiku found nothing and answered `businessMatch: mismatch`, which scored 85, a High
   rating on a real employer. That is the error this site can least afford.
 
-Sonnet's second batch ran 3 web searches for 10 employers, so its verdicts there rest mostly on
+Sonnet's second batch ran 1 web search for 10 employers, so its verdicts there rest mostly on
 what it already knew; its many `uncertain` answers are safe (neutral in the composer) but miss
 the signal that matters. #18 (Thai Green Elephant, the immigration-broker case) is missed by
 every verifier, as expected: nothing a verifier returns covers it.
