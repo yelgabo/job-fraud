@@ -5,7 +5,7 @@ Developer/operator documentation for the Job Fraud Scanner. For the system-archi
 a file-by-file guide to the repo see [CODEMAP.md](CODEMAP.md).
 
 **Stack:** Next.js 15 (App Router) · Prisma + PostgreSQL · Claude (`claude-haiku-5-5` for employer
-verification with `claude-opus-5-5` re-checking alarming verdicts, `claude-opus-4-8` for
+verification with `claude-opus-5-5` re-checking verdicts that need it (`needsEscalation`), `claude-opus-4-8` for
 brand-impersonation checks, incl. the `web_search` tool) ·
 TypeSafe Jev (typed text judgments, `@typesafe-ai/sdk`) · zod ·
 p-limit · Vitest. Data comes from WorkBC's JSON APIs (no browser/HTML scraping). **Live:**
@@ -32,8 +32,8 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
 
 - *Stage 1 — verify each distinct employer once (tiered).* Claude's `web_search` tool researches the
   company (`lib/ai/verify-employer-web.ts`, `verifyEmployerTiered`): Haiku 5.5 first, and Opus 5.5
-  in its place when Haiku's verdict is alarming (`isAlarmingVerdict`: a business or location
-  `mismatch`, or a residential / P.O. box / virtual mailing address). The verdict (`businessMatch`,
+  in its place when `needsEscalation` says so: a business or location `mismatch`, a residential /
+  P.O. box / virtual mailing address, or a mailing address Haiku left `uncertain`. The verdict (`businessMatch`,
   `locationMatch`, `applicationAddressType`, `verifiedBy`, …) is cached on the employer and reused
   by all its postings. `npm run judge` prints escalations, searches and list-price cost at the end. **Tiering
   (cost):** an employer whose pending postings *all* apply via its own matching ATS tenant
@@ -147,7 +147,7 @@ npm run dev                   # http://localhost:3000
 (TCP-proxy host), not `*.railway.internal`. The web app needs only `DATABASE_URL`, and so does
 `scrape`: it makes no Anthropic calls. `ANTHROPIC_API_KEY` is read only by the keyed judge path
 (`judge`, `reverify-mail`, `rescan-impersonation`); the keyless
-`judge:fetch` -> agents -> `judge:apply` path needs no Anthropic key. `TYPESAFE_API_KEY` is read by
+`judge-keyless:fetch` -> agents -> `judge-keyless:apply` path needs no Anthropic key. `TYPESAFE_API_KEY` is read by
 both paths for the Jev text judgments and is optional (`.env.example` says what changes without it). Keep the key commented out in
 `.env` unless it is real, because `lib/env.ts` accepts any non-empty string, so a placeholder sends
 the run down the keyed path where every call 401s and the postings are written as judged. Set
@@ -282,9 +282,10 @@ sweep for apply-host≠employer brand impersonation) · `npm run backfill-catego
 `nocCode`/`nocGroup`/`category` from stored descriptions — pure parse, no API) ·
 `npm run backfill-posted-date` (fill `postedDate` from `postedAt` - pure parse, no API, dry run by
 default) · `npm run compare-jev` / `npm run measure-questions` (read-only Jev measurement harnesses) ·
-**agent "deep" path:** `npm run judge:fetch` dumps pending into per-batch files for dispatched fraud
-agents, `npm run judge:apply <dir>` validates + applies their verdicts (single writer) — see
-`judge-runbook.md`.
+**the keyless judge:** `npm run judge-keyless:fetch` groups pending postings by employer into batch
+files for Haiku helper agents (plus `cached.json`), alarming or unresolved verdicts go to Opus
+helpers, and `npm run judge-keyless:apply [--dry-run] <dir>` enforces the tier rule and applies
+them (single writer). See `AGENTS.md` ("The two judge paths") and `judge-runbook.md`.
 
 ## Adding an application-flag detector
 
@@ -305,7 +306,7 @@ Build and start are service settings (RAILPACK; start = `prisma db push` then `n
 prod data by running `scrape`/`judge` locally against the same DB: the site serves pages cached
 up to 10 minutes (`revalidate`/`unstable_cache` 600 s on the public pages), so data updates appear
 without a deploy, within the revalidation window. When `REVALIDATE_TOKEN` is set locally (matching
-the deployed service's env var), the write-side CLIs (`scrape`, `judge`, `judge:apply`) also POST
+the deployed service's env var), the write-side CLIs (`scrape`, `judge`, `judge-keyless:apply`) also POST
 `/api/revalidate` at the end of a successful run, which refreshes the public pages immediately and
 then sends a second `?phase=warm` request that re-renders the common filter pages
 (`lib/shared/warm-targets.ts`) so their first visitors get cache hits; if the token is unset or the

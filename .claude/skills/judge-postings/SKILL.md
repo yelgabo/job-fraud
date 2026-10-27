@@ -13,7 +13,7 @@ Scraping only collects raw postings (`scoredAt` null = pending). Judging evaluat
 
 `scripts/judge.ts` is a single-process (single DB writer, no races) evaluator that **dedups by
 employer**: Stage 1 web-verifies each DISTINCT pending employer once (`verifyEmployerTiered`:
-Haiku 5.5 first, and Opus 5.5 in its place when Haiku's verdict would raise a rating) →
+Haiku 5.5 first, and Opus 5.5 in its place when `needsEscalation` says so) →
 `employer.checks.web`; Stage 2 asks Jev the text questions (`TYPESAFE_API_KEY`) and composes the
 score in code (`lib/scoring/verdict.ts`) from that verdict + the posting's own flags/NOC. Far cheaper/faster at scale than per-job
 agents (e.g. ~1,046 employer web-searches for 2,425 jobs instead of 2,425). Use this for bulk and
@@ -33,13 +33,17 @@ Run from the `job-fraud` project directory.
 
 ## Procedure
 
-1. **Fetch pending.** Run `npm run judge:fetch -- --limit N [--batch-size B]` (omit `--limit` for
-   all pending). Batching is automatic: it creates `logs/judge-<ts>/` holding `batch-001.json`,
-   `batch-002.json`, ... at `--batch-size` postings each (default `15`), and prints
-   `DIR=<dir> BATCHES=<n>`. It is read-only. If `BATCHES=0`, stop, there is nothing to judge.
+1. **Fetch pending.** Run `npm run judge-keyless:fetch -- --limit N [--batch-size B]` (omit `--limit` for
+   all pending). It groups the postings by employer and creates `logs/judge-<ts>/` holding
+   `batch-001.json`, `batch-002.json`, ... with one item per employer that needs a web check
+   (`--batch-size` employers each, default `15`), plus `cached.json` for postings whose employer
+   needs none (those are scored at apply time from the cached verdict, no helper needed). It
+   prints `DIR=<dir> BATCHES=<n>` and is read-only. If `BATCHES=0`, skip to step 5: the
+   `cached.json` postings still need applying.
 
 2. **Read** the `batch-NNN.json` files in that directory. Each is already a batch array; do not
-   re-split them.
+   re-split them. Each item stands for one employer; its `employerPostings` field is for the apply
+   step and does not need to go to the helper.
 
 3. **Fan out helpers (parallel).** The worker that ran the fetch dispatches one helper agent per
    batch file, all in a single message so they run concurrently; a "few at a time" wave is fine for
@@ -52,14 +56,16 @@ Run from the `job-fraud` project directory.
    the employer check; step 3b sends the doubtful ones to Opus. `docs/verifier-model-eval.md` has
    the measurements behind the split.
 
-3b. **Escalate alarming verdicts to Opus.** A verdict is alarming when `businessMatch` or
-   `locationMatch` is `"mismatch"`, or `applicationAddressType` is `"residential"`, `"po_box"` or
-   `"virtual"` (the same rule as `isAlarmingVerdict` in `lib/ai/verify-employer-web.ts`). Collect
-   those postings from the batch files into one or more new batches and dispatch helpers with
+3b. **Escalate to Opus.** A Haiku verdict needs escalation when `businessMatch` or `locationMatch`
+   is `"mismatch"`; when `applicationAddressType` is `"residential"`, `"po_box"` or `"virtual"`;
+   or when the posting's `flags` include `mail_physical_resume` and `applicationAddressType` is
+   `"uncertain"` (the same rule as `needsEscalation` in `lib/ai/verify-employer-web.ts`). Collect
+   those items from the batch files into one or more new batches and dispatch helpers with
    `model: "opus"` and the same Agent prompt. Each Opus verdict replaces the Haiku one. Set
    `web.verifiedBy` on every verdict before writing it: `"haiku-5.5"` for a kept Haiku verdict,
-   `"haiku-5.5>opus-5.5"` for a replaced one. An alarming verdict whose Opus re-check fails is
-   dropped, not kept, so that posting stays pending.
+   `"haiku-5.5>opus-5.5"` for a replaced one. A verdict whose Opus re-check fails is dropped, not
+   kept, so that employer's postings stay pending. Step 5 enforces this: it rejects any verdict
+   needing escalation that is not marked as Opus-confirmed.
 
    **Search budget.** Claude Code's WebSearch tool allows about 200 searches per session, shared
    by every helper, refilling at about 100 an hour (the API path has no such cap). At two to three
@@ -71,16 +77,19 @@ Run from the `job-fraud` project directory.
    `verdicts-<n>.json` **inside the same `logs/judge-<ts>/` directory**. Merging everything into
    one file is optional, the apply step takes a directory.
 
-5. **Apply (single writer).** Run `npm run judge:apply -- logs/judge-<ts>/`. The argument may be a
-   verdicts file or a directory, and several may be passed at once; a directory contributes every
-   file matching `/verdicts.*\.json$/i`, so the `batch-*.json` inputs are ignored. It zod-validates
-   each verdict, stores `web` on the employer, asks Jev the text questions, and composes the score
-   (`fraudScore`, `riskBand`, `reasoning`, `signals`, `judgments`, `scoringVersion`, `scoredAt`) the
-   same way `npm run judge` does. Invalid verdicts are skipped, not fatal, and those postings stay pending.
+5. **Apply (single writer).** First `npm run judge-keyless:apply -- --dry-run logs/judge-<ts>/` to see
+   how many postings it would score and whether any verdict breaks the tier rule; then run it
+   without `--dry-run`. A directory contributes its `verdicts*.json`, its `batch-*.json` (for
+   `employerPostings`) and its `cached.json`. It zod-validates each verdict, rejects one that
+   breaks the tier rule, stores `web` on the employer once, then asks Jev the text questions and
+   composes the score (`fraudScore`, `riskBand`, `reasoning`, `signals`, `judgments`,
+   `scoringVersion`, `scoredAt`) for every posting the fetch grouped under that employer, the same
+   way the API judge does. It then scores the `cached.json` postings. Skipped verdicts are not
+   fatal; their postings stay pending.
    Apply each completed wave serially using its explicit verdict file paths, or apply the
    directory once after all its waves finish, to avoid reapplying earlier waves.
 
-6. For large corpora (e.g. 500), repeat steps 1-5 in waves until `judge:fetch` reports 0 pending.
+6. For large corpora (e.g. 500), repeat steps 1-5 in waves until `judge-keyless:fetch` reports 0 pending.
 
 ## Scoring policy
 
@@ -89,7 +98,7 @@ No agent and no model chooses a score. The number is composed by
 [lib/scoring/weights.ts](../../../lib/scoring/weights.ts); the residential, PO-box and
 virtual mailing-address signal is +40 with a floor at 70 there. An agent's output is
 the employer verdict below, which is the evidence the composer consumes. Any
-`fraudScore`, `signals` or `reasoning` in a verdict is dropped by `judge:apply`. Do not
+`fraudScore`, `signals` or `reasoning` in a verdict is dropped by `judge-keyless:apply`. Do not
 tune weights or rescore existing data unless the current task requests it.
 
 ## Verdict shape (one object per posting; agents return a JSON array of these)

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import type Anthropic from "@anthropic-ai/sdk"
-import { isAlarmingVerdict, verifyEmployerTiered, verifyEmployerWeb, WebVerifyError } from "./verify-employer-web"
+import { isAlarmingVerdict, needsEscalation, tierViolation, verifyEmployerTiered, verifyEmployerWeb, WebVerifyError } from "./verify-employer-web"
 import { VERIFIER_PROFILES, verifierCostUsd } from "./verifier-models"
 
 const VALID = {
@@ -201,3 +201,42 @@ describe("isAlarmingVerdict", () => {
   })
 })
 
+describe("tierViolation", () => {
+  const v = { ...VALID } as Parameters<typeof tierViolation>[0]
+  const alarm = { ...v, applicationAddressType: "residential" as const }
+  const MAIL = "Mail resume to 12 Main St, Victoria"
+
+  it("accepts a verdict that needs no escalation from any verifier, or none recorded", () => {
+    expect(tierViolation(v, "")).toBeNull()
+    expect(tierViolation({ ...v, verifiedBy: "haiku-5.5" }, MAIL)).toBeNull()
+    expect(tierViolation({ ...v, applicationAddressType: "uncertain", verifiedBy: "haiku-5.5" }, "")).toBeNull()
+  })
+
+  it("accepts a verdict needing escalation only from the escalation model", () => {
+    expect(tierViolation({ ...alarm, verifiedBy: "haiku-5.5>opus-5.5" }, "")).toBeNull()
+    expect(tierViolation({ ...alarm, verifiedBy: "opus-5.5" }, "")).toBeNull()
+    expect(tierViolation({ ...alarm, verifiedBy: "haiku-5.5" }, "")).toMatch(/needs opus-5.5/)
+    expect(tierViolation(alarm, "")).toMatch(/\(none\)/)
+    expect(tierViolation({ ...v, applicationAddressType: "uncertain", verifiedBy: "haiku-5.5" }, MAIL)).toMatch(/needs opus-5.5/)
+  })
+})
+
+describe("needsEscalation", () => {
+  const v = { ...VALID } as Parameters<typeof needsEscalation>[0]
+  it("escalates an unclassified mailing address but not an absent one", () => {
+    expect(needsEscalation({ ...v, applicationAddressType: "uncertain" }, "Mail to 724 Lorimer Rd")).toBe(true)
+    expect(needsEscalation({ ...v, applicationAddressType: "uncertain" }, "")).toBe(false)
+    expect(needsEscalation({ ...v, applicationAddressType: "business" }, "Mail to 724 Lorimer Rd")).toBe(false)
+  })
+})
+
+describe("verifyEmployerTiered on a mailing address", () => {
+  it("re-checks an address the primary left uncertain", async () => {
+    const r = (input: unknown) => ({ ...toolResp(input), usage: { input_tokens: 1, output_tokens: 0 } })
+    const { client, create } = mockClient(r({ ...VALID, applicationAddressType: "uncertain" }), r({ ...VALID, applicationAddressType: "residential" }))
+    const out = await verifyEmployerTiered(client, { ...INPUT, applicationText: "Mail to 724 Lorimer Rd" }, { retryDelayMs: 0 })
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(out.result.applicationAddressType).toBe("residential")
+    expect(out.result.verifiedBy).toBe("haiku-5.5>opus-5.5")
+  })
+})

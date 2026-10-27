@@ -2,7 +2,7 @@
 // jobs into batch files for no-web scoring agents, each job carrying its employer's checks (as
 // written by local-verify-apply / earlier judge runs) plus deterministic flags and apply-tenant
 // info, so the agent needs no tools beyond reading its batch file. Read-only. Verdicts are
-// applied by the existing scripts/judge-apply.ts (single DB writer).
+// applied by the existing scripts/judge-keyless-apply.ts (single DB writer).
 // Run: npx tsx --env-file=.env scripts/local-score-fetch.ts [--limit N] [--batch-size 50]
 import { writeFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"

@@ -24,7 +24,7 @@ Run from the `job-fraud` project directory.
 (`cp .env.example .env`) and set `DATABASE_URL`. For the keyless path that is the only
 variable needed: `.env.example` ships `ANTHROPIC_API_KEY` commented out, so **leave it
 commented, and do not paste a placeholder or a stale key in to fill the line**. Any non-empty
-value routes the run down the keyed path. AGENTS.md ("The keyless judge path") owns the
+value routes the run down the keyed path. AGENTS.md ("The two judge paths") owns the
 predicate and what a bad key does to the pending queue.
 
 Get the value from Railway:
@@ -59,7 +59,7 @@ session is for draining a backlog larger than one week's cap, for `deep` review 
      so step 3's normal judging covers them. Stamp `resolvedAt` after the posting is re-scored.
    - `kind: "deep"` rows: for each, dispatch ONE fraud-analyst agent (judge-postings prompt)
      with just that posting, appending the request's `note` as "Owner context: <note>" so the
-     agent investigates the owner's concern. Apply via `judge:apply`, then stamp `resolvedAt`.
+     agent investigates the owner's concern. Apply via `judge-keyless:apply`, then stamp `resolvedAt`.
    - Query/stamp with `npx tsx --env-file=.env -e` one-liners on `prisma.judgeRequest`.
 
 1. **Scrape (never needs an API key). A full refresh is TWO passes, not one.**
@@ -90,18 +90,20 @@ session is for draining a backlog larger than one week's cap, for `deep` review 
    (city pass still with `--search-terms ""`).
 
 2. **Pick the judge path by one predicate: is `ANTHROPIC_API_KEY` set in `.env`?** AGENTS.md
-   ("The keyless judge path") owns that predicate; a freshly copied `.env` answers "no" (see
+   ("The two judge paths") owns that predicate; a freshly copied `.env` answers "no" (see
    Credentials). Either path scores through the same composer; `TYPESAFE_API_KEY` decides
    whether Jev answers the text questions or the regex flags stand in (rows then store
    `judgments = null`). Say which in the run report.
-   - **Key present:** `npm run judge` (fast path: dedups by employer, single process).
-   - **No key:** follow the [judge-postings procedure](../judge-postings/SKILL.md#procedure)
-     for batched fetching, agent verdict files and the single-writer apply. Use its
-     prompt and follow its approved scoring policy.
+   - **Key present:** the API judge, `npm run judge` (one process, one check per employer,
+     Haiku 5.5 with Opus 5.5 re-checking verdicts that need it, done in code).
+   - **No key:** the keyless judge. Follow the [judge-postings procedure](../judge-postings/SKILL.md#procedure):
+     `judge-keyless:fetch` (employer batches plus `cached.json`), Haiku helpers, Opus helpers for
+     step 3b, then `judge-keyless:apply` (dry run first). Use its prompt and follow its approved
+     scoring policy.
 
-3. **Loop.** Re-run `judge:fetch` until it reports 0 pending. Correct invalid verdicts
+3. **Loop.** Re-run `judge-keyless:fetch` until it reports 0 pending. Correct invalid verdicts
    before retrying them. Report any persistently invalid or unavailable verdicts
    accurately; do not repeatedly dispatch unchanged failures or claim a full drain
    while postings remain pending.
 
-4. **Verify.** `judge:fetch` printing `0 pending` is done. Spot-check the live site if asked.
+4. **Verify.** `judge-keyless:fetch` printing `0 pending` is done. Spot-check the live site if asked.

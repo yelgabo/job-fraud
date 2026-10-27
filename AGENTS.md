@@ -51,53 +51,66 @@ speculatively to "see what happens".
 | `npm run compare-verifiers` | Read-only against the DB (verdicts go to `logs/compare-verifiers-*/`, never to an Employer row), but each model makes a web-verification call per employer: tokens plus $10 per 1,000 searches. Needs `ANTHROPIC_API_KEY` in the environment, not in `.env`. Bound it with `--employers`. Models and prices live in `lib/ai/verifier-models.ts`. |
 | `npm run compare-jev` / `npm run measure-questions` | Read-only against the DB, but each makes a Jev call per sampled posting. |
 | `npm run eval:snapshot` | Read-only against the DB; rewrites the label-harness fixture in `lib/eval/__fixtures__/`, which moves the evidence under every label, so re-measure `lib/eval/baseline.ts` in the same commit. `--ask-jev` adds a Jev call per posting without stored judgments. (`npm run eval:labels` is free: fixture only.) |
-| `npm run judge:apply` | The single DB writer for the agent path. Stores the agent's `web` verdict on the employer, then asks Jev (when keyed) and composes: overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`judgments`/`scoringVersion`/`scoredAt`. Publishes verdicts. |
+| `npm run judge-keyless:apply` | The single DB writer for the keyless judge. Stores each agent `web` verdict on its employer, then asks Jev (when keyed) and composes every posting the fetch grouped under it: overwrites `fraudScore`/`riskBand`/`reasoning`/`signals`/`judgments`/`scoringVersion`/`scoredAt`. Publishes verdicts. `--dry-run` validates and reports what it would score without writing. |
 | `npm run backfill-categories` | No API calls, but it updates **every** Job row. |
 | `npm run backfill-ats` | No API calls. Re-classifies stored apply hosts after an ATS registry change. Pending rows only by default (publishes nothing); `--include-judged` also rewrites judged rows' flags, which then need `recompose`. Dry run is the default. |
 | `npm run backfill-posted-date` | No API calls, and it touches no published judgement (only `Job.postedDate`, which drives the site's date filter), but `--apply` can update **every** Job row. Dry run is the default: a bare run reports counts and writes nothing. |
-| `npm run judge:fetch` | The only genuinely safe one: read-only, writes files under `logs/` and nothing else. |
+| `npm run judge-keyless:fetch` | The only genuinely safe one: read-only, writes files under `logs/` and nothing else. |
 
 A judge run that hits an out-of-credit billing error aborts on purpose and leaves postings
 `pending` rather than mass-writing `unknown` (`lib/shared/anthropic-errors.ts`). Do not "fix" that
 by catching it.
 
-## The keyless judge path (`judge:fetch` -> agents -> `judge:apply`)
+## The two judge paths: the API judge and the keyless judge
 
-Both paths score the same way: the agent or the Anthropic verifier supplies the employer verdict
-(`checks.web`), Jev answers the text questions when **`TYPESAFE_API_KEY`** is set (otherwise the
-route judgment falls back to the regex flags and the row stores `judgments = null`), and
-`lib/scoring/verdict.ts` composes the number. What differs is who does the employer verification,
-and that is decided by one predicate: **is `ANTHROPIC_API_KEY` set in `.env`?** "Set" means
-non-empty, which is all `lib/env.ts` checks. `.env.example` therefore
-ships that line commented out, and leaving it commented is what keeps a keyless machine on the
-keyless path. A placeholder or stale key answers the predicate "yes" and then every Anthropic call
-401s; a 401 is not a billing error, so the run does not abort, it writes a failed verdict plus a
-`scoredAt` timestamp per posting and those postings stop showing as pending. `.env.example`'s
-comment on that variable has the detail.
+Names used throughout this repo: **the API judge** is `npm run judge` (needs `ANTHROPIC_API_KEY`);
+**the keyless judge** is `judge-keyless:fetch` -> helper agents -> `judge-keyless:apply` (no
+Anthropic key; employer research is done by agents in whatever Claude Code session runs it).
 
-- **Key present:** `npm run judge`. One process, dedups by employer (one web search per company,
-  not per posting), cheapest at scale. Use for bulk and scheduled runs.
-- **No key:** the path below. Employer investigation happens *outside this codebase* - in whatever
-  agent session is orchestrating - so no `ANTHROPIC_API_KEY` is needed anywhere. `.env` needs
-  `DATABASE_URL`, plus `TYPESAFE_API_KEY` for the text judgments. Also the right path for a small,
-  high-scrutiny subset even when a key is available, because each posting gets its own
-  investigation instead of a shared employer verdict.
+Both paths score the same way: a verifier supplies the employer verdict (`checks.web`), Jev answers
+the text questions when **`TYPESAFE_API_KEY`** is set (otherwise the route judgment falls back to the
+regex flags and the row stores `judgments = null`), and `lib/scoring/verdict.ts` composes the number.
+Both group pending postings by employer with `planByEmployer` / `verificationAction`
+(`lib/signals/verification-plan.ts`), so each employer is investigated once, cached verdicts are
+reused, and an employer whose postings all apply through its own ATS tenant is presumed legitimate.
+Both use the **tiered employer check**: Haiku 5.5 first, and Opus 5.5 instead whenever
+`needsEscalation` (`lib/ai/verify-employer-web.ts`) says so: a business or location `mismatch`, a
+residential / P.O. box / virtual address, or a mailing address the first model left `uncertain`.
+On 1,000 pending postings that matched an all-Opus run on every band at about an eighth of the
+cost (`docs/verifier-model-eval.md`). Every verdict records `web.verifiedBy`.
 
-Both paths write the same fields. They are interchangeable per posting; you can judge some rows one
-way and some the other.
+Which path runs is decided by one predicate: **is `ANTHROPIC_API_KEY` set in `.env`?** "Set" means
+non-empty, which is all `lib/env.ts` checks. `.env.example` therefore ships that line commented out,
+and leaving it commented is what keeps a keyless machine on the keyless path. A placeholder or stale
+key answers the predicate "yes" and then every Anthropic call 401s; a 401 is not a billing error, so
+the run does not abort, it writes a failed verdict plus a `scoredAt` timestamp per posting and those
+postings stop showing as pending. `.env.example`'s comment on that variable has the detail.
 
-**Step 1 - fetch (read-only, no key).**
+What still differs:
+
+| | API judge | Keyless judge |
+|---|---|---|
+| Tier escalation | done by code (`verifyEmployerTiered`) | done by the orchestrating session (skill step 3b); `judge-keyless:apply` **rejects** a verdict needing escalation unless `verifiedBy` is `opus-5.5` or `haiku-5.5>opus-5.5` |
+| Brand-impersonation check (Opus 4.8) | yes, per posting | **no** (needs the key) |
+| Web search limit | per-search billing ($10 / 1,000), none per session | Claude Code's WebSearch: about 200 per session, refilling about 100 an hour |
+| Prompt | `lib/ai/verify-employer-web.ts` | the skill's "Agent prompt" |
+
+Use the API judge for bulk and scheduled runs (the `job-fraud-scheduler` service runs it weekly once
+the key is on that service). Use the keyless judge without a key, or for a small high-scrutiny set
+such as `deep` review requests.
+
+**Keyless step 1 - fetch (read-only, no key).**
 
 ```bash
-npm run judge:fetch -- --limit 200 --batch-size 15
+npm run judge-keyless:fetch -- --limit 200 --batch-size 15
 ```
 
-`--limit N` caps how many pending postings are dumped (omit for all pending). `--batch-size B`
-postings per file, default `15`. It selects `scoredAt: null` ordered by `scrapedAt` ascending and
-writes `logs/judge-<timestamp>/batch-001.json`, `batch-002.json`, ... then prints
-`DIR=<dir> BATCHES=<n>`. It writes nothing to the database. Source: `scripts/judge-fetch.ts`.
-
-Each batch file is a JSON array of:
+`--limit N` caps how many pending postings are read (oldest `scrapedAt` first; omit for all).
+They are grouped by employer, and `logs/judge-<timestamp>/` gets `batch-001.json`, ... holding one
+item per employer that needs a web check (`--batch-size` employers per file, default 15), plus
+`cached.json` listing the postings whose employer needs none. It prints `DIR=<dir> BATCHES=<n>`
+and writes nothing to the database. A batch item is the employer's representative posting (one
+that gives a mailing address when any does):
 
 ```json
 {
@@ -105,33 +118,37 @@ Each batch file is a JSON array of:
   "title": "...", "employer": "...", "location": "...", "salary": "...", "postedAt": "...",
   "atsProvider": "workday", "externalApplyOk": null,
   "flags": [{ "flag": "mail_physical_resume", "evidence": "..." }],
-  "descriptionExcerpt": "first 1800 chars of the description"
+  "descriptionExcerpt": "first 1800 chars of the description",
+  "employerPostings": ["49588691", "49588702"]
 }
 ```
 
-**Step 2 - judge.** One worker owns the whole run: it fans out its own helper agents, one per batch
-file, several in a single message so they run concurrently, then assembles and applies. Do not hand
-the batches to separate top-level sessions. The agent prompt to use verbatim is in
-`.claude/skills/judge-postings/SKILL.md` ("Agent prompt"); do not improvise one, it encodes what
-the composer consumes. Helpers never touch the database and never score. `docs/judge-runbook.md` is the longer-form version of
-these four steps.
+`employerPostings` is for the apply step, not the helper.
 
-**Step 3 - apply (the single DB writer, and the only place a score is computed on this path).**
+**Keyless step 2 - judge.** One worker owns the whole run: it fans out helper agents on **Haiku**,
+one per batch file, several in one message, then sends every verdict that needs escalation to
+helpers on **Opus** (skill step 3b) and sets `verifiedBy`. The agent prompt to use verbatim is in
+`.claude/skills/judge-postings/SKILL.md` ("Agent prompt"). Helpers never touch the database and
+never score. `docs/judge-runbook.md` is the longer form.
+
+**Keyless step 3 - apply (the single DB writer, and the only place a score is computed on this path).**
 
 ```bash
-npm run judge:apply -- logs/judge-<timestamp>/          # a dir, or
-npm run judge:apply -- logs/judge-<timestamp>/verdicts-1.json
+npm run judge-keyless:apply -- --dry-run logs/judge-<timestamp>/   # check first, writes nothing
+npm run judge-keyless:apply -- logs/judge-<timestamp>/
 ```
 
-Write each helper's returned array as `verdicts-<n>.json` **inside the batch dir** - a directory
-argument picks up every file in it matching `/verdicts.*\.json$/i` and so ignores the
-`batch-*.json` inputs. Several files or dirs can be passed at once. Each verdict is zod-validated
-against `VerdictSchema` in `scripts/judge-apply.ts`; an invalid one is logged and skipped, the run
-continues, and that posting simply stays pending for the next wave. The score is **not** taken from
-the verdict: apply stores `web` on the employer, asks Jev, and composes. Any `fraudScore`,
+Write each helper's returned array as `verdicts-<n>.json` **inside the batch dir**. A directory
+argument reads its `verdicts*.json`, its `batch-*.json` (for `employerPostings`) and its
+`cached.json`. For each verdict, apply stores `web` on the employer once and scores exactly that
+employer's fetched postings; then it scores the `cached.json` postings from their cached or
+presumed verdict, re-deciding each employer against all its current pending postings first (an
+employer that now needs a check stays pending). A verdict is logged and skipped, and its postings
+stay pending, when it fails zod (`VerdictSchema` in `scripts/judge-keyless-apply.ts`) or breaks the
+tier rule (`tierViolation`). The score is **not** taken from the verdict; any `fraudScore`,
 `signals` or `reasoning` an agent returns is dropped.
 
-Verdict shape (authoritative schemas: `scripts/judge-apply.ts` + `lib/shared/json-schemas.ts`):
+Verdict shape (authoritative schemas: `scripts/judge-keyless-apply.ts` + `lib/shared/json-schemas.ts`):
 
 ```json
 {
@@ -144,23 +161,21 @@ Verdict shape (authoritative schemas: `scripts/judge-apply.ts` + `lib/shared/jso
     "hasJobsListing": "yes",
     "applicationAddressType": "business",
     "confidence": 0.85,
-    "summary": "<=400 chars"
+    "summary": "<=400 chars",
+    "verifiedBy": "haiku-5.5"
   }
 }
 ```
 
-`web` optional; when present it overwrites the employer's cached `checks.web`, so a careless verdict
-poisons every other posting by that employer. Enums: `websiteReachable`/`hasJobsListing`
-`yes|no|unknown`; `businessMatch`/`locationMatch` `match|mismatch|uncertain`;
-`applicationAddressType` `business|residential|po_box|virtual|none|uncertain`. Once a `web` object
-is present, `WebVerificationSchema` in `lib/shared/json-schemas.ts` requires nearly all of it:
-`websiteReachable`, `businessMatch`, `locationMatch`, `hasJobsListing`, `confidence` and `summary`
-are all required, `websiteUrl` is required but nullable, only `applicationAddressType` has a
-default (`"none"`) and only `source` is optional. A partial `web` object fails zod in
-`scripts/judge-apply.ts`, so the whole verdict is logged and skipped and the posting silently stays
-pending.
+`web` overwrites the employer's cached `checks.web`, so a careless verdict poisons every later posting
+by that employer. Enums: `websiteReachable`/`hasJobsListing` `yes|no|unknown`;
+`businessMatch`/`locationMatch` `match|mismatch|uncertain`; `applicationAddressType`
+`business|residential|po_box|virtual|none|uncertain`. `WebVerificationSchema` requires
+`websiteReachable`, `businessMatch`, `locationMatch`, `hasJobsListing`, `confidence` and `summary`;
+`websiteUrl` is required but nullable; `applicationAddressType` defaults to `"none"`; `source` and
+`verifiedBy` are optional. A partial `web` object fails zod and the posting stays pending.
 
-**Step 4 - loop.** Re-run `judge:fetch` until it reports `0 pending`.
+**Keyless step 4 - loop.** Re-run `judge-keyless:fetch` until it reports nothing pending.
 
 `.claude/skills/update-postings/SKILL.md` wraps the whole scrape-then-judge loop, including which
 path to pick. Use it rather than reinventing the sequence.
@@ -178,8 +193,8 @@ scores and employers already have verdicts. Run `judge` first.
 
 Models are pinned in the source, not in env. Employer verification is **tiered** since 2026-10-26:
 Haiku 5.5 checks every employer, and when its verdict would raise a rating (a business or location
-`mismatch`, or a residential / P.O. box / virtual mailing address) Opus 5.5 checks again and its
-verdict is used instead (`verifyEmployerTiered`, models and prices in `lib/ai/verifier-models.ts`,
+`mismatch`, or a residential / P.O. box / virtual mailing address) or it left a posting's mailing
+address `uncertain`, Opus 5.5 checks again and its verdict is used instead (`needsEscalation`, `verifyEmployerTiered`; models and prices in `lib/ai/verifier-models.ts`,
 the evidence in `docs/verifier-model-eval.md`). Each verdict records `web.verifiedBy`. The keyless
 agent path does the same with Haiku and Opus helper agents (`.claude/skills/judge-postings/SKILL.md`,
 step 3b). `claude-opus-4-8` still runs the impersonation check (`lib/ai/check-impersonation.ts`), and

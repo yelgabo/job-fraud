@@ -1,12 +1,12 @@
 # Which model should verify employers
 
 Run 2026-10-26, before judging the 5,263-posting backlog. The question: on the keyless path
-(`judge:fetch`, agents, `judge:apply`), which model's employer verdicts are good enough, and at
+(`judge-keyless:fetch`, agents, `judge-keyless:apply`), which model's employer verdicts are good enough, and at
 what cost. Opus 5.5 was the reference.
 
 ## Method
 
-The 21 labelled postings in `docs/labelset.md`, in the `judge:fetch` batch format (two batches of
+The 21 labelled postings in `docs/labelset.md`, in the `judge-keyless:fetch` batch format (two batches of
 11 and 10), went to agents running Haiku 5.5, Sonnet 5.5 and Opus 5.5 with the agent prompt from
 `.claude/skills/judge-postings/SKILL.md` unchanged. Each model's `web` verdicts replaced the
 fixture's stored ones (`lib/eval/__fixtures__/labelled-evidence.json`), and the composer scored
@@ -72,11 +72,37 @@ head offices are outside BC, which adds risk to real employers that hire in BC. 
 `uncertain` on Auvik, which adds nothing. On Haiku 5.5 about 85% of the cost is the search fee
 ($10 per 1,000), not tokens, so the five-searches-per-employer cap is now the bigger cost lever.
 
+## 1,000 pending postings, agent run (2026-10-27)
+
+The next 1,000 pending postings came from 433 employers. 340 reused a cached verdict or were
+presumed legitimate, so only 93 employers (113 postings) needed a web check; grouping by employer
+saves more than any model choice. All 93 were verified by Opus and by Haiku helper agents with the
+skill's prompt, and every posting was composed with the same Jev answers. Opus is the reference.
+(Haiku's batches 3 to 5 first hit Claude Code's 200-search session cap and were rerun after it
+refilled; 2 of Haiku's 93 verdicts failed validation.)
+
+| Verifier | Same band as Opus (all 1,000) | Same band, checked employers' postings | Tokens, agent run |
+|---|---|---|---|
+| Haiku alone | 998 | 111/113 | 477k |
+| Haiku, escalating alarming verdicts only (3 escalated) | 999 | 112/113 | ~492k |
+| **Haiku, also escalating an `uncertain` mailing address (9 escalated)** | **1,000** | **113/113** | ~521k |
+| Opus | reference | reference | 449k |
+
+At list input prices that is about $0.22 for the tiered check against $1.79 for Opus. The two
+cases that decided the rule:
+
+- **Mellenger Interactive**: Haiku called a real Vancouver agency's office residential (a false High,
+  80). Escalation sent it to Opus, which found the business address. Alarm escalation works.
+- **Timberdale Supply**: Opus found the mailing address is a house (High, 70); Haiku said
+  `uncertain`, which is not alarming, so the first rule never escalated it and it scored Low.
+  Escalating an `uncertain` address on a posting that mails applications (6 of the 18 such
+  employers here) closed that gap. This is `needsEscalation`.
+
 ## Decision
 
-Adopted 2026-10-27: the judging paths verify employers with Haiku 5.5 and re-check alarming
-verdicts with Opus 5.5 (`verifyEmployerTiered`; step 3b of the judge-postings skill for the agent
-path). The full 93-employer API comparison has not been run; when it is, it shows how often the
+Adopted 2026-10-27: both judge paths verify employers with Haiku 5.5 and re-check with Opus 5.5
+whenever `needsEscalation` says so (`verifyEmployerTiered` in the API judge; step 3b of the
+judge-postings skill in the keyless judge, enforced by `judge-keyless:apply`). The full 93-employer API comparison has not been run; when it is, it shows how often the
 escalation fires, which these 10 could not (none were alarming).
 
 ## Limits

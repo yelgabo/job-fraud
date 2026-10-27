@@ -53,7 +53,7 @@ async function warmCaches(origin: string) {
 
 /**
  * POST /api/revalidate - refresh every public cached surface now instead of waiting out the
- * 600 s revalidation window. Called by the write-side CLI scripts (scrape, judge, judge:apply)
+ * 600 s revalidation window. Called by the write-side CLI scripts (scrape, judge, judge-keyless:apply)
  * at the end of a successful run; the timer remains the backstop when this is never called.
  *
  * Two phases behind the same token gate, called as two separate requests:

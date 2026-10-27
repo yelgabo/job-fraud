@@ -202,7 +202,7 @@ async function main() {
     console.log(`\n=== SCRAPE SUMMARY ===`)
     console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
     console.log(`Collected ${written} postings (pending judgment) from ${empIdCache.size} employers; ${detailFail} detail fetch failures`)
-    console.log(`Next: run the judge-postings skill (or npm run judge:fetch) to evaluate pending postings.`)
+    console.log(`Next: run the judge-postings skill (or npm run judge-keyless:fetch) to evaluate pending postings.`)
     console.log(`Log: ${logPath}`)
     if (!args.dryRun && written > 0) await requestRevalidation()
   } finally {

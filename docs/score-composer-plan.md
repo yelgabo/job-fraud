@@ -17,7 +17,7 @@ the same way.
 
 `npm run judge` sends the rubric to Haiku as prose and reads `fraudScore` out of the tool call.
 The agent path never runs `lib/ai/scoring.ts` at all: the judge-postings skill tells the agent to
-read it as guidance, the agent returns its own `fraudScore`, and `scripts/judge-apply.ts:64` writes
+read it as guidance, the agent returns its own `fraudScore`, and `scripts/judge-keyless-apply.ts:64` writes
 that number straight to the database. The only thing checked is that it is an integer in 0-100 with
 signal weights inside `[-30, +45]`.
 
@@ -184,7 +184,7 @@ catch is a weight-table transcription error, which is the failure mode of this s
 `fraudScore` and `signals` and gains `judgments`. It keeps `web`, which is retrieval output the
 composer consumes, and `reasoning`. The agent prompt loses "read `lib/ai/scoring.ts` for the
 maintained scoring guidance" and the scoring-policy section, because there is no longer any weight
-for an agent to choose. `scripts/judge-apply.ts` validates the new shape and calls `composeScore`.
+for an agent to choose. `scripts/judge-keyless-apply.ts` validates the new shape and calls `composeScore`.
 
 Both paths now produce a score the same way. That is the point of the whole plan.
 

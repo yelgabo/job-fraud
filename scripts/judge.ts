@@ -10,8 +10,7 @@ import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
 import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
-import { matchedProvider } from "../lib/signals/apply-host"
-import { verificationAction } from "../lib/signals/verification-plan"
+import { presumedVerdict, verificationAction } from "../lib/signals/verification-plan"
 import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { TIERED_VERIFIER } from "../lib/ai/verifier-models"
 import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
@@ -89,19 +88,7 @@ async function main() {
 
   // Presumed-legit employers: deterministic verdict, no API call, no audit-log row.
   for (const d of toPresume) {
-    const employerName = d.list[0].employer?.nameDisplay ?? null
-    const provider = matchedProvider(employerName, d.list.map((j) => j.externalApplyUrl)) ?? "ATS"
-    const verdict: WebVerification = {
-      websiteUrl: null,
-      websiteReachable: "unknown",
-      businessMatch: "match",
-      locationMatch: "uncertain",
-      hasJobsListing: "unknown",
-      applicationAddressType: "none",
-      confidence: 0.8,
-      summary: `Presumed legitimate without web search: all postings apply via the company's own matching ${provider} tenant.`,
-      source: "ats-tenant-match",
-    }
+    const verdict = presumedVerdict(d.list[0].employer?.nameDisplay ?? null, d.list)
     const checks = { ...((d.list[0].employer?.checks as Record<string, unknown>) ?? {}), web: verdict }
     await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
     empChecks.set(d.id, checks)

@@ -55,7 +55,7 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 
 **`lib/ai/` — Claude evaluation (all `@anthropic-ai/sdk` usage lives here)**
 - `verify-employer-web.ts` — `verifyEmployerTiered()` (what the judging paths call): Haiku 5.5,
-  then Opus 5.5 when `isAlarmingVerdict()`; built on `verifyEmployerWeb()`, one Claude call per
+  then Opus 5.5 when `needsEscalation()` (an alarming verdict, or an `uncertain` mailing address); built on `verifyEmployerWeb()`, one Claude call per
   company for a given model profile (`verifier-models.ts`) using the `web_search` tool → `{businessMatch, locationMatch, hasJobsListing, applicationAddressType,
   websiteUrl, …}`. Also returns `searchLog` (raw queries + result blocks); exports `extractSearchLog`.
 - `check-impersonation.ts` — `checkImpersonation()`: on a tenant≠employer mismatch, a Claude
@@ -73,7 +73,7 @@ usage is contained there — and `lib/shared/json-schemas.ts` stays SDK-free so 
 - `compose.ts` — `composeScore()`: pure, judgments + checks + flags → score, band, signals.
 - `explain.ts` — `explainVerdict()`: the published prose, written from the composed signals.
 - `verdict.ts` — `buildVerdict()`: Jev (optional) → compose → explain; the one pipeline both DB
-  writers (`judge`, `judge:apply`) and the helpers call.
+  writers (`judge`, `judge-keyless:apply`) and the helpers call.
 
 **`lib/shared/` — cross-cutting (web + CLI), SDK-free**
 - `json-schemas.ts` — zod schemas + parsers for the Prisma `Json` columns (`ChecksSchema`,
@@ -147,8 +147,12 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   impersonation pre-check per job and score each job. Fails fast on an out-of-credit error (leaves
   jobs pending). Flags: `--limit`, `--rejudge`, `--emp-concurrency`, `--score-concurrency`.
   *(Preferred judge.)*
-- `judge-fetch.ts` / `judge-apply.ts` — the optional **agent** judge path: fetch dumps pending into
-  per-batch files for dispatched fraud agents; apply validates + writes their verdicts (single writer).
+- `judge-keyless-fetch.ts` / `judge-keyless-apply.ts` — the **keyless judge**: fetch groups pending
+  postings by employer (`planByEmployer`) into one batch item per employer to investigate plus
+  `cached.json`; apply enforces the tier rule (`tierViolation`), stores each verdict once and scores
+  the employer's fetched postings, then the cached ones (single writer, `--dry-run` available).
+- `compare-verifiers.ts` — runs the API employer check with several models on the employers a judge
+  run would verify; logs billed cost per verdict and agreement with a reference. Reads the DB only.
 - `rescore-failed.ts` — re-score postings stuck in the `unknown` band (Jev + composer, no Anthropic key).
 - `recompose.ts` — recompute every composed row from its stored judgments and the current weight
   table; dry run by default, `--apply` writes.
@@ -221,7 +225,7 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
   `/audit` pages.
 
 ## Config & meta
-- `package.json` — scripts (`scrape`, `judge`, `judge:fetch/apply`, `rescore-failed`, `reverify-mail`,
+- `package.json` — scripts (`scrape`, `judge`, `judge-keyless:fetch/apply`, `rescore-failed`, `reverify-mail`,
   `recompose`, `rescan-impersonation`, `backfill-categories`, `backfill-posted-date`, `dev`,
   `build`, `test`) + deps.
 - `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs` — build/TS/CSS config.

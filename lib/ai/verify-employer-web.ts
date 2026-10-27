@@ -182,11 +182,33 @@ export function isAlarmingVerdict(w: WebVerification): boolean {
   )
 }
 
+/**
+ * Whether the primary model's verdict gets a second look from the escalation model: when it is
+ * alarming, or when the posting gives a mailing address and the primary could not classify it.
+ * The second case is the one alarming verdicts miss: on 1,000 postings Haiku left a house address
+ * "uncertain" (Timberdale Supply) where Opus found the residence that floors a score at 70.
+ */
+export function needsEscalation(w: WebVerification, applicationText: string): boolean {
+  return isAlarmingVerdict(w) || (applicationText.trim() !== "" && w.applicationAddressType === "uncertain")
+}
+
+/**
+ * Why a verdict breaks the tiered rule, or null when it doesn't. A verdict that needs escalation
+ * must come from the escalation model, alone or after the primary; any other may come from either.
+ * The keyless apply step enforces this because there no code escalates for it.
+ */
+export function tierViolation(w: WebVerification, applicationText: string): string | null {
+  if (!needsEscalation(w, applicationText)) return null
+  const { primary, escalation } = TIERED_VERIFIER
+  if (w.verifiedBy === escalation || w.verifiedBy === `${primary}>${escalation}`) return null
+  return `verdict needing escalation has verifiedBy=${w.verifiedBy ?? "(none)"}; it needs ${escalation}, alone or as ${primary}>${escalation}`
+}
+
 export type TieredVerifyOutput = WebVerifyOutput & { escalated: boolean; costUsd: number }
 
 /**
  * The employer check the judging paths use: the primary model first, and the escalation model in
- * its place when the primary's verdict is alarming. A failed escalation throws rather than keep
+ * its place when needsEscalation() says so. A failed escalation throws rather than keep
  * the unconfirmed alarm, so the caller treats it like any other failed verification.
  */
 export async function verifyEmployerTiered(
@@ -200,7 +222,7 @@ export async function verifyEmployerTiered(
   const escalation = VERIFIER_PROFILES[escalationName]
   const first = await verifyEmployerWeb(client, input, { retryDelayMs: opts.retryDelayMs, profile: primary })
   const firstCost = verifierCostUsd(primary, first.usage)
-  if (!isAlarmingVerdict(first.result)) {
+  if (!needsEscalation(first.result, input.applicationText)) {
     return { ...first, result: { ...first.result, verifiedBy: primaryName }, escalated: false, costUsd: firstCost }
   }
   const second = await verifyEmployerWeb(client, input, { retryDelayMs: opts.retryDelayMs, profile: escalation })

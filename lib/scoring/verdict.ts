@@ -1,5 +1,5 @@
 // The one per-posting pipeline behind every database write of a score: Jev judgments (when a
-// client is given), the composer, the prose. `npm run judge` and `judge:apply` both call this
+// client is given), the composer, the prose. `npm run judge` and `judge-keyless:apply` both call this
 // so a posting cannot score differently depending on which path drained the queue.
 
 import type { TypeSafeClient } from "@typesafe-ai/sdk"

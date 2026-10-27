@@ -19,7 +19,7 @@ import { prisma } from "../lib/db"
 import type { WebVerification } from "../lib/shared/json-schemas"
 import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { verificationAction } from "../lib/signals/verification-plan"
-import { isAlarmingVerdict, verifyEmployerWeb, type WebVerifyInput } from "../lib/ai/verify-employer-web"
+import { isAlarmingVerdict, needsEscalation, verifyEmployerWeb, type WebVerifyInput } from "../lib/ai/verify-employer-web"
 import { VERIFIER_PROFILES, verifierCostUsd, type VerifierName, type VerifierUsage } from "../lib/ai/verifier-models"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 
@@ -122,6 +122,7 @@ async function main() {
   }
 
   const [cheap, strong] = args.hybrid.split(":") as VerifierName[]
+  const inputs = new Map(chosen.map((t) => [t.employerId, t.input]))
   const c = rows.get(cheap), s = rows.get(strong)
   if (c && s) {
     let cost = 0, escalated = 0
@@ -129,7 +130,7 @@ async function main() {
     for (const [id, r] of c) {
       if (!r.ok) continue
       cost += r.costUsd!
-      if (isAlarmingVerdict(r.result!)) {
+      if (needsEscalation(r.result!, inputs.get(id)?.applicationText ?? "")) {
         escalated++
         const sr = s.get(id)
         cost += sr?.costUsd ?? 0

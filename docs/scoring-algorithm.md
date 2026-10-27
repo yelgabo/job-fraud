@@ -5,7 +5,7 @@ text judgments carry most of the signal. Measurement said otherwise; see
 `docs/jev-comparison-findings.md` for the numbers behind every claim here.
 
 Status: all four stages are live as of 2026-09-23. Both judging paths (`npm run judge` and
-`judge:apply`) go through `lib/scoring/verdict.ts`: Jev answers the stage 2 questions when
+`judge-keyless:apply`) go through `lib/scoring/verdict.ts`: Jev answers the stage 2 questions when
 `TYPESAFE_API_KEY` is set, `composeScore` produces the number, `explainVerdict` the prose, and the
 row stores `judgments` and `scoringVersion = 1`. `npm run recompose` reweights without inference.
 

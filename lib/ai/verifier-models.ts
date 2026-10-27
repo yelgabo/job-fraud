@@ -53,10 +53,11 @@ export type VerifierName = keyof typeof VERIFIER_PROFILES
 /** What verifyEmployerWeb sends when called without a profile: the request judge.ts used until 2026-10-26. */
 export const DEFAULT_VERIFIER: VerifierName = "haiku-4.5"
 
-// How the judging paths verify employers since 2026-10-26: the cheap model first, the strong one
-// only for a verdict that would raise a rating. Measured in docs/verifier-model-eval.md: Haiku 5.5
-// matched Opus 5.5 on every alarm call over 10 employers at a sixth of the cost, while Haiku 4.5
-// called two real out-of-province firms a location mismatch.
+// How both judge paths verify employers since 2026-10-27: the cheap model first, the strong one
+// when needsEscalation() says so (lib/ai/verify-employer-web.ts). Measured in
+// docs/verifier-model-eval.md: on 1,000 pending postings this matched an all-Opus run on every band
+// at about an eighth of the cost, and Haiku 4.5, the previous verifier, called two real
+// out-of-province firms a location mismatch.
 export const TIERED_VERIFIER = { primary: "haiku-5.5", escalation: "opus-5.5" } as const satisfies Record<string, VerifierName>
 
 export type VerifierUsage = { inputTokens: number; outputTokens: number; webSearchRequests: number }

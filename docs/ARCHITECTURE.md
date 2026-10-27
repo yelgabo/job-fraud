@@ -66,7 +66,8 @@ pipeline). One process writes at a time → no race conditions.
 - **Stage 1 — verify each distinct company _once_** (deduplicated): a Claude call with **live web
   search** answers *is this a real business? does the application go to a real office or a house/PO
   box? is a known brand being misused?* Haiku 5.5 answers first; an answer that would raise a
-  rating is checked again by Opus 5.5, whose verdict is kept. The verdict is cached on the company
+  rating, or a mailing address it could not classify, is checked again by Opus 5.5, whose verdict
+  is kept. The verdict is cached on the company
   and reused by all its postings.
 - **Stage 2 — judge the text, compose the score** (no web): TypeSafe's Jev answers a few typed
   questions about the posting text (does the application route fit this employer? is a private
