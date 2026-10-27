@@ -68,6 +68,14 @@ Goal: the site stays up through the first spike after the public announcement, w
    Railway's metrics for that minute show 0.025 vCPU and 0.001 GB sent, because the edge served the
    777 MiB. Reaching 1,000/s needs a second machine or a cloud VM with a faster link.
 
+   Uncached at 100/s, also 2026-10-27: 30 s over never-requested filter and page URLs gave
+   2,975 × 200, median 156 ms, p95 434 ms, but most of those pages were past the end of their
+   results and rendered no rows. 10 s over the 1,080 unrequested pages that do have rows (all
+   page 41 or later, about two thirds of requests uncached) gave 984 × 200, median 310 ms, but p90
+   3.1 s and p99 3.9 s. Postgres (`Postgres-t4uu`) was the bottleneck, at about 4 vCPU against
+   0.7 for the app: every uncached page runs about a dozen count and group-by queries for the
+   tabs, which do not depend on the page number.
+
    The p95 tails come mostly from new TLS connections, which took 210 to 380 ms from the test
    machine. The tracking-parameter redirects are `x-cache: DYNAMIC`, so every one of them reaches
    the middleware on the origin. The 50/s uncached run reused a URL list that earlier runs had
