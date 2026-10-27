@@ -53,6 +53,21 @@ Goal: the site stays up through the first spike after the public announcement, w
 
    This sends real traffic at production, so run it with the owner's go-ahead.
 
+   A reduced run on 2026-10-27 (oha 1.16 from one Mac, 2 replicas) had no errors:
+
+   | Test | Rate | Result | Median | p95 |
+   |---|---|---|---|---|
+   | Cached `/?band=high` | 100/s for 30 s | 2,992 × 200 | 94 ms | 329 ms |
+   | `/?fbclid=loadtest` | 50/s for 20 s | 996 × 308 | 91 ms | 583 ms |
+   | Uncached `?band=…&page=N` | 10/s, then 25/s | 198 and 494 × 200 | 297 ms, 218 ms | 493 ms, 460 ms |
+   | Same list | 50/s for 20 s | 995 × 200 | 116 ms | 297 ms |
+
+   The p95 tails come mostly from new TLS connections, which took 210 to 380 ms from the test
+   machine. The tracking-parameter redirects are `x-cache: DYNAMIC`, so every one of them reaches
+   the middleware on the origin. The 50/s uncached run reused a URL list that earlier runs had
+   partly cached, so it overstates how fast pure misses are; 25/s is the clean miss figure. Oha's
+   "aborted due to deadline" lines are requests still in flight when the timer ended, not errors.
+
 ## During the spike
 
 - Watch Railway's metrics for the `job-fraud` service (CPU, memory, 5xx).
