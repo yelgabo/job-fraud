@@ -9,6 +9,7 @@ import { parseFlags } from "../lib/shared/json-schemas"
 import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
+import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 
 async function main() {
   const env = loadScrapeEnv()
@@ -52,6 +53,8 @@ async function main() {
       )
       // re-score every job for this employer
       for (const job of group) {
+        // A confirmed impersonation was scored without the composer; re-scoring would undo it.
+        if (isImpersonationVerdict(job.reasoning)) continue
         const { usage: _usage, ...data } = await buildVerdict(jev, { ...job, employerName: rep.employer!.nameDisplay }, checks)
         await prisma.job.update({ where: { workbcId: job.workbcId }, data })
         console.log(`   ${job.workbcId} ${job.title} → ${data.riskBand} ${data.fraudScore}`)

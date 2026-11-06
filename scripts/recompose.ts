@@ -9,6 +9,7 @@ import { parseChecks } from "../lib/shared/json-schemas"
 import { composeVerdict } from "../lib/scoring/verdict"
 import type { Judgments } from "../lib/scoring/compose"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
+import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 
 function parseArgs() {
   const a = { apply: false, limit: undefined as number | undefined }
@@ -32,7 +33,13 @@ async function main() {
 
   const moves: Record<string, number> = {}
   let changed = 0
+  let impersonations = 0
   for (const job of jobs) {
+    // Rows written before the impersonation write cleared scoringVersion can still carry one.
+    if (isImpersonationVerdict(job.reasoning)) {
+      impersonations++
+      continue
+    }
     const judgments = job.judgments as Judgments | null
     const { usage: _usage, ...data } = composeVerdict(job, parseChecks(job.employer?.checks), judgments)
     const from = job.riskBand ?? "?"
@@ -44,7 +51,7 @@ async function main() {
     if (args.apply) await prisma.job.update({ where: { workbcId: job.workbcId }, data })
   }
 
-  console.log(`[recompose] score changed on ${changed}/${jobs.length}`)
+  console.log(`[recompose] score changed on ${changed}/${jobs.length}, ${impersonations} confirmed impersonations skipped`)
   console.log(`[recompose] band moves: ${JSON.stringify(moves)}`)
   if (args.apply && changed > 0) await requestRevalidation()
   await prisma.$disconnect()

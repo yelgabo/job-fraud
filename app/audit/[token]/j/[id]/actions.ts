@@ -27,7 +27,8 @@ export async function flagForJudge(token: string, workbcId: string, formData: Fo
   await prisma.judgeRequest.create({ data: { workbcId, kind, note } })
   if (note) await prisma.reviewNote.create({ data: { workbcId, body: `[${kind} flag] ${note}` } })
   // A rerun goes back to pending immediately so the next update's normal judge pass picks it up.
-  // A deep request keeps its current score until the agent verdict overwrites it.
+  // A deep request keeps its current score, and the posting stays on the site, until
+  // judge-keyless:apply re-scores it from the agent's verdict (lib/shared/deep-requests.ts).
   if (kind === "rerun") {
     await prisma.job.update({ where: { workbcId }, data: { scoredAt: null } })
   }

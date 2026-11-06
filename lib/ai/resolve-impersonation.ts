@@ -139,6 +139,9 @@ export async function resolveApplyHost(
       riskBand: bandFor(score),
       reasoning,
       signals: signals as never,
+      // Not composed, so not a version: `npm run recompose` selects rows by a non-null
+      // scoringVersion and would overwrite this 90 if a re-judged row kept its old one.
+      scoringVersion: null,
       scoredAt: new Date(),
     },
   })

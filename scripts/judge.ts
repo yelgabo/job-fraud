@@ -102,6 +102,7 @@ async function main() {
 
   let vDone = 0
   let vFail = 0
+  const failedEmployers = new Set<string>()
   let webIn = 0
   let webOut = 0
   let webSearches = 0
@@ -138,6 +139,8 @@ async function main() {
         } catch (e) {
           if (isBillingError(e)) { billingAbort = true; return }
           vFail++
+          failedEmployers.add(d.id)
+          console.error(`  [verify] ${rep.employer!.nameDisplay}: ${(e as Error).message.slice(0, 120)}`)
         }
         if (++vDone % 50 === 0) console.log(`[verify] ${vDone}/${toWebVerify.length} employers`)
       }),
@@ -149,6 +152,7 @@ async function main() {
   // --- Stage 2: judge text (Jev) + compose (code); reuses employer verdict + job fields ---
   let sDone = 0
   let sFail = 0
+  let heldBack = 0
   let impostors = 0
   let totalIn = 0
   let totalOut = 0
@@ -158,6 +162,13 @@ async function main() {
     jobs.map((job) =>
       sLimit(async () => {
         if (billingAbort) return
+        // The employer was due a fresh check because its cached verdict could not be reused, and
+        // that check failed, so scoring now would publish the posting on the stale or missing
+        // verdict. Leave it untouched: still pending on a normal run, its old score on --rejudge.
+        if (job.employerId && failedEmployers.has(job.employerId)) {
+          heldBack++
+          return
+        }
         // Brand-impersonation pre-check: if the apply URL routes to a different company than the
         // claimed employer and a web-check confirms it, this re-attributes the posting + writes a
         // HIGH score itself — so skip normal scoring for that job.
@@ -200,7 +211,7 @@ async function main() {
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail} (${sFail} left pending) | brand-impersonation re-attributed: ${impostors}`)
+  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail - heldBack} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed) | brand-impersonation re-attributed: ${impostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(
     `Web-verify (${TIERED_VERIFIER.primary}, alarming verdicts re-checked by ${TIERED_VERIFIER.escalation}): ${escalated} escalated | tokens in=${webIn} out=${webOut} | searches ${webSearches} | ~$${webCost.toFixed(2)} at list price`,

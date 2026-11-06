@@ -21,6 +21,7 @@ import { mailEvidence } from "../lib/shared/mail-evidence"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { planByEmployer, presumedVerdict } from "../lib/signals/verification-plan"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
+import { scoreableWhere } from "../lib/shared/deep-requests"
 
 /** A dir contributes its verdicts*.json, its cached.json, and its batch-*.json (for the posting lists). */
 function resolveFiles(args: string[]) {
@@ -75,9 +76,14 @@ async function main() {
       `(${jev ? "Jev + composer" : "composer only, no TYPESAFE_API_KEY"})`,
   )
 
+  const openDeep = await prisma.judgeRequest.findMany({ where: { kind: "deep", resolvedAt: null }, select: { workbcId: true } })
+  const openDeepIds = new Set(openDeep.map((r) => r.workbcId))
+  const noDeep = new Set<string>()
+
   let applied = 0
   let skipped = 0
   let tierRejected = 0
+  let deepResolved = 0
   let tokens = 0
   const bands: Record<string, number> = {}
   const scored = new Set<string>()
@@ -95,11 +101,14 @@ async function main() {
     bands[data.riskBand] = (bands[data.riskBand] ?? 0) + 1
   }
 
-  /** Scores the listed postings that are still pending and not yet scored in this run. */
-  async function scorePostings(workbcIds: string[], checks: unknown) {
+  /**
+   * Scores the listed postings not yet scored in this run: the pending ones, plus, when `deepIds`
+   * names them, judged ones with an open deep review request.
+   */
+  async function scorePostings(workbcIds: string[], checks: unknown, deepIds: ReadonlySet<string> = noDeep) {
     const ids = workbcIds.filter((id) => !scored.has(id))
-    const pending = await prisma.job.findMany({ where: { workbcId: { in: ids }, scoredAt: null }, include: { employer: true } })
-    for (const j of pending) await score({ ...j, employerName: j.employer?.nameDisplay ?? null }, checks)
+    const rows = await prisma.job.findMany({ where: scoreableWhere(ids, deepIds), include: { employer: true } })
+    for (const j of rows) await score({ ...j, employerName: j.employer?.nameDisplay ?? null }, checks)
   }
 
   for (const v of verdicts) {
@@ -124,7 +133,18 @@ async function main() {
         checks = { ...checks, web: d.web }
         if (!dryRun) await prisma.employer.update({ where: { id: job.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
       }
-      await scorePostings(d.web ? (postingsFor.get(d.workbcId) ?? [d.workbcId]) : [d.workbcId], checks)
+      await scorePostings(d.web ? (postingsFor.get(d.workbcId) ?? [d.workbcId]) : [d.workbcId], checks, openDeepIds)
+      // A verdict that names a deep-flagged posting is the agent investigation that request asked
+      // for, so it services the request once that posting has been scored.
+      if (openDeepIds.has(d.workbcId) && scored.has(d.workbcId)) {
+        if (!dryRun) {
+          await prisma.judgeRequest.updateMany({
+            where: { kind: "deep", workbcId: d.workbcId, resolvedAt: null },
+            data: { resolvedAt: new Date() },
+          })
+        }
+        deepResolved++
+      }
     } catch (err) {
       skipped++
       console.error(`  skip: ${d.workbcId} - ${(err as Error).message.slice(0, 100)}`)
@@ -162,7 +182,9 @@ async function main() {
 
   console.log(
     `[judge-keyless:apply]${dryRun ? " DRY RUN, nothing written:" : ""} ${dryRun ? "would score" : "scored"} ${applied} postings, ` +
-      `skipped ${skipped}, rejected by the tier rule ${tierRejected} | bands: ${JSON.stringify(bands)} | Jev input tokens ${tokens}`,
+      `skipped ${skipped}, rejected by the tier rule ${tierRejected}, ` +
+      `deep requests ${dryRun ? "it would resolve" : "resolved"} ${deepResolved} | ` +
+      `bands: ${JSON.stringify(bands)} | Jev input tokens ${tokens}`,
   )
   if (applied > 0 && !dryRun) await requestRevalidation()
   await prisma.$disconnect()

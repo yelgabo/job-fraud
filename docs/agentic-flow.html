@@ -320,14 +320,14 @@ The keyless fetch groups through <code>planByEmployer</code>, which sends a post
 to the web check on its own, while <code>judge.ts</code> groups inline and gives such a posting no
 employer check at all.</p>
 <div class="note">
-<p><strong>A failed employer check does not keep postings pending on the API path.</strong> When a
-check fails for any reason other than billing (a refusal, a malformed answer after the retry, a
-failed Opus re-check), <code>judge.ts</code> counts the failure and moves on. Stage 2 then scores that
-employer's postings with whatever verdict was already cached, which may be the old unconfirmed one that
-triggered the re-check, or nothing. The worst case is a placeholder key. It still counts as set, every
-Anthropic call returns 401, every check fails, and every posting is scored with no new employer
-evidence. On a keyless machine, leave the <code>ANTHROPIC_API_KEY</code> line in <code>.env</code>
-commented out.</p>
+<p><strong>A failed employer check holds its postings back.</strong> When a check fails for any
+reason other than billing (a refusal, a malformed answer after the retry, a failed Opus re-check),
+<code>judge.ts</code> logs it and stage 2 skips that employer's postings, which stay pending. Until
+6 November 2026 stage 2 scored them anyway on whatever verdict was cached. A placeholder key still
+causes trouble. It counts as set, every Anthropic call returns 401, and while postings that needed a
+check stay pending, postings whose employer has a cached or presumed verdict are scored without the
+impersonation check. On a keyless machine, leave the <code>ANTHROPIC_API_KEY</code> line in
+<code>.env</code> commented out.</p>
 </div>
 </div>
 </section>
@@ -541,12 +541,12 @@ and tenant pair for the rest of the run.</p>
     <li><code>impersonation</code>: the posting is re-attributed to the real company and written
     directly as score 90 (High), with reasoning that starts "Brand impersonation:".</li>
 </ul>
-<p>This is the one place the system writes a fixed number without the composer. Two re-scoring
-scripts, <code>backfill-ats</code> and <code>recheck-cached-verdicts</code>, recognise the reasoning
-prefix and skip these rows. <code>recompose</code> and <code>reverify-mail</code> do not check it. The
-impersonation write also leaves <code>scoringVersion</code> unchanged, so a composed row that is later
-re-judged into an impersonation keeps its version number, and the next <code>recompose --apply</code>
-would overwrite its 90. Opus runs this check because a smaller model
+<p>This is the one place the system writes a fixed number without the composer. The write sets
+<code>scoringVersion</code> to null, and every re-scoring script (<code>backfill-ats</code>,
+<code>recheck-cached-verdicts</code>, <code>recompose</code>, <code>reverify-mail</code>) skips rows
+whose reasoning starts with that prefix. Before 6 November the write left <code>scoringVersion</code>
+unchanged and <code>recompose</code> did not check the prefix, so a re-judged composed row could have
+lost its 90; neither of the two impersonation rows in the database was affected. Opus runs this check because a smaller model
 labelled a real construction company's division as an impersonation of its parent group. It moved from
 Opus 4.8 to Opus 5.5 on 27 October without a side-by-side comparison, and no labelled impersonation
 cases exist yet. Both October runs logged zero impersonations.</p>
@@ -672,10 +672,9 @@ because the medium band is full of big brands, so weighting it directly would pe
     <li><strong>Unknown stays neutral.</strong> <code>uncertain</code> and <code>unknown</code> add
     nothing, null checks match no weight-table condition, and a helper omits what it could not
     search.</li>
-    <li><strong>Most failures leave work pending.</strong> A billing error aborts the run, a Jev error
-    leaves the posting pending, and a rejected keyless verdict leaves its employer's postings in the
-    queue. The exception is an ordinary employer-check failure on the API path, which still lets
-    stage 2 score (see <a href="#paths">Two judge paths</a>).</li>
+    <li><strong>Failures leave work pending.</strong> A billing error aborts the run, a failed
+    employer check holds back that employer's postings, a Jev error leaves the posting pending, and a
+    rejected keyless verdict leaves its employer's postings in the queue.</li>
     <li><strong>Least-privilege database login.</strong> Local <code>.env</code> files connect as
     <code>jobfraud_local</code>, which can read and write rows but cannot change the schema or
     truncate tables. Schema changes reach production only through a deploy.</li>
@@ -694,18 +693,15 @@ pages, the app's only write path. The owner can add a <code>ReviewNote</code>, o
 <code>scoredAt</code> at once, so the next judge pass re-scores it, and the API judge marks the request
 resolved when that happens. A <code>deep</code> request keeps the current score and queues the posting
 for a single-agent investigation with the owner's note passed in as context.</p>
-<div class="note">
-<p><strong>A deep request does not re-score its posting as written.</strong> The request leaves
-<code>scoredAt</code> set, and <code>judge-keyless:apply</code> only scores postings whose
-<code>scoredAt</code> is null. The agent's verdict therefore replaces the employer's
-<code>checks.web</code>, which later postings by that employer will use, while the flagged posting
-keeps its old score (<code>app/audit/[token]/j/[id]/actions.ts</code>,
-<code>scripts/judge-keyless-apply.ts</code>).</p>
-</div>
+<p>The posting stays on the site with its old score while the agent works. When the agent's
+verdict names the flagged posting, <code>judge-keyless:apply</code> re-scores it even though it is
+judged and stamps the request resolved. Before 6 November apply only scored pending postings, so a
+deep verdict updated the employer but never the posting the owner had flagged.</p>
 <p>The <code>update-postings</code> skill runs a full refresh in this order:</p>
 <ol>
     <li>Drain the review queue: send each <code>deep</code> request to one fraud-analyst agent with the
-    owner's note, apply its verdict, and stamp <code>resolvedAt</code>.</li>
+    owner's note and apply its verdict, which re-scores the posting and stamps
+    <code>resolvedAt</code>.</li>
     <li>Scrape twice, a term pass for software roles and a city-wide Victoria pass. Both are needed
     because they collect different postings.</li>
     <li>Pick the judge path from the <code>ANTHROPIC_API_KEY</code> predicate.</li>
@@ -757,10 +753,6 @@ goes.</p>
     has never been compared side by side with its predecessor.</li>
     <li><strong>Aggregator mislocations.</strong> A job in Houston, Texas listed as Houston, BC scores as
     a location mismatch instead of being recognised as out of scope.</li>
-    <li><strong>Deep review requests do not re-score the flagged posting</strong>, and
-    <code>recompose</code> can overwrite an impersonation row's fixed 90 (both described above).</li>
-    <li><strong>An ordinary employer-check failure on the API path still lets stage 2 score</strong>,
-    using whatever verdict was cached before.</li>
     <li><strong>The scheduler is not judging</strong>, and 17,033 published ratings still come from the
     model-chosen era (see <a href="#today">Where things stand today</a>).</li>
 </ul>

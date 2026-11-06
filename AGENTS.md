@@ -85,8 +85,10 @@ Which path runs is decided by one predicate: **is `ANTHROPIC_API_KEY` set in `.e
 non-empty, which is all `lib/env.ts` checks. `.env.example` therefore ships that line commented out,
 and leaving it commented is what keeps a keyless machine on the keyless path. A placeholder or stale
 key answers the predicate "yes" and then every Anthropic call 401s; a 401 is not a billing error, so
-the run does not abort, it writes a failed verdict plus a `scoredAt` timestamp per posting and those
-postings stop showing as pending. `.env.example`'s comment on that variable has the detail.
+the run does not abort. Every employer check fails, and since 2026-11-06 `judge.ts` holds back the
+postings of any employer whose check failed (they stay pending) instead of scoring them on a stale
+or missing verdict. Postings of employers with a reusable or presumed verdict are still scored, with
+the impersonation pre-check failing open. `.env.example`'s comment on that variable has the detail.
 
 What still differs:
 
