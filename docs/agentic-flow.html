@@ -1,0 +1,800 @@
+<title>Job-fraud agentic flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: one reading column for prose, figures and tables break out to the full wrapper width. */
+:root {
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --fg: #1c2127;
+    --muted: #59626e;
+    --rule: #d9dde3;
+    --accent: #85601c;
+    --code-bg: #e9ebef;
+    --low: #2c7a52;
+    --med: #9a6a12;
+    --high: #b3442d;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #121316;
+        --surface: #1a1b1f;
+        --fg: #ebe9e4;
+        --muted: #a7abb3;
+        --rule: #2d2f35;
+        --accent: #dec18a;
+        --code-bg: #202126;
+        --low: #79c79b;
+        --med: #e3b862;
+        --high: #ec8f78;
+        color-scheme: dark;
+    }
+}
+:root[data-theme="dark"] {
+    --bg: #121316;
+    --surface: #1a1b1f;
+    --fg: #ebe9e4;
+    --muted: #a7abb3;
+    --rule: #2d2f35;
+    --accent: #dec18a;
+    --code-bg: #202126;
+    --low: #79c79b;
+    --med: #e3b862;
+    --high: #ec8f78;
+    color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 var(--body);
+    margin: 0;
+}
+.wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-block: 40px 80px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.prose { max-width: 74ch; }
+header.top { padding-bottom: 8px; }
+.eyebrow {
+    font: 500 12.5px/1.4 var(--mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+}
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.2; }
+h1 { font-size: clamp(34px, 5vw, 50px); font-weight: 600; margin: 0 0 14px; letter-spacing: -0.01em; }
+h2 {
+    font-size: 27px;
+    font-weight: 600;
+    margin: 64px 0 14px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+}
+h3 { font-size: 19.5px; font-weight: 600; margin: 34px 0 8px; }
+.lede { font-size: 18.5px; color: var(--muted); max-width: 70ch; margin: 0; }
+p, li { max-width: 74ch; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, .dg-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+code {
+    font: 0.86em/1.4 var(--mono);
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+}
+pre {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font: 13.5px/1.55 var(--mono);
+    max-width: 82ch;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+nav.toc { margin: 22px 0 0; }
+nav.toc ol {
+    columns: 2 260px;
+    column-gap: 40px;
+    padding-left: 1.3em;
+    margin: 0;
+    font-size: 15px;
+}
+nav.toc li { break-inside: avoid; margin: 2px 0; }
+.facts { padding-left: 1.2em; }
+.facts li { margin: 6px 0; }
+.table-scroll { overflow-x: auto; margin: 18px 0; }
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14.5px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+}
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 600 13px/1.4 var(--body); color: var(--muted); letter-spacing: 0.02em; background: var(--code-bg); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.band { font-weight: 600; }
+.band.low { color: var(--low); }
+.band.med { color: var(--med); }
+.band.high { color: var(--high); }
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 20px 0;
+}
+.stat { background: var(--surface); padding: 14px 16px; min-width: 0; }
+.stat .k { font: 500 12px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.stat .v { font: 600 26px/1.25 var(--display); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.stat .s { font-size: 13px; color: var(--muted); }
+.note {
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    padding: 12px 16px;
+    margin: 18px 0;
+    max-width: 74ch;
+}
+.note p { margin: 0.4em 0; }
+.dg { margin: 26px 0 30px; }
+.dg-scroll { overflow-x: auto; background: #101013; border-radius: 10px; }
+.dg svg { display: block; width: 100%; height: auto; }
+.dg text { font-family: "Avenir Next", Avenir, system-ui, sans-serif; fill: #f0ece3; }
+.dg text.t { font-size: 18px; }
+.dg text.d { font-size: 14.5px; fill: #c0bcb6; }
+.dg text.e { font-size: 14px; fill: #c0bcb6; }
+.dg text.i { font-size: 12.5px; fill: #f0ece3; }
+.dg text.b { font-size: 14px; fill: #a9a39a; letter-spacing: 0.02em; }
+.dg .edge, .dg .bus { fill: none; stroke: #dec18a; stroke-width: 1.8; }
+.dg figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); max-width: 90ch; }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13.5px; color: var(--muted); }
+@media (max-width: 560px) {
+    body { font-size: 15.5px; }
+    h2 { font-size: 23px; margin-top: 48px; }
+}
+</style>
+
+<div class="wrap">
+<header class="top">
+    <p class="eyebrow">yelgabo/job-fraud · system report · 6 November 2026</p>
+    <h1>Job-fraud agentic flow</h1>
+    <p class="lede">How a WorkBC job posting becomes a published Low, Medium or High rating. This report
+    covers which steps are plain code, which are single model calls and which are agents, and the rules
+    that stop any model or agent from publishing a claim on its own.</p>
+    <nav class="toc" aria-label="Contents">
+        <ol>
+            <li><a href="#short">The short version</a></li>
+            <li><a href="#today">Where things stand today</a></li>
+            <li><a href="#overview">The system in one picture</a></li>
+            <li><a href="#paths">Two judge paths, one scorer</a></li>
+            <li><a href="#keyless">The keyless judge, step by step</a></li>
+            <li><a href="#tiers">The tiered employer check</a></li>
+            <li><a href="#api">The API judge</a></li>
+            <li><a href="#impersonation">The brand-impersonation check</a></li>
+            <li><a href="#compose">How the score is composed</a></li>
+            <li><a href="#guardrails">Guardrails</a></li>
+            <li><a href="#humans">The human loop</a></li>
+            <li><a href="#cost">Cost and throughput</a></li>
+            <li><a href="#gaps">Known gaps</a></li>
+            <li><a href="#files">File map</a></li>
+        </ol>
+    </nav>
+</header>
+
+<section class="prose">
+<h2 id="short">The short version</h2>
+<p>job-fraud collects WorkBC postings and rates each one on whether it looks like a genuine attempt to
+hire locally, as opposed to an advert placed to show that no Canadian applied. The rating is published
+next to a real employer's name, and the whole design follows from that. Models and agents gather
+evidence. Code turns the evidence into the number.</p>
+<p>There are three phases, and they share one Postgres database without calling each other. A scraper
+collects postings and marks them pending. A judge evaluates pending postings. A read-only Next.js site
+shows the judged ones. The judge has two front ends. The <em>API judge</em>
+is one Node process that calls Claude through the Anthropic API. The <em>keyless judge</em> is a Claude
+Code session that sends helper agents to research employers on the web. Both hand their evidence to the
+same composer, so the same evidence gets the same score whichever path gathered it. The evidence
+itself can differ. Only the API judge runs the impersonation check, and its verifier sees an
+800-character description excerpt where keyless helpers see 1,800.</p>
+<ul class="facts">
+    <li>Agents are given no database step. During a run, one process writes: the API judge itself
+    (from several concurrent tasks inside it), or <code>judge-keyless:apply</code> on the keyless
+    path.</li>
+    <li>Agents never choose a score. If a helper returns a score, signals or reasoning, the apply step
+    drops them before it reads the verdict.</li>
+    <li>Each employer is researched once per run, however many postings it has. A run over 4,243
+    postings web-checked 219 employers.</li>
+    <li>The cheap model goes first. Haiku 5.5 checks every employer that needs a web check, and
+    Opus 5.5 re-checks any verdict that would raise a rating, plus two cases that would lower it or
+    leave it unclear.</li>
+    <li>An out-of-credit error stops the run and leaves postings pending, so an empty wallet cannot
+    publish a wave of blank ratings.</li>
+</ul>
+</section>
+
+<section>
+<h2 id="today">Where things stand today</h2>
+<p class="prose">These counts come from a read-only query against the production database on
+6 November 2026.</p>
+<div class="stat-row">
+    <div class="stat"><div class="k">Postings</div><div class="v">23,751</div><div class="s">4,544 employers</div></div>
+    <div class="stat"><div class="k">Judged</div><div class="v">23,021</div><div class="s">shown on the site</div></div>
+    <div class="stat"><div class="k">Low</div><div class="v band low">21,508</div><div class="s">93.4% of judged</div></div>
+    <div class="stat"><div class="k">Medium</div><div class="v band med">1,310</div><div class="s">5.7% of judged</div></div>
+    <div class="stat"><div class="k">High</div><div class="v band high">203</div><div class="s">0.9% of judged</div></div>
+    <div class="stat"><div class="k">Pending</div><div class="v">730</div><div class="s">waiting for a judge run</div></div>
+</div>
+<div class="prose">
+<p><strong>The scheduler is scraping but not judging.</strong> The newest scrape is from
+2 November 2026 at 12:24 UTC, which is the Monday cron run. The newest judgment is from 27 October
+2026 at 13:26 UTC, and 730 postings are waiting. That pattern matches the scheduler script, which only
+judges when <code>ANTHROPIC_API_KEY</code> is set on the scheduler service. I could not read the
+service's variables because this checkout is not linked to the Railway project, so the missing key is
+the likely cause rather than a confirmed one.</p>
+<p><strong>Most published ratings predate the composer.</strong> Of the 23,021 judged postings, 17,033
+have <code>scoringVersion</code> null, which means a model chose the number before the composer existed
+(or the impersonation path wrote it). Another 1,662 are version 1 and 4,326 are version 2. So the rule
+that no model chooses the number covers about a quarter of what the site shows today. Moving the rest
+onto the composer needs a fresh Jev call per posting, because those rows store no judgments for
+<code>npm run recompose</code> to reuse.</p>
+<p>Employer verdicts have mixed origins as well. 445 came from Haiku 5.5 alone, 50 from Haiku followed
+by Opus, and 295 from Opus alone (the re-check script). Another 365 were presumed from an own-ATS
+match, 963 come from the web check as it ran before the tiers, and 2,426 employers carry neither
+marker, either because they were never checked or because their verdict predates both fields.</p>
+</div>
+</section>
+
+<section>
+<h2 id="overview">The system in one picture</h2>
+<figure class="dg" id="f1">
+  <div class="dg-scroll" tabindex="0" role="region" aria-label="System overview. Scrolls sideways on small screens.">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" style="min-width:1000px" role="img" aria-labelledby="f1-t f1-d">
+      <title id="f1-t">System overview</title>
+      <desc id="f1-d">WorkBC APIs return postings to the scrape CLI, which upserts them into Postgres as pending. A weekly scheduler runs the scrape and, when keyed, the API judge. Either the API judge or the keyless judge reads pending postings from Postgres and writes employer verdicts and scores back. The API judge calls the Anthropic API; both judges call TypeSafe Jev. The web app reads judged rows, and the owner files review requests through its token-gated audit pages.</desc>
+      <defs>
+        <marker id="f1-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#dec18a"/></marker>
+      </defs>
+      <rect width="1200" height="760" fill="#101013"/>
+      <rect x="440" y="376" width="610" height="210" rx="12" fill="none" stroke="#57534b" stroke-width="1.4" stroke-dasharray="7 6"/><text class="b" x="458" y="402" text-anchor="start">Judge: one path per run, one DB writer</text>
+      <rect x="40" y="90" width="190" height="90" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="135.0" y="120.0" text-anchor="middle" font-weight="600">WorkBC APIs</text><text class="d" x="135.0" y="143.0" text-anchor="middle">search + job detail</text><text class="d" x="135.0" y="163.0" text-anchor="middle">public JSON</text><rect x="300" y="90" width="200" height="90" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="400.0" y="120.0" text-anchor="middle" font-weight="600">Scrape CLI</text><text class="d" x="400.0" y="143.0" text-anchor="middle">regex flags, NOC, ATS</text><text class="d" x="400.0" y="163.0" text-anchor="middle">no model, no key</text><path d="M610 76A110.0 14 0 0 1 830 76V216A110.0 14 0 0 1 610 216Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="720.0" cy="76" rx="110.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="720.0" y="141.0" text-anchor="middle" font-weight="600">Postgres</text><text class="d" x="720.0" y="164.0" text-anchor="middle">Employer, Job rows</text><text class="d" x="720.0" y="184.0" text-anchor="middle">JudgeRequest, search log</text><rect x="930" y="90" width="240" height="90" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1050.0" y="120.0" text-anchor="middle" font-weight="600">Web app (Next.js)</text><text class="d" x="1050.0" y="143.0" text-anchor="middle">public pages, 10 min cache</text><text class="d" x="1050.0" y="163.0" text-anchor="middle">token-gated /audit</text><rect x="290" y="280" width="220" height="90" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="400.0" y="310.0" text-anchor="middle" font-weight="600">Scheduler (cron)</text><text class="d" x="400.0" y="333.0" text-anchor="middle">Mondays 12:17 UTC</text><text class="d" x="400.0" y="353.0" text-anchor="middle">scrape x2, judge if keyed</text><rect x="930" y="260" width="240" height="86" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1050.0" y="298.0" text-anchor="middle" font-weight="600">Owner (admin)</text><text class="d" x="1050.0" y="321.0" text-anchor="middle">reviews postings on /audit</text><rect x="498" y="422" width="220" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="484" y="436" width="220" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="470" y="450" width="220" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="580.0" y="485.0" text-anchor="middle" font-weight="600">API judge</text><text class="d" x="580.0" y="508.0" text-anchor="middle">npm run judge</text><text class="d" x="580.0" y="528.0" text-anchor="middle">one Node process</text><rect x="788" y="422" width="230" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="774" y="436" width="230" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="760" y="450" width="230" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="875.0" y="485.0" text-anchor="middle" font-weight="600">Keyless judge</text><text class="d" x="875.0" y="508.0" text-anchor="middle">Claude Code session</text><text class="d" x="875.0" y="528.0" text-anchor="middle">Haiku + Opus helper agents</text><rect x="470" y="640" width="220" height="86" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="580.0" y="668.0" text-anchor="middle" font-weight="600">Anthropic API</text><text class="d" x="580.0" y="691.0" text-anchor="middle">Haiku 5.5, Opus 5.5</text><text class="d" x="580.0" y="711.0" text-anchor="middle">web_search tool</text><rect x="780" y="640" width="230" height="86" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="895.0" y="668.0" text-anchor="middle" font-weight="600">TypeSafe Jev</text><text class="d" x="895.0" y="691.0" text-anchor="middle">typed questions about</text><text class="d" x="895.0" y="711.0" text-anchor="middle">the posting text</text>
+      <path class="edge" d="M230 140H300" marker-end="url(#f1-arr)"/><text class="e" x="265" y="128" text-anchor="middle">postings</text><path class="edge" d="M500 140H610" marker-end="url(#f1-arr)"/><text class="e" x="555" y="112" text-anchor="middle">upsert as</text><text class="e" x="555" y="129" text-anchor="middle">pending</text><path class="edge" d="M830 120H930" marker-end="url(#f1-arr)"/><text class="e" x="880" y="108" text-anchor="middle">judged rows</text><path class="edge" d="M930 168H830" marker-end="url(#f1-arr)"/><text class="e" x="880" y="192" text-anchor="middle">flag requests</text><path class="edge" d="M400 280V180" marker-end="url(#f1-arr)"/><text class="e" x="410" y="236" text-anchor="start">runs scrape</text><path class="edge" d="M400 370V500H470" marker-end="url(#f1-arr)"/><text class="e" x="390" y="440" text-anchor="end">runs judge, if keyed</text><path class="edge" d="M1050 260V180" marker-end="url(#f1-arr)"/><text class="e" x="1060" y="226" text-anchor="start">rerun / deep</text><path class="edge" d="M690 232V376" marker-end="url(#f1-arr)"/><text class="e" x="680" y="310" text-anchor="end">pending postings</text><path class="edge" d="M760 376V232" marker-end="url(#f1-arr)"/><text class="e" x="770" y="310" text-anchor="start">verdicts, scores</text><path class="edge" d="M580 550V640" marker-end="url(#f1-arr)"/><text class="e" x="570" y="612" text-anchor="end">verify, impersonation</text><path class="edge" d="M690 535L800 640" marker-end="url(#f1-arr)"/><path class="edge" d="M895 550V640" marker-end="url(#f1-arr)"/><text class="e" x="905" y="612" text-anchor="start">Jev questions</text>
+      <text class="e" x="30" y="738" text-anchor="start">Stacks = several parallel workers or agents. Cylinders = stored state.</text>
+    </svg>
+  </div>
+  <figcaption>The three phases share one database and never call each other. The keyless judge's web research runs inside the Claude Code session, so only the API judge talks to the Anthropic API. Both judges ask Jev the same text questions.</figcaption>
+</figure>
+<div class="prose">
+<p>The scraper is deterministic. It reads WorkBC's JSON search and detail APIs, runs regex checks over
+each description (free email domain, mail-in résumé, crypto payment, banking details or ID before an
+offer, a fee to apply, WhatsApp or Telegram only), buckets the NOC occupation code into a job category,
+and classifies the apply link's host against a registry of applicant tracking systems such as Workday
+and Greenhouse. New postings arrive with <code>scoredAt</code> null, and null is what pending means everywhere
+else in the system. Re-scraping a posting that is already judged updates its fields and leaves it
+judged.</p>
+<p>The site only shows judged rows. Public pages are cached for 600 seconds, so a judge run is visible
+within ten minutes, or immediately when <code>REVALIDATE_TOKEN</code> is set and the run can call
+<code>POST /api/revalidate</code>. There is no staging database. A local judge run writes to
+production and is live once the cache turns over. The site's only write path is the token-gated
+<code>/audit</code> mirror, where the owner can leave a note or ask for a posting to be judged again.</p>
+</div>
+</section>
+
+<section>
+<h2 id="paths">Two judge paths, one scorer</h2>
+<div class="prose">
+<p>One predicate picks the path: is <code>ANTHROPIC_API_KEY</code> non-empty in <code>.env</code>? If
+it is, <code>npm run judge</code> does everything in one process. If it is not, the keyless judge runs
+inside a Claude Code session and uses that session's agents for web research. A second predicate,
+<code>TYPESAFE_API_KEY</code>, decides whether Jev answers the text questions. Without it the regex
+flags stand in for Jev's route judgment and the row stores <code>judgments = null</code>.</p>
+</div>
+<div class="table-scroll">
+<table>
+    <thead><tr><th></th><th>API judge</th><th>Keyless judge</th></tr></thead>
+    <tbody>
+        <tr><td>Command</td><td><code>npm run judge</code></td><td><code>judge-keyless:fetch</code>, then helper agents, then <code>judge-keyless:apply</code></td></tr>
+        <tr><td>Who researches employers</td><td>Claude through the API, with the server-side <code>web_search</code> tool</td><td>Claude Code helper agents with the WebSearch tool</td></tr>
+        <tr><td>Escalation to Opus</td><td>Done in code by <code>verifyEmployerTiered</code></td><td>Done by the orchestrating session; apply rejects any verdict that needs escalation and is not marked as Opus-confirmed</td></tr>
+        <tr><td>Brand-impersonation check</td><td>Yes, Opus 5.5 on each posting whose apply link names a different company</td><td>No, because it needs the API key</td></tr>
+        <tr><td>Search limit</td><td>None per run; $10 per 1,000 searches</td><td>About 200 per session, refilling about 100 an hour</td></tr>
+        <tr><td>Prompt lives in</td><td><code>lib/ai/verify-employer-web.ts</code></td><td>The "Agent prompt" section of <code>.claude/skills/judge-postings/SKILL.md</code></td></tr>
+        <tr><td>Used for</td><td>Bulk and scheduled runs</td><td>Machines without the key, and small high-scrutiny sets</td></tr>
+    </tbody>
+</table>
+</div>
+<div class="prose">
+<p>What the two share matters more than what differs. Both decide each employer with
+<code>verificationAction</code>, both enforce the same escalation rule, and both score through
+<code>buildVerdict</code> in <code>lib/scoring/verdict.ts</code>. The grouping differs in one detail.
+The keyless fetch groups through <code>planByEmployer</code>, which sends a posting with no employer
+to the web check on its own, while <code>judge.ts</code> groups inline and gives such a posting no
+employer check at all.</p>
+<div class="note">
+<p><strong>A failed employer check does not keep postings pending on the API path.</strong> When a
+check fails for any reason other than billing (a refusal, a malformed answer after the retry, a
+failed Opus re-check), <code>judge.ts</code> counts the failure and moves on. Stage 2 then scores that
+employer's postings with whatever verdict was already cached, which may be the old unconfirmed one that
+triggered the re-check, or nothing. The worst case is a placeholder key. It still counts as set, every
+Anthropic call returns 401, every check fails, and every posting is scored with no new employer
+evidence. On a keyless machine, leave the <code>ANTHROPIC_API_KEY</code> line in <code>.env</code>
+commented out.</p>
+</div>
+</div>
+</section>
+
+<section>
+<h2 id="keyless">The keyless judge, step by step</h2>
+<div class="prose">
+<p>This is the multi-agent part of the system. One Claude Code session owns the whole run. It runs the
+fetch CLI, spawns helper agents, writes their output to files, and runs the apply CLI. The repo's
+<code>update-postings</code> skill wraps it, and <code>judge-postings</code> holds the procedure and the
+agent prompt. The skill insists that one session own the run rather than handing batches to separate
+top-level sessions, because a single owner can restart the run and its progress stays visible.</p>
+</div>
+<figure class="dg" id="f2">
+  <div class="dg-scroll" tabindex="0" role="region" aria-label="Keyless judge, one run. Scrolls sideways on small screens.">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 830" style="min-width:1150px" role="img" aria-labelledby="f2-t f2-d">
+      <title id="f2-t">Keyless judge, one run</title>
+      <desc id="f2-d">Inside one orchestrating Claude Code session: the fetch CLI reads pending postings from Postgres and writes batch files, one item per employer, plus cached.json. Haiku helper agents each take one batch. Verdicts needing escalation go to Opus helper agents, whose verdicts replace Haiku&#x27;s. All verdicts land in verdicts files, which the apply CLI validates, stores on the employer, and scores through Jev and the composer before writing to Postgres.</desc>
+      <defs>
+        <marker id="f2-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#dec18a"/></marker>
+      </defs>
+      <rect width="1480" height="830" fill="#101013"/>
+      <rect x="250" y="36" width="1200" height="660" rx="12" fill="none" stroke="#57534b" stroke-width="1.4" stroke-dasharray="7 6"/><text class="b" x="268" y="62" text-anchor="start">One orchestrating Claude Code session runs every step inside this box</text>
+      <path d="M40 400A90.0 14 0 0 1 220 400V590A90.0 14 0 0 1 40 590Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="130.0" cy="400" rx="90.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="130.0" y="490.0" text-anchor="middle" font-weight="600">Postgres</text><text class="d" x="130.0" y="513.0" text-anchor="middle">pending rows</text><text class="d" x="130.0" y="533.0" text-anchor="middle">Employer.checks.web</text><rect x="290" y="96" width="220" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="400.0" y="131.0" text-anchor="middle" font-weight="600">judge-keyless:fetch</text><text class="d" x="400.0" y="154.0" text-anchor="middle">read-only</text><text class="d" x="400.0" y="174.0" text-anchor="middle">groups by employer</text><path d="M590 84H850A16 62.0 0 0 1 850 208H590A16 62.0 0 0 1 590 84Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="850" cy="146.0" rx="16" ry="62.0" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="715.0" y="118" text-anchor="middle" font-weight="600">batch-NNN.json</text><rect x="603.0" y="138" width="66" height="34" rx="5" fill="#2c2821" stroke="#dec18a" stroke-width="1.2"/><text class="i" x="636.0" y="160" text-anchor="middle">employer</text><rect x="679.0" y="138" width="66" height="34" rx="5" fill="#2c2821" stroke="#dec18a" stroke-width="1.2"/><text class="i" x="712.0" y="160" text-anchor="middle">employer</text><rect x="755.0" y="138" width="66" height="34" rx="5" fill="#2c2821" stroke="#dec18a" stroke-width="1.2"/><text class="i" x="788.0" y="160" text-anchor="middle">employer</text><rect x="958" y="76" width="200" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="944" y="90" width="200" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="930" y="104" width="200" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1030.0" y="139.0" text-anchor="middle" font-weight="600">Haiku helpers</text><text class="d" x="1030.0" y="162.0" text-anchor="middle">one per batch file</text><text class="d" x="1030.0" y="182.0" text-anchor="middle">WebSearch, returns JSON</text><rect x="1238" y="76" width="200" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="1224" y="90" width="200" height="100" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="1210" y="104" width="200" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1310.0" y="139.0" text-anchor="middle" font-weight="600">Opus helpers</text><text class="d" x="1310.0" y="162.0" text-anchor="middle">re-check alarming</text><text class="d" x="1310.0" y="182.0" text-anchor="middle">verdicts only</text><path d="M930 340A240.0 14 0 0 1 1410 340V460A240.0 14 0 0 1 930 460Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="1170.0" cy="340" rx="240.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="1170.0" y="395.0" text-anchor="middle" font-weight="600">verdicts-N.json</text><text class="d" x="1170.0" y="418.0" text-anchor="middle">one web verdict per employer</text><text class="d" x="1170.0" y="438.0" text-anchor="middle">verifiedBy on every verdict</text><rect x="590" y="330" width="260" height="80" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="720.0" y="355.0" text-anchor="middle" font-weight="600">cached.json</text><text class="d" x="720.0" y="378.0" text-anchor="middle">postings whose employer</text><text class="d" x="720.0" y="398.0" text-anchor="middle">needs no new check</text><rect x="560" y="520" width="320" height="120" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="720.0" y="555.0" text-anchor="middle" font-weight="600">judge-keyless:apply</text><text class="d" x="720.0" y="578.0" text-anchor="middle">single DB writer</text><text class="d" x="720.0" y="598.0" text-anchor="middle">rejects bad schema, missing Opus check</text><text class="d" x="720.0" y="618.0" text-anchor="middle">then Jev + composer per posting</text><rect x="560" y="726" width="320" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="720.0" y="756.0" text-anchor="middle" font-weight="600">TypeSafe Jev</text><text class="d" x="720.0" y="779.0" text-anchor="middle">5 typed questions per posting</text>
+      <path class="edge" d="M130 386V146H290" marker-end="url(#f2-arr)"/><text class="e" x="140" y="262" text-anchor="start">pending postings</text><path class="edge" d="M510 146H573" marker-end="url(#f2-arr)"/><text class="e" x="542" y="136" text-anchor="middle">writes</text><path class="edge" d="M866 146H930" marker-end="url(#f2-arr)"/><text class="e" x="898" y="136" text-anchor="middle">fan out</text><path class="edge" d="M1130 196H1210" marker-end="url(#f2-arr)"/><text class="e" x="1170" y="224" text-anchor="middle">needs escalation</text><path class="edge" d="M1000 204V326" marker-end="url(#f2-arr)"/><text class="e" x="990" y="270" text-anchor="end">kept as haiku-5.5</text><path class="edge" d="M1310 204V326" marker-end="url(#f2-arr)"/><text class="e" x="1300" y="270" text-anchor="end">haiku-5.5&gt;opus-5.5</text><path class="edge" d="M400 196V370H590" marker-end="url(#f2-arr)"/><text class="e" x="410" y="286" text-anchor="start">employers that</text><text class="e" x="410" y="303" text-anchor="start">need no check</text><path class="edge" d="M720 410V520" marker-end="url(#f2-arr)"/><text class="e" x="730" y="470" text-anchor="start">cached postings</text><path class="edge" d="M1170 474V580H880" marker-end="url(#f2-arr)"/><text class="e" x="1180" y="532" text-anchor="start">verdict files</text><path class="edge" d="M560 580H222" marker-end="url(#f2-arr)"/><text class="e" x="390" y="568" text-anchor="middle">store verdicts, write scores</text><path class="edge" d="M720 640V726" marker-end="url(#f2-arr)"/><text class="e" x="730" y="686" text-anchor="start">posting text</text>
+      
+    </svg>
+  </div>
+  <figcaption>Helpers only research employers and return JSON. The orchestrator writes their output to files, and the apply CLI is the one process that touches the database. A verdict that fails the schema or the tier rule is skipped, and that employer's postings stay pending for the next fetch.</figcaption>
+</figure>
+<figure class="dg" id="f3">
+  <div class="dg-scroll" tabindex="0" role="region" aria-label="Keyless judge sequence. Scrolls sideways on small screens.">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1460 1040" style="min-width:1150px" role="img" aria-labelledby="f3-t f3-d">
+      <title id="f3-t">Keyless judge sequence</title>
+      <desc id="f3-d">Time runs downward. The orchestrator runs fetch, which reads Postgres and returns batch files. It sends batches to Haiku helpers in parallel, collects verdicts, sends the ones needing escalation to Opus helpers, writes verdict files, runs apply as a dry run, then for real. Apply stores employer verdicts and writes composed scores. The orchestrator repeats until fetch reports zero pending.</desc>
+      <defs>
+        <marker id="f3-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#dec18a"/></marker>
+      </defs>
+      <rect width="1460" height="1040" fill="#101013"/>
+      <path d="M150 120V1010" stroke="#4a4740" stroke-width="1.3" stroke-dasharray="5 6" fill="none"/><path d="M400 120V1010" stroke="#4a4740" stroke-width="1.3" stroke-dasharray="5 6" fill="none"/><path d="M650 120V1010" stroke="#4a4740" stroke-width="1.3" stroke-dasharray="5 6" fill="none"/><path d="M900 120V1010" stroke="#4a4740" stroke-width="1.3" stroke-dasharray="5 6" fill="none"/><path d="M1140 120V1010" stroke="#4a4740" stroke-width="1.3" stroke-dasharray="5 6" fill="none"/><path d="M1360 120V1010" stroke="#4a4740" stroke-width="1.3" stroke-dasharray="5 6" fill="none"/>
+      <rect x="50" y="40" width="200" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="150.0" y="70.0" text-anchor="middle" font-weight="600">Orchestrator</text><text class="d" x="150.0" y="93.0" text-anchor="middle">Claude Code session</text><rect x="300" y="40" width="200" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="400.0" y="70.0" text-anchor="middle" font-weight="600">fetch CLI</text><text class="d" x="400.0" y="93.0" text-anchor="middle">read-only</text><rect x="564" y="34" width="200" height="62" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="557" y="41" width="200" height="62" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="550" y="48" width="200" height="62" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="650.0" y="84.0" text-anchor="middle" font-weight="600">Haiku helpers</text><rect x="814" y="34" width="200" height="62" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="807" y="41" width="200" height="62" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="800" y="48" width="200" height="62" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="900.0" y="84.0" text-anchor="middle" font-weight="600">Opus helpers</text><rect x="1040" y="40" width="200" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1140.0" y="70.0" text-anchor="middle" font-weight="600">apply CLI</text><text class="d" x="1140.0" y="93.0" text-anchor="middle">single writer</text><path d="M1280 52A80.0 14 0 0 1 1440 52V110A80.0 14 0 0 1 1280 110Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="1360.0" cy="52" rx="80.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="1360.0" y="96.0" text-anchor="middle" font-weight="600">Postgres</text>
+      <path class="edge" d="M154 168H396" marker-end="url(#f3-arr)"/><text class="e" x="275.0" y="159" text-anchor="middle">1. run fetch --limit N</text><path class="edge" d="M404 222H1356" marker-end="url(#f3-arr)"/><text class="e" x="880.0" y="213" text-anchor="middle">2. read pending rows, oldest first</text><path class="edge" d="M396 276H154" marker-end="url(#f3-arr)"/><text class="e" x="275.0" y="267" text-anchor="middle">3. batch files + cached.json</text><path class="edge" d="M154 330H646" marker-end="url(#f3-arr)"/><text class="e" x="400.0" y="321" text-anchor="middle">4. agent prompt + one batch each, in parallel</text><path class="edge" d="M646 384H154" marker-end="url(#f3-arr)"/><text class="e" x="400.0" y="375" text-anchor="middle">5. verdict arrays, no scores</text><rect x="160" y="418" width="330" height="36" rx="7" fill="#2c2821" stroke="#a38e68" stroke-width="1.2"/><text class="e" x="174" y="441" text-anchor="start">6. pick verdicts that need escalation</text><path class="edge" d="M154 492H896" marker-end="url(#f3-arr)"/><text class="e" x="525.0" y="483" text-anchor="middle">7. escalation batch, same prompt</text><path class="edge" d="M896 546H154" marker-end="url(#f3-arr)"/><text class="e" x="525.0" y="537" text-anchor="middle">8. replacement verdicts</text><rect x="160" y="580" width="330" height="36" rx="7" fill="#2c2821" stroke="#a38e68" stroke-width="1.2"/><text class="e" x="174" y="603" text-anchor="start">9. write verdicts-N.json, set verifiedBy</text><path class="edge" d="M154 654H1136" marker-end="url(#f3-arr)"/><text class="e" x="645.0" y="645" text-anchor="middle">10. apply --dry-run &lt;dir&gt;</text><path class="edge" d="M1136 708H154" marker-end="url(#f3-arr)"/><text class="e" x="645.0" y="699" text-anchor="middle">11. would score N; lists tier rejects</text><path class="edge" d="M154 762H1136" marker-end="url(#f3-arr)"/><text class="e" x="645.0" y="753" text-anchor="middle">12. apply &lt;dir&gt;</text><path class="edge" d="M1144 816H1356" marker-end="url(#f3-arr)"/><text class="e" x="1250.0" y="807" text-anchor="middle">13. store checks.web</text><path class="edge" d="M1144 870H1356" marker-end="url(#f3-arr)"/><text class="e" x="1250.0" y="861" text-anchor="middle">14. write composed scores</text><path class="edge" d="M1136 924H154" marker-end="url(#f3-arr)"/><text class="e" x="645.0" y="915" text-anchor="middle">15. scored N, skipped M</text><rect x="160" y="958" width="330" height="36" rx="7" fill="#2c2821" stroke="#a38e68" stroke-width="1.2"/><text class="e" x="174" y="981" text-anchor="start">16. fetch again until 0 pending</text>
+      
+    </svg>
+  </div>
+  <figcaption>Steps 4 and 7 are the only places agents act, and both return JSON to the orchestrator. Step 10 is a dry run that validates every verdict and reports tier violations before anything is written. Jev is called inside step 14 and omitted here.</figcaption>
+</figure>
+<div class="prose">
+<h3>What a helper receives</h3>
+<p>The fetch step writes one item per employer that needs a web check, 15 employers to a batch file by
+default. The item carries the employer's representative posting, chosen as the first posting that
+gives a mailing address when any does (<code>pickRepresentative</code>). The mailing-address type is the
+heaviest signal the check produces, and the verifier can only judge an address it has been shown.</p>
+<pre><code>{
+  "workbcId": "49588691",
+  "title": "...", "employer": "...", "location": "...", "salary": "...", "postedAt": "...",
+  "atsProvider": "workday", "externalApplyOk": null,
+  "flags": [{ "flag": "mail_physical_resume", "evidence": "..." }],
+  "descriptionExcerpt": "first 1800 characters of the description",
+  "employerPostings": ["49588691", "49588702"]
+}</code></pre>
+<p><code>employerPostings</code> is for the apply step, which scores every posting in that list with the
+employer's verdict. The helper does not need it.</p>
+
+<h3>What a helper returns</h3>
+<p>A JSON array with one verdict per item. The verdict describes the employer. It has no score field.</p>
+<pre><code>{
+  "workbcId": "49588691",
+  "web": {
+    "websiteUrl": "https://acme.com",
+    "websiteReachable": "yes",          // yes | no | unknown
+    "businessMatch": "match",           // match | mismatch | uncertain
+    "locationMatch": "match",           // match | mismatch | uncertain
+    "hasJobsListing": "yes",            // yes | no | unknown
+    "applicationAddressType": "business",
+    "confidence": 0.85,
+    "summary": "at most 400 characters, shown on the site",
+    "verifiedBy": "haiku-5.5"           // set by the orchestrator
+  }
+}</code></pre>
+<p><code>applicationAddressType</code> is one of <code>business</code>, <code>residential</code>,
+<code>home_business</code>, <code>po_box</code>, <code>virtual</code>, <code>none</code> or
+<code>uncertain</code>. <code>home_business</code> needs two sources: the company's own website and at
+least one independent listing must both give the home as the business address, and otherwise the
+answer is <code>residential</code>.</p>
+
+<h3>What a helper may not do</h3>
+<ul>
+    <li>Write to the database. Helpers return JSON to the orchestrator and nothing else. This rests on
+    the prompt and the skill; no tool restriction enforces it.</li>
+    <li>Choose a score. The apply step parses verdicts with a zod schema that keeps only
+    <code>workbcId</code> and <code>web</code>.</li>
+    <li>Return a verdict it did not investigate. If a search fails or the session's search budget runs
+    out, the helper leaves that employer out of its array. An uninvestigated <code>uncertain</code>
+    would be cached on the employer and reused by every later run, while a missing verdict only keeps
+    the postings pending.</li>
+    <li>Call an employer a <code>mismatch</code> because its industry differs from the role. A retailer
+    hiring a developer is a match. Mismatch is reserved for fake, shell, parked or impersonating
+    entities.</li>
+</ul>
+
+<h3>The gates in the apply step</h3>
+<p><code>judge-keyless:apply</code> is the only place a keyless score is computed. For each verdict, in
+order:</p>
+<ol>
+    <li>Parse it with <code>VerdictSchema</code>. A partial or malformed <code>web</code> object fails and
+    the employer's postings stay pending.</li>
+    <li>Check the tier rule with <code>tierViolation</code>. A verdict that needs escalation must be
+    marked <code>opus-5.5</code> or <code>haiku-5.5&gt;opus-5.5</code>; anything else is rejected. On
+    the API path code escalates, and here this check is what catches a skipped escalation step.</li>
+    <li>Store <code>web</code> on the employer once, then ask Jev and compose a score for each pending
+    posting in that employer's <code>employerPostings</code>. A Jev error stops that employer's
+    remaining postings, which stay pending, though the employer verdict is already stored.</li>
+</ol>
+<p>Postings in <code>cached.json</code> get one more check. The apply step re-decides each of those
+employers against all of its current pending postings. If a new posting has arrived since the fetch,
+for example one with a mailing address the cached verdict never saw, that employer now needs a web
+check and its postings stay pending for the next fetch. The orchestrator runs apply with
+<code>--dry-run</code> first, which validates everything and reports tier violations without writing,
+and then loops fetch and apply until fetch reports zero pending.</p>
+</div>
+</section>
+
+<section>
+<h2 id="tiers">The tiered employer check</h2>
+<div class="prose">
+<p>Both paths check employers with Haiku 5.5 first. Opus 5.5 checks again, and its verdict replaces
+Haiku's, when <code>needsEscalation</code> in <code>lib/ai/verify-employer-web.ts</code> returns true:</p>
+</div>
+<div class="table-scroll">
+<table>
+    <thead><tr><th>Haiku's verdict</th><th>Why it gets a second look</th></tr></thead>
+    <tbody>
+        <tr><td><code>businessMatch: mismatch</code></td><td>Adds 25 points. In the model evaluation Haiku found nothing on a real Vancouver payments company and called it a mismatch, which scored 85, a High rating on a real employer.</td></tr>
+        <tr><td><code>locationMatch: mismatch</code></td><td>Adds 12 points.</td></tr>
+        <tr><td>Address <code>residential</code>, <code>po_box</code> or <code>virtual</code></td><td>On every posting that mails applications, adds 40 points and floors the score at 70, which is High.</td></tr>
+        <tr><td>Address <code>home_business</code></td><td>This label lowers a rating compared with <code>residential</code>, so the cheap model may never give it alone.</td></tr>
+        <tr><td>Address <code>uncertain</code> when the posting gives a mailing address</td><td>On 1,000 postings Haiku left a house address uncertain where Opus found the residence.</td></tr>
+    </tbody>
+</table>
+</div>
+<div class="prose">
+<p>The split rests on <code>docs/verifier-model-eval.md</code>. On the 21 hand-labelled postings, Haiku
+followed by Opus on alarming verdicts agreed with the labels 20 times out of 21, the same as Opus alone,
+and escalated 2 of the 21. The estimated cost was about $0.003 per posting against about $0.026 for
+Opus on everything, roughly an eighth. Opus also gets up to 10 searches per check instead of 5, because
+at 5 searches 39 of the 584 verdicts stored on 27 October said the search had been cut off.</p>
+<p>A cached employer verdict is reused unless one of four things is true. The run is a
+<code>--rejudge</code> (an API-judge flag); the cached verdict was presumed from an own-ATS match and a new posting does
+not apply through that tenant; the cached address type is <code>none</code> but a pending posting gives
+a mailing address; or the cached verdict breaks the tier rule because it was written before the tiers
+existed. When the re-check script ran over the first 73 such pending-side verdicts, Opus overturned 47
+of them.</p>
+</div>
+</section>
+
+<section>
+<h2 id="api">The API judge</h2>
+<figure class="dg" id="f4">
+  <div class="dg-scroll" tabindex="0" role="region" aria-label="API judge, two stages. Scrolls sideways on small screens.">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 920" style="min-width:1100px" role="img" aria-labelledby="f4-t f4-d">
+      <title id="f4-t">API judge, two stages</title>
+      <desc id="f4-d">Stage 1 groups pending postings by employer and decides reuse, presume or web for each. Web-checked employers go to Haiku 5.5; verdicts needing escalation go to Opus 5.5. Presumed and checked verdicts are written to the employer row. Stage 2 runs an apply-host check per posting. A tenant mismatch goes to an Opus impersonation check; a confirmed impersonation is re-attributed and written as score 90. Everything else goes to buildVerdict, which asks Jev and composes the score written to the job row.</desc>
+      <defs>
+        <marker id="f4-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#dec18a"/></marker>
+      </defs>
+      <rect width="1360" height="920" fill="#101013"/>
+      <rect x="240" y="44" width="1100" height="370" rx="12" fill="none" stroke="#57534b" stroke-width="1.4" stroke-dasharray="7 6"/><text class="b" x="258" y="70" text-anchor="start">Stage 1: once per distinct employer, 4 at a time</text><rect x="240" y="440" width="1100" height="370" rx="12" fill="none" stroke="#57534b" stroke-width="1.4" stroke-dasharray="7 6"/><text class="b" x="258" y="466" text-anchor="start">Stage 2: once per posting, 8 at a time</text>
+      <path d="M40 280A85.0 14 0 0 1 210 280V500A85.0 14 0 0 1 40 500Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="125.0" cy="280" rx="85.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="125.0" y="395.0" text-anchor="middle" font-weight="600">Postgres</text><text class="d" x="125.0" y="418.0" text-anchor="middle">pending rows</text><rect x="270" y="150" width="210" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="375.0" y="185.0" text-anchor="middle" font-weight="600">Group by employer</text><text class="d" x="375.0" y="208.0" text-anchor="middle">verificationAction()</text><text class="d" x="375.0" y="228.0" text-anchor="middle">web, presume or reuse</text><rect x="570" y="90" width="230" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="685.0" y="120.0" text-anchor="middle" font-weight="600">Reuse cached verdict</text><text class="d" x="685.0" y="143.0" text-anchor="middle">no model call</text><rect x="570" y="180" width="230" height="76" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="685.0" y="213.0" text-anchor="middle" font-weight="600">Presume legitimate</text><text class="d" x="685.0" y="236.0" text-anchor="middle">all apply via own ATS</text><rect x="586" y="274" width="230" height="76" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="578" y="282" width="230" height="76" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="570" y="290" width="230" height="76" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="685.0" y="323.0" text-anchor="middle" font-weight="600">Haiku 5.5 check</text><text class="d" x="685.0" y="346.0" text-anchor="middle">web_search, max 5</text><rect x="900" y="290" width="220" height="76" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1010.0" y="323.0" text-anchor="middle" font-weight="600">Opus 5.5 re-check</text><text class="d" x="1010.0" y="346.0" text-anchor="middle">web_search, max 10</text><path d="M1170 150A75.0 14 0 0 1 1320 150V300A75.0 14 0 0 1 1170 300Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="1245.0" cy="150" rx="75.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="1245.0" y="220.0" text-anchor="middle" font-weight="600">Employer row</text><text class="d" x="1245.0" y="243.0" text-anchor="middle">checks.web</text><text class="d" x="1245.0" y="263.0" text-anchor="middle">+ search log</text><rect x="270" y="520" width="210" height="100" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="375.0" y="555.0" text-anchor="middle" font-weight="600">Apply-host check</text><text class="d" x="375.0" y="578.0" text-anchor="middle">ATS tenant in apply URL</text><text class="d" x="375.0" y="598.0" text-anchor="middle">vs. named employer</text><rect x="570" y="490" width="230" height="80" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="685.0" y="515.0" text-anchor="middle" font-weight="600">Opus impersonation</text><text class="d" x="685.0" y="538.0" text-anchor="middle">same, affiliate, uncertain,</text><text class="d" x="685.0" y="558.0" text-anchor="middle">or impersonation</text><rect x="900" y="490" width="240" height="80" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1020.0" y="525.0" text-anchor="middle" font-weight="600">Re-attribute, score 90</text><text class="d" x="1020.0" y="548.0" text-anchor="middle">skips the composer</text><rect x="586" y="634" width="230" height="80" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="578" y="642" width="230" height="80" rx="9" fill="#25252a" stroke="#b4a077" stroke-width="1.4"/><rect x="570" y="650" width="230" height="80" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="685.0" y="685.0" text-anchor="middle" font-weight="600">buildVerdict()</text><text class="d" x="685.0" y="708.0" text-anchor="middle">Jev questions + composer</text><path d="M1180 520A70.0 14 0 0 1 1320 520V690A70.0 14 0 0 1 1180 690Z" fill="#1b1b20" stroke="#a38e68" stroke-width="1.5"/><ellipse cx="1250.0" cy="520" rx="70.0" ry="14" fill="#25252a" stroke="#a38e68" stroke-width="1.5"/><text class="t" x="1250.0" y="600.0" text-anchor="middle" font-weight="600">Job row</text><text class="d" x="1250.0" y="623.0" text-anchor="middle">score, band,</text><text class="d" x="1250.0" y="643.0" text-anchor="middle">reasoning</text><rect x="570" y="830" width="230" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="685.0" y="860.0" text-anchor="middle" font-weight="600">TypeSafe Jev</text><text class="d" x="685.0" y="883.0" text-anchor="middle">5 typed questions</text>
+      <path class="edge" d="M125 266V200H270" marker-end="url(#f4-arr)"/><text class="e" x="135" y="232" text-anchor="start">pending postings</text><path class="edge" d="M480 175H525V125H570" marker-end="url(#f4-arr)"/><text class="e" x="532" y="116" text-anchor="start">reuse</text><path class="edge" d="M480 210H570" marker-end="url(#f4-arr)"/><text class="e" x="525" y="202" text-anchor="middle">presume</text><path class="edge" d="M480 235H525V328H570" marker-end="url(#f4-arr)"/><text class="e" x="532" y="319" text-anchor="start">web</text><path class="edge" d="M816 300H900" marker-end="url(#f4-arr)"/><text class="e" x="858" y="318" text-anchor="middle">needs</text><text class="e" x="858" y="335" text-anchor="middle">escalation</text><path class="edge" d="M800 218H1170" marker-end="url(#f4-arr)"/><text class="e" x="985" y="208" text-anchor="middle">deterministic verdict</text><path class="edge" d="M1120 328H1220V316" marker-end="url(#f4-arr)"/><text class="e" x="1126" y="350" text-anchor="start">Opus verdict</text><path class="edge" d="M685 366V400H1280V316" marker-end="url(#f4-arr)"/><text class="e" x="980" y="392" text-anchor="middle">no escalation: Haiku verdict kept</text><path class="edge" d="M125 514V570H270" marker-end="url(#f4-arr)"/><text class="e" x="135" y="556" text-anchor="start">each posting</text><path class="edge" d="M480 545H570" marker-end="url(#f4-arr)"/><text class="e" x="525" y="516" text-anchor="middle">tenant</text><text class="e" x="525" y="533" text-anchor="middle">mismatch</text><path class="edge" d="M375 620V690H570" marker-end="url(#f4-arr)"/><text class="e" x="385" y="660" text-anchor="start">no mismatch</text><path class="edge" d="M800 530H900" marker-end="url(#f4-arr)"/><text class="e" x="850" y="520" text-anchor="middle">impersonation</text><path class="edge" d="M685 570V634" marker-end="url(#f4-arr)"/><text class="e" x="695" y="606" text-anchor="start">cleared or uncertain</text><path class="edge" d="M1140 545H1180" marker-end="url(#f4-arr)"/><path class="edge" d="M816 690H1180" marker-end="url(#f4-arr)"/><text class="e" x="998" y="680" text-anchor="middle">score, band, signals</text><path class="edge" d="M685 730V830" marker-end="url(#f4-arr)"/><text class="e" x="695" y="786" text-anchor="start">posting text</text>
+      
+    </svg>
+  </div>
+  <figcaption>Stage 1 finishes before stage 2 starts, so every posting is scored against its employer's newest verdict. An out-of-credit billing error in either stage stops new work and aborts the run, leaving unscored postings pending.</figcaption>
+</figure>
+<div class="prose">
+<p>The API judge is agentic in a narrower sense than the keyless path. Each employer check is one
+Messages API request that carries two tools: the server-side <code>web_search</code> tool, capped at 5
+uses for Haiku and 10 for Opus, and <code>record_web_verification</code>, a client tool whose input
+schema is the verdict. The model chooses its own search queries and runs them on Anthropic's side. If
+the server-side loop pauses with <code>pause_turn</code>, the code resends the turn, at most three
+times. The answer counts only if it arrives as a <code>record_web_verification</code> call that passes
+zod. Otherwise the request is retried once and then counted as failed. Every search block, including
+its encrypted result content, goes into <code>EmployerWebSearchLog</code> so the <code>/audit</code>
+pages can show what the model consulted.</p>
+<p>Stage 1 checks four employers at a time and stage 2 scores eight postings at a time, both through
+<code>p-limit</code>, and the SDK retries rate-limit and overload errors up to five times. Two failure
+rules keep partial runs safe. An out-of-credit error, which arrives as a 400 and is never retried, sets
+a flag that turns every queued task into a no-op, and the run throws after the current stage with the
+completed rows saved. A Jev failure leaves that one posting pending, because composing it without
+judgments would store a different kind of row under the same <code>scoringVersion</code>.</p>
+<p>The weekly <code>job-fraud-scheduler</code> Railway cron service runs this path. On Mondays at 12:17
+UTC it runs both scrape passes and then <code>npm run judge -- --limit $JUDGE_LIMIT</code> (1,000 by
+default) if the service has an Anthropic key. It reaches Postgres over Railway's private network.</p>
+</div>
+</section>
+
+<section class="prose">
+<h2 id="impersonation">The brand-impersonation check</h2>
+<p>Before scoring each posting, the API judge compares the applicant tracking system tenant in the
+apply link with the employer the posting names. If a posting says it is from one company but its
+Workday link belongs to another, Opus 5.5 investigates with web search and classifies the relationship
+as <code>same</code>, <code>affiliate</code>, <code>impersonation</code> or <code>uncertain</code>. The
+prompt tells it to choose impersonation only when it is confident the two companies are unrelated, so
+a subsidiary applying through its parent's hiring system is cleared. Results are cached per employer
+and tenant pair for the rest of the run.</p>
+<ul>
+    <li><code>same</code> or <code>affiliate</code>: the posting is scored normally.</li>
+    <li><code>uncertain</code>: the posting gets an <code>apply_host_mismatch_review</code> flag and is
+    scored normally.</li>
+    <li><code>impersonation</code>: the posting is re-attributed to the real company and written
+    directly as score 90 (High), with reasoning that starts "Brand impersonation:".</li>
+</ul>
+<p>This is the one place the system writes a fixed number without the composer. Two re-scoring
+scripts, <code>backfill-ats</code> and <code>recheck-cached-verdicts</code>, recognise the reasoning
+prefix and skip these rows. <code>recompose</code> and <code>reverify-mail</code> do not check it. The
+impersonation write also leaves <code>scoringVersion</code> unchanged, so a composed row that is later
+re-judged into an impersonation keeps its version number, and the next <code>recompose --apply</code>
+would overwrite its 90. Opus runs this check because a smaller model
+labelled a real construction company's division as an impersonation of its parent group. It moved from
+Opus 4.8 to Opus 5.5 on 27 October without a side-by-side comparison, and no labelled impersonation
+cases exist yet. Both October runs logged zero impersonations.</p>
+</section>
+
+<section>
+<h2 id="compose">How the score is composed</h2>
+<figure class="dg" id="f5">
+  <div class="dg-scroll" tabindex="0" role="region" aria-label="How the composer turns evidence into a band. Scrolls sideways on small screens.">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 560" style="min-width:1000px" role="img" aria-labelledby="f5-t f5-d">
+      <title id="f5-t">How the composer turns evidence into a band</title>
+      <desc id="f5-d">Four inputs, the employer web verdict, regex flags, NOC category and Jev judgments, feed a route gate, then the weight table, then a sum from baseline 20 with floors, then the band cut-offs. A score scale from 0 to 100 marks Low below 30, Medium 30 to 69, High 70 and up, with three example postings at 16, 40 and 80.</desc>
+      <defs>
+        <marker id="f5-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#dec18a"/></marker>
+      </defs>
+      <rect width="1320" height="560" fill="#101013"/>
+      
+      <rect x="40" y="60" width="260" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="170.0" y="90.0" text-anchor="middle" font-weight="600">Employer web verdict</text><text class="d" x="170.0" y="113.0" text-anchor="middle">business, location, address</text><rect x="40" y="150" width="260" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="170.0" y="180.0" text-anchor="middle" font-weight="600">Regex flags</text><text class="d" x="170.0" y="203.0" text-anchor="middle">free email, mail-in, fees</text><rect x="40" y="240" width="260" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="170.0" y="270.0" text-anchor="middle" font-weight="600">NOC category</text><text class="d" x="170.0" y="293.0" text-anchor="middle">software roles weigh mail-in</text><rect x="40" y="330" width="260" height="70" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="170.0" y="360.0" text-anchor="middle" font-weight="600">Jev judgments</text><text class="d" x="170.0" y="383.0" text-anchor="middle">route fit, pre-hire ask</text><rect x="370" y="180" width="210" height="110" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="475.0" y="220.0" text-anchor="middle" font-weight="600">Route gate</text><text class="d" x="475.0" y="243.0" text-anchor="middle">route fit under 0.57</text><text class="d" x="475.0" y="263.0" text-anchor="middle">withholds brand credits</text><rect x="620" y="180" width="210" height="110" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="725.0" y="220.0" text-anchor="middle" font-weight="600">Weight table</text><text class="d" x="725.0" y="243.0" text-anchor="middle">each signal adds</text><text class="d" x="725.0" y="263.0" text-anchor="middle">-25 to +40 points</text><rect x="870" y="180" width="200" height="110" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="970.0" y="220.0" text-anchor="middle" font-weight="600">Sum and floors</text><text class="d" x="970.0" y="243.0" text-anchor="middle">start at 20, clamp 0-100</text><text class="d" x="970.0" y="263.0" text-anchor="middle">private address: min 70</text><rect x="1110" y="180" width="170" height="110" rx="9" fill="#1b1b20" stroke="#686158" stroke-width="1.4"/><text class="t" x="1195.0" y="210.0" text-anchor="middle" font-weight="600">Band</text><text class="d" x="1195.0" y="233.0" text-anchor="middle">under 30 Low</text><text class="d" x="1195.0" y="253.0" text-anchor="middle">30-69 Medium</text><text class="d" x="1195.0" y="273.0" text-anchor="middle">70 and up High</text><text class="e" x="370" y="392" text-anchor="start">Score, 0 to 100</text><rect x="370.0" y="452" width="273.0" height="24" fill="#6fae8a" fill-opacity="0.28" stroke="#6fae8a" stroke-width="1.2"/><text class="i" x="506.5" y="469" text-anchor="middle">Low</text><rect x="643.0" y="452" width="364.0" height="24" fill="#d8b25a" fill-opacity="0.28" stroke="#d8b25a" stroke-width="1.2"/><text class="i" x="825.0" y="469" text-anchor="middle">Medium</text><rect x="1007.0" y="452" width="273.0" height="24" fill="#e0866f" fill-opacity="0.28" stroke="#e0866f" stroke-width="1.2"/><text class="i" x="1143.5" y="469" text-anchor="middle">High</text><path d="M370.0 476V484" stroke="#c0bcb6" stroke-width="1.2"/><text class="e" x="370.0" y="500" text-anchor="middle">0</text><path d="M643.0 476V484" stroke="#c0bcb6" stroke-width="1.2"/><text class="e" x="643.0" y="500" text-anchor="middle">30</text><path d="M1007.0 476V484" stroke="#c0bcb6" stroke-width="1.2"/><text class="e" x="1007.0" y="500" text-anchor="middle">70</text><path d="M1280.0 476V484" stroke="#c0bcb6" stroke-width="1.2"/><text class="e" x="1280.0" y="500" text-anchor="middle">100</text><path d="M552.0 478l-6 10h12z" fill="#dec18a"/><text class="e" x="552.0" y="504" text-anchor="middle">baseline 20</text><circle cx="515.6" cy="440" r="5.5" fill="#dec18a"/><text class="e" x="515.6" y="426" text-anchor="middle">pub on gmail: 16</text><circle cx="734.0" cy="440" r="5.5" fill="#dec18a"/><text class="e" x="734.0" y="426" text-anchor="middle">chain on gmail: 40</text><circle cx="1098.0" cy="440" r="5.5" fill="#dec18a"/><text class="e" x="1098.0" y="426" text-anchor="middle">mails to a house: 80</text>
+      <path class="bus" d="M300 95H330"/><path class="bus" d="M300 185H330"/><path class="bus" d="M300 275H330"/><path class="bus" d="M300 365H330"/><path class="bus" d="M330 95V365"/><path class="edge" d="M330 235H370" marker-end="url(#f5-arr)"/><path class="edge" d="M580 235H620" marker-end="url(#f5-arr)"/><path class="edge" d="M830 235H870" marker-end="url(#f5-arr)"/><path class="edge" d="M1070 235H1110" marker-end="url(#f5-arr)"/>
+      
+    </svg>
+  </div>
+  <figcaption>The route gate decides whether a verified employer counts in the posting's favour. The floors are lower bounds, so no credit can pull a posting that mails applications to a house below 70. The three examples are computed by lib/scoring/compose.ts and listed in the worked-examples table below.</figcaption>
+</figure>
+<div class="prose">
+<p><code>composeScore</code> in <code>lib/scoring/compose.ts</code> is a pure function: the same inputs
+always give the same output, with no clock, network or model. It works in this order:</p>
+<ol>
+    <li>Decide whether the application route is disowned. With Jev judgments, it is disowned when
+    <code>routePlausibleForEmployer</code> is below 0.57. Without them, it is disowned when the posting
+    has a free-email or messaging-app-only flag. A disowned route withholds the brand credits (business
+    match, location match, jobs page, business mailing address, no mailing address) while the penalties
+    on the same fields still apply. Confirming that a national chain exists says nothing about a
+    posting that collects replies at a Gmail address.</li>
+    <li>Apply address signals only to postings that mail applications. The verdict is stored per
+    employer, and a sibling posting that applies online should not inherit one location's street
+    address.</li>
+    <li>Add a signal for every condition in the weight table that fires. Each condition compares against
+    an explicit value, so a check that returned null, meaning not checked, never counts against a
+    posting.</li>
+    <li>Add the one weighted Jev judgment, <code>askBeforeHire</code>, worth up to 25 points and nothing
+    at or below probability 0.5.</li>
+    <li>Sum from a baseline of 20 and clamp to 0 to 100.</li>
+    <li>Apply the floors. A residential, P.O. box or mail-forwarding address sets a minimum of 70, and so
+    does <code>askBeforeHire</code> above 0.8.</li>
+    <li>Map to a band. Under 30 is Low, 30 to 69 is Medium, 70 and up is High.</li>
+</ol>
+<p>The published reasoning is generated from the composed result by <code>explain.ts</code>, so the
+prose can never disagree with the number beside it. Before the composer a model wrote that prose
+without knowing the final score.</p>
+<h3>Worked examples</h3>
+<p>Each row below was computed by running <code>composeScore</code> on the stated inputs.</p>
+</div>
+<div class="table-scroll">
+<table>
+    <thead><tr><th>Posting</th><th>Signals that fire</th><th class="num">Score</th><th>Band</th></tr></thead>
+    <tbody>
+        <tr><td>Small local pub, verified, applications to a Gmail address, route fit 0.77</td><td>baseline 20, free email +20, business match -15, location match -5, applies online -4</td><td class="num">16</td><td class="band low">Low</td></tr>
+        <tr><td>National chain, verified, applications to a Gmail address, route fit 0.10</td><td>baseline 20, free email +20; every brand credit withheld because route fit is under 0.57</td><td class="num">40</td><td class="band med">Medium</td></tr>
+        <tr><td>Software role, résumés mailed to a house, route fit 0.30</td><td>baseline 20, private address +40, mail-in for a software role +20; floor 70 not needed</td><td class="num">80</td><td class="band high">High</td></tr>
+        <tr><td>Web-verified employer, software role applying through its own Workday</td><td>baseline 20, known ATS -25, business match -15, jobs page -7, location match -5, applies online -4</td><td class="num">0</td><td class="band low">Low</td></tr>
+    </tbody>
+</table>
+</div>
+<div class="prose">
+<p>The first two rows are the case the route gate exists for. The regex sees the same free-email flag
+on both, and Jev's route judgment is what separates a neighbourhood pub on Gmail from a national chain
+on Gmail.</p>
+<h3>The weight table</h3>
+<p>From <code>lib/scoring/weights.ts</code>. Every number except <code>apply_address_home_business</code>
+(the owner's call on 27 October) was transcribed from the midpoints of the old prompt's prose ranges,
+and none has been fitted. A reweight is a diff to this file followed by
+<code>npm run recompose</code>, with no model calls.</p>
+</div>
+<div class="table-scroll">
+<table>
+    <thead><tr><th>Signal</th><th class="num">Points</th><th>Fires when</th></tr></thead>
+    <tbody>
+        <tr><td><code>apply_address_private</code></td><td class="num">+40</td><td>The posting mails applications to a residential, P.O. box or mail-forwarding address (floor 70)</td></tr>
+        <tr><td><code>apply_address_home_business</code></td><td class="num">+25</td><td>It mails to a home the verified employer publishes as its address (no floor)</td></tr>
+        <tr><td><code>business_mismatch</code></td><td class="num">+25</td><td>The web check found a fake, shell, parked or impersonating entity</td></tr>
+        <tr><td><code>crypto_payment</code>, <code>banking_info_upfront</code></td><td class="num">+25</td><td>Regex on the description</td></tr>
+        <tr><td><code>generic_email_domain</code></td><td class="num">+20</td><td>Applications go to a free mailbox (+5 more if the website is unreachable)</td></tr>
+        <tr><td><code>fee_to_apply</code>, <code>id_upfront</code>, <code>whatsapp_telegram_only</code></td><td class="num">+20</td><td>Regex on the description</td></tr>
+        <tr><td><code>mail_resume_software_role</code></td><td class="num">+20</td><td>A software or IT role asks for mailed résumés</td></tr>
+        <tr><td><code>address_not_geocoded</code></td><td class="num">+20</td><td>A stated address did not resolve, or matched with confidence under 0.5</td></tr>
+        <tr><td><code>address_city_mismatch</code></td><td class="num">+15</td><td>The address resolves to a different city</td></tr>
+        <tr><td><code>location_mismatch</code>, <code>website_unreachable</code></td><td class="num">+12</td><td>Web check or site probe</td></tr>
+        <tr><td><code>pre_hire_ask</code> (Jev)</td><td class="num">up to +25</td><td>Probability of a pre-offer money or ID request above 0.5 (floor 70 above 0.8)</td></tr>
+        <tr><td><code>apply_address_business</code>, <code>location_match</code>, <code>address_city_match</code></td><td class="num">-5</td><td>Credits, the first two withheld on a disowned route</td></tr>
+        <tr><td><code>apply_address_none</code></td><td class="num">-4</td><td>The posting asks for no mailed materials (withheld on a disowned route)</td></tr>
+        <tr><td><code>jobs_listing</code></td><td class="num">-7</td><td>The employer's site has a careers page (withheld on a disowned route)</td></tr>
+        <tr><td><code>business_match</code></td><td class="num">-15</td><td>The web check found a real company (withheld on a disowned route)</td></tr>
+        <tr><td><code>ats_known_provider</code></td><td class="num">-25</td><td>The apply link goes to a recognised tracking system</td></tr>
+    </tbody>
+</table>
+</div>
+<div class="prose">
+<p>Jev answers five questions per posting and only one of them is weighted.
+<code>routePlausibleForEmployer</code> drives the route gate. <code>employerIsOrganisation</code>,
+<code>brokerRouting</code> and <code>brandProminence</code> are stored on the row and not weighted,
+because a question earns a weight only after <code>npm run measure-questions</code> shows it separates
+the bands. Brand prominence is the instructive case. It reads about the same on low and medium postings
+because the medium band is full of big brands, so weighting it directly would penalise size.</p>
+</div>
+</section>
+
+<section class="prose">
+<h2 id="guardrails">Guardrails</h2>
+<p>These are the properties a reviewer should check are still true after any change to the judge.</p>
+<ul>
+    <li><strong>One writing process.</strong> Helpers are given no database step. On the API path every
+    write comes from one process, from up to 4 or 8 concurrent tasks that each update their own rows;
+    keyless apply writes sequentially (<code>scripts/judge.ts</code>,
+    <code>scripts/judge-keyless-apply.ts</code>). The owner's <code>/audit</code> actions can still write
+    during a run.</li>
+    <li><strong>Evidence in, number out.</strong> Agents return employer verdicts. Jev returns
+    probabilities. <code>lib/scoring/compose.ts</code> produces every composed score.</li>
+    <li><strong>Escalation is checked in code.</strong> The API path escalates in code. The keyless
+    apply step rejects any verdict that needs escalation and lacks an Opus marker
+    (<code>tierViolation</code>), though that marker is a string the orchestrating session sets
+    itself.</li>
+    <li><strong>Unknown stays neutral.</strong> <code>uncertain</code> and <code>unknown</code> add
+    nothing, null checks match no weight-table condition, and a helper omits what it could not
+    search.</li>
+    <li><strong>Most failures leave work pending.</strong> A billing error aborts the run, a Jev error
+    leaves the posting pending, and a rejected keyless verdict leaves its employer's postings in the
+    queue. The exception is an ordinary employer-check failure on the API path, which still lets
+    stage 2 score (see <a href="#paths">Two judge paths</a>).</li>
+    <li><strong>Least-privilege database login.</strong> Local <code>.env</code> files connect as
+    <code>jobfraud_local</code>, which can read and write rows but cannot change the schema or
+    truncate tables. Schema changes reach production only through a deploy.</li>
+    <li><strong>An audit trail behind every API web verdict.</strong>
+    <code>EmployerWebSearchLog</code> keeps the raw search blocks for the <code>/audit</code> pages,
+    append-only by convention. Keyless verdicts and presumed verdicts write no search log.</li>
+</ul>
+</section>
+
+<section class="prose">
+<h2 id="humans">The human loop</h2>
+<p>There is no public correction route, by design. The README says a rating is an automated screening
+signal that can be wrong. What exists is an owner-only queue on <code>/audit/&lt;token&gt;</code>
+pages, the app's only write path. The owner can add a <code>ReviewNote</code>, or file a
+<code>JudgeRequest</code> of one of two kinds. A <code>rerun</code> clears the posting's
+<code>scoredAt</code> at once, so the next judge pass re-scores it, and the API judge marks the request
+resolved when that happens. A <code>deep</code> request keeps the current score and queues the posting
+for a single-agent investigation with the owner's note passed in as context.</p>
+<div class="note">
+<p><strong>A deep request does not re-score its posting as written.</strong> The request leaves
+<code>scoredAt</code> set, and <code>judge-keyless:apply</code> only scores postings whose
+<code>scoredAt</code> is null. The agent's verdict therefore replaces the employer's
+<code>checks.web</code>, which later postings by that employer will use, while the flagged posting
+keeps its old score (<code>app/audit/[token]/j/[id]/actions.ts</code>,
+<code>scripts/judge-keyless-apply.ts</code>).</p>
+</div>
+<p>The <code>update-postings</code> skill runs a full refresh in this order:</p>
+<ol>
+    <li>Drain the review queue: send each <code>deep</code> request to one fraud-analyst agent with the
+    owner's note, apply its verdict, and stamp <code>resolvedAt</code>.</li>
+    <li>Scrape twice, a term pass for software roles and a city-wide Victoria pass. Both are needed
+    because they collect different postings.</li>
+    <li>Pick the judge path from the <code>ANTHROPIC_API_KEY</code> predicate.</li>
+    <li>Judge in waves, applying after every wave so an interrupted session loses nothing, until fetch
+    reports zero pending.</li>
+    <li>Report counts and cost. Data updates never need a deploy.</li>
+</ol>
+<p><code>docs/self-improving-loop.md</code> describes where this is meant to go: drift reports that
+file their own review requests, review decisions that become labels, and weight proposals measured
+against those labels in CI. Two steps stay human on purpose, labelling and merging rubric changes,
+because every merge changes published claims about named employers.</p>
+</section>
+
+<section>
+<h2 id="cost">Cost and throughput</h2>
+<p class="prose">Both rows are API-judge runs, taken from the summaries the judge printed (files under
+<code>logs/</code>). Cost is the web-check estimate at list price and excludes Jev.</p>
+<div class="table-scroll">
+<table>
+    <thead><tr>
+        <th>Run</th><th class="num">Postings</th><th class="num">Employers web-checked</th><th class="num">Presumed (own ATS)</th>
+        <th class="num">Escalated to Opus</th><th class="num">Searches</th><th class="num">Web-check cost</th><th class="num">Wall time</th><th>Bands L / M / H</th>
+    </tr></thead>
+    <tbody>
+        <tr><td>26 Oct 2026</td><td class="num">1,000</td><td class="num">271</td><td class="num">13</td><td class="num">37</td><td class="num">846</td><td class="num">$16.09</td><td class="num">842 s</td><td>708 / 250 / 42</td></tr>
+        <tr><td>27 Oct 2026, backlog</td><td class="num">4,243</td><td class="num">219</td><td class="num">103</td><td class="num">16</td><td class="num">585</td><td class="num">$9.14</td><td class="num">833 s</td><td>4,240 / 3 / 0</td></tr>
+    </tbody>
+</table>
+</div>
+<p class="prose">The backlog run shows why grouping by employer matters. It scored 4,243 postings with
+219 web checks, because most of those postings belonged to employers with a reusable or presumed
+verdict. Jev's text questions cost about $2 for a whole corpus, so employer research is where the money
+goes.</p>
+</section>
+
+<section class="prose">
+<h2 id="gaps">Known gaps</h2>
+<ul>
+    <li><strong>Ground truth is thin.</strong> There are 21 human labels and only 2 of them are High. The
+    weights are unfitted, the baseline of 20 is deliberately unfitted, and the label test in CI catches
+    large regressions but not small ones.</li>
+    <li><strong>The address verdict is per employer.</strong> It describes one address, yet 61 employers
+    mail to more than one, covering 519 postings. It belongs in a table keyed on the normalised
+    address.</li>
+    <li><strong>Nothing catches immigration brokers.</strong> Jev's <code>brokerRouting</code> answer
+    looks promising on 8 postings and is stored on every composed row, but it carries no weight until a
+    drawn sample of about 60 is labelled.</li>
+    <li><strong>The keyless path has no impersonation check,</strong> and the Opus 5.5 impersonation check
+    has never been compared side by side with its predecessor.</li>
+    <li><strong>Aggregator mislocations.</strong> A job in Houston, Texas listed as Houston, BC scores as
+    a location mismatch instead of being recognised as out of scope.</li>
+    <li><strong>Deep review requests do not re-score the flagged posting</strong>, and
+    <code>recompose</code> can overwrite an impersonation row's fixed 90 (both described above).</li>
+    <li><strong>An ordinary employer-check failure on the API path still lets stage 2 score</strong>,
+    using whatever verdict was cached before.</li>
+    <li><strong>The scheduler is not judging</strong>, and 17,033 published ratings still come from the
+    model-chosen era (see <a href="#today">Where things stand today</a>).</li>
+</ul>
+</section>
+
+<section>
+<h2 id="files">File map</h2>
+<div class="table-scroll">
+<table>
+    <thead><tr><th>File</th><th>Role</th></tr></thead>
+    <tbody>
+        <tr><td><code>scripts/judge.ts</code></td><td>The API judge: both stages, the billing abort, rerun-request resolution</td></tr>
+        <tr><td><code>scripts/judge-keyless-fetch.ts</code></td><td>Keyless step 1: read pending, group by employer, write batch files and <code>cached.json</code></td></tr>
+        <tr><td><code>scripts/judge-keyless-apply.ts</code></td><td>Keyless step 3: the single writer, schema and tier gates, scoring</td></tr>
+        <tr><td><code>.claude/skills/judge-postings/SKILL.md</code></td><td>Keyless procedure, escalation step, search budget, the agent prompt</td></tr>
+        <tr><td><code>.claude/skills/update-postings/SKILL.md</code></td><td>The full refresh: review queue, two scrape passes, path choice, waves</td></tr>
+        <tr><td><code>lib/signals/verification-plan.ts</code></td><td><code>verificationAction</code>, <code>planByEmployer</code>, the presumed verdict</td></tr>
+        <tr><td><code>lib/ai/verify-employer-web.ts</code></td><td>Employer check prompt and tools, <code>needsEscalation</code>, <code>tierViolation</code>, <code>verifyEmployerTiered</code></td></tr>
+        <tr><td><code>lib/ai/verifier-models.ts</code></td><td>Model profiles, search caps and list prices</td></tr>
+        <tr><td><code>lib/ai/check-impersonation.ts</code>, <code>resolve-impersonation.ts</code></td><td>The Opus impersonation check and its re-attribution write</td></tr>
+        <tr><td><code>lib/ai/jev-judgments.ts</code></td><td>The five Jev questions</td></tr>
+        <tr><td><code>lib/scoring/verdict.ts</code></td><td><code>buildVerdict</code>, the per-posting pipeline both paths call</td></tr>
+        <tr><td><code>lib/scoring/compose.ts</code>, <code>weights.ts</code>, <code>explain.ts</code></td><td>The composer, the weight table, the published prose</td></tr>
+        <tr><td><code>lib/shared/risk-band.ts</code></td><td>Band cut-offs at 30 and 70</td></tr>
+        <tr><td><code>scripts/scheduled-refresh.sh</code></td><td>The weekly Railway cron: two scrapes, then the judge if keyed</td></tr>
+        <tr><td><code>app/audit/[token]/j/[id]/actions.ts</code></td><td>Owner review actions: notes, rerun and deep requests</td></tr>
+    </tbody>
+</table>
+</div>
+</section>
+
+<footer>
+    Written from the repository at commit b1bf760 and a read-only production query on 6 November 2026.
+    The authoritative prose sources are <code>AGENTS.md</code>, <code>docs/ARCHITECTURE.md</code>,
+    <code>docs/scoring-algorithm.md</code> and <code>docs/verifier-model-eval.md</code>.
+</footer>
+</div>
