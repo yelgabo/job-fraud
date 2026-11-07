@@ -5,6 +5,7 @@ import type Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../db"
 import { normalizeEmployer } from "../signals/normalize-employer"
 import { tenantEmployerMatch } from "../signals/apply-host"
+import { impersonationKey } from "../signals/impersonation-plan"
 import { checkImpersonation, type ImpersonationResult } from "./check-impersonation"
 import { parseFlags } from "../shared/json-schemas"
 import { bandFor } from "../shared/risk-band"
@@ -71,9 +72,9 @@ export async function resolveApplyHost(
   const m = tenantEmployerMatch(employerName, job.externalApplyUrl)
   if (m.result !== "mismatch" || !m.tenant || !employerName) return { kind: "no-check" }
 
-  const key = `${normalizeEmployer(employerName)}|${m.tenant}`
+  const key = impersonationKey(employerName, m.tenant)
   let verdict = verdictCache.get(key)
-  let searchLog: { queries: string[]; blocks: unknown[] } | undefined
+  let searchLog: SearchLogRow | undefined
   if (!verdict) {
     const out = await checkImpersonation(client, {
       claimedEmployer: employerName,
@@ -86,7 +87,23 @@ export async function resolveApplyHost(
     searchLog = out.searchLog
     verdictCache.set(key, verdict)
   }
+  return applyImpersonationVerdict(job, employerName, { tenant: m.tenant, provider: m.provider }, verdict, searchLog)
+}
 
+export type SearchLogRow = { queries: unknown[]; blocks: unknown[] }
+
+/**
+ * The DB side of an impersonation verdict, whoever produced it: the API check above, or an Opus
+ * helper agent on the keyless path (scripts/judge-keyless-apply.ts). `searchLog` is stored on the
+ * real company when the posting is re-attributed.
+ */
+export async function applyImpersonationVerdict(
+  job: JobForCheck,
+  employerName: string,
+  m: { tenant: string; provider?: string },
+  verdict: ImpersonationResult,
+  searchLog?: SearchLogRow,
+): Promise<ApplyHostOutcome> {
   if (verdict.relationship === "same" || verdict.relationship === "affiliate") {
     return { kind: "cleared", relationship: verdict.relationship, realCompany: verdict.realCompany }
   }

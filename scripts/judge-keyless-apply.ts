@@ -8,6 +8,12 @@
 // A verdict is skipped, and its employer's postings stay pending, when it fails zod validation or
 // breaks the tiered rule (tierViolation: a verdict needing escalation, see needsEscalation, that
 // the escalation model did not confirm). On the API path code escalates; here nothing else would catch a missed step 3b.
+//
+// Impersonation: the fetch writes impersonation-NNN.json items for postings whose apply link goes
+// to another company's ATS tenant; Opus helpers answer them in impersonation-result-NNN.json. Those
+// results are applied first, through the same write the API judge uses, and a posting that needs
+// the check is not scored until a result clears it. A helper's searchLog is stored in
+// EmployerWebSearchLog so /audit shows the searches behind the verdict.
 // Run: npm run judge-keyless:apply -- [--dry-run] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]
 // --dry-run validates and plans everything, then writes nothing and asks Jev nothing.
 import { readFileSync, readdirSync, statSync } from "node:fs"
@@ -22,24 +28,37 @@ import { buildVerdict } from "../lib/scoring/verdict"
 import { planByEmployer, presumedVerdict } from "../lib/signals/verification-plan"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { scoreableWhere } from "../lib/shared/deep-requests"
+import { AgentSearchLogSchema, agentSearchLogRow } from "../lib/shared/agent-search-log"
+import { ImpersonationSchema } from "../lib/ai/check-impersonation"
+import { applyImpersonationVerdict } from "../lib/ai/resolve-impersonation"
+import { impersonationCheckFor, type ImpersonationItem } from "../lib/signals/impersonation-plan"
 
-/** A dir contributes its verdicts*.json, its cached.json, and its batch-*.json (for the posting lists). */
+/**
+ * A dir contributes its verdicts*.json, cached.json, batch-*.json (for the posting lists),
+ * impersonation-NNN.json (the check items) and impersonation-result*.json (the helpers' answers).
+ */
 function resolveFiles(args: string[]) {
   const verdictFiles: string[] = []
   const cachedFiles: string[] = []
   const batchFiles: string[] = []
+  const impersonationItemFiles: string[] = []
+  const impersonationResultFiles: string[] = []
   const add = (f: string) => {
     const b = basename(f)
     if (b === "cached.json") cachedFiles.push(f)
     else if (/^batch-.*\.json$/i.test(b)) batchFiles.push(f)
+    else if (/^impersonation-result.*\.json$/i.test(b)) impersonationResultFiles.push(f)
+    else if (/^impersonation-\d+\.json$/i.test(b)) impersonationItemFiles.push(f)
     else verdictFiles.push(f)
   }
   for (const a of args) {
     if (statSync(a).isDirectory()) {
-      for (const f of readdirSync(a)) if (/verdicts.*\.json$|^batch-.*\.json$|^cached\.json$/i.test(f)) add(join(a, f))
+      for (const f of readdirSync(a)) {
+        if (/verdicts.*\.json$|^batch-.*\.json$|^cached\.json$|^impersonation-.*\.json$/i.test(f)) add(join(a, f))
+      }
     } else add(a)
   }
-  return { verdictFiles, cachedFiles, batchFiles }
+  return { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles }
 }
 
 // Anything else an agent returns (a fraudScore, signals, prose) is dropped here: the score is
@@ -47,6 +66,12 @@ function resolveFiles(args: string[]) {
 export const VerdictSchema = z.object({
   workbcId: z.string(),
   web: WebVerificationSchema.optional(),
+  searchLog: AgentSearchLogSchema.optional(),
+})
+
+export const ImpersonationResultSchema = ImpersonationSchema.extend({
+  checkKey: z.string(),
+  searchLog: AgentSearchLogSchema.optional(),
 })
 
 const readJsonArray = (f: string): unknown[] => {
@@ -61,7 +86,7 @@ async function main() {
     console.error("usage: npm run judge-keyless:apply -- [--dry-run] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]")
     process.exit(1)
   }
-  const { verdictFiles, cachedFiles, batchFiles } = resolveFiles(args)
+  const { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles } = resolveFiles(args)
   const verdicts = verdictFiles.flatMap(readJsonArray)
   const cachedEntries = cachedFiles.flatMap(readJsonArray) as Array<{ workbcId: string }>
   // The fetch's posting list per employer, keyed by the representative posting the verdict names.
@@ -85,10 +110,70 @@ async function main() {
   let tierRejected = 0
   let deepResolved = 0
   let tokens = 0
+  let impostors = 0
+  let withoutSearchLog = 0
   const bands: Record<string, number> = {}
   const scored = new Set<string>()
+  /** Postings whose impersonation check came back same, affiliate or uncertain. */
+  const cleared = new Set<string>()
+  const heldForImpersonation = new Set<string>()
 
-  async function score(job: Parameters<typeof buildVerdict>[1] & { workbcId: string }, checks: unknown) {
+  const impItems = new Map<string, ImpersonationItem>()
+  for (const it of impersonationItemFiles.flatMap(readJsonArray) as ImpersonationItem[]) impItems.set(it.checkKey, it)
+  for (const r of impersonationResultFiles.flatMap(readJsonArray)) {
+    const parsed = ImpersonationResultSchema.safeParse(r)
+    const item = parsed.success ? impItems.get(parsed.data.checkKey) : undefined
+    if (!parsed.success || !item) {
+      skipped++
+      const why = parsed.success ? "no impersonation item with that checkKey" : parsed.error.issues[0]?.message
+      console.error(`  skip (impersonation): ${(r as { checkKey?: string })?.checkKey ?? "?"} - ${why}`)
+      continue
+    }
+    const { checkKey, searchLog, ...verdict } = parsed.data
+    let logRow = searchLog ? agentSearchLogRow(searchLog, "opus-5.5") : undefined
+    if (!searchLog) withoutSearchLog++
+    const rows = await prisma.job.findMany({ where: scoreableWhere(item.postings, openDeepIds), include: { employer: true } })
+    for (const job of rows) {
+      const name = job.employer?.nameDisplay ?? null
+      const check = impersonationCheckFor(name, job.externalApplyUrl)
+      // The posting no longer needs this check (re-attributed, or its apply link changed).
+      if (!check || check.checkKey !== checkKey || !name) continue
+      if (dryRun) {
+        if (verdict.relationship === "impersonation") {
+          scored.add(job.workbcId)
+          applied++
+          impostors++
+        } else cleared.add(job.workbcId)
+        continue
+      }
+      try {
+        const outcome = await applyImpersonationVerdict(job, name, check, verdict, logRow)
+        if (outcome.kind === "impersonation") {
+          logRow = undefined
+          scored.add(job.workbcId)
+          applied++
+          impostors++
+          bands.high = (bands.high ?? 0) + 1
+        } else cleared.add(job.workbcId)
+      } catch (err) {
+        skipped++
+        console.error(`  skip (impersonation): ${job.workbcId} - ${(err as Error).message.slice(0, 100)}`)
+      }
+    }
+  }
+
+  async function score(
+    job: Parameters<typeof buildVerdict>[1] & { workbcId: string; externalApplyUrl: string | null },
+    checks: unknown,
+  ) {
+    const check = impersonationCheckFor(job.employerName, job.externalApplyUrl)
+    if (check && !cleared.has(job.workbcId)) {
+      if (!heldForImpersonation.has(job.workbcId)) {
+        heldForImpersonation.add(job.workbcId)
+        console.error(`  held (no impersonation result): ${job.workbcId} checkKey=${check.checkKey}`)
+      }
+      return
+    }
     scored.add(job.workbcId)
     if (dryRun) {
       applied++
@@ -132,6 +217,13 @@ async function main() {
       if (d.web && job.employerId) {
         checks = { ...checks, web: d.web }
         if (!dryRun) await prisma.employer.update({ where: { id: job.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
+        if (!d.searchLog) withoutSearchLog++
+        else if (!dryRun) {
+          const row = agentSearchLogRow(d.searchLog, d.web.verifiedBy ?? "agent")
+          await prisma.employerWebSearchLog.create({
+            data: { employerId: job.employerId, queries: row.queries as never, blocks: row.blocks as never },
+          })
+        }
       }
       await scorePostings(d.web ? (postingsFor.get(d.workbcId) ?? [d.workbcId]) : [d.workbcId], checks, openDeepIds)
       // A verdict that names a deep-flagged posting is the agent investigation that request asked
@@ -185,6 +277,11 @@ async function main() {
       `skipped ${skipped}, rejected by the tier rule ${tierRejected}, ` +
       `deep requests ${dryRun ? "it would resolve" : "resolved"} ${deepResolved} | ` +
       `bands: ${JSON.stringify(bands)} | Jev input tokens ${tokens}`,
+  )
+  console.log(
+    `[judge-keyless:apply] impersonation: ${impostors} postings${dryRun ? " would be" : ""} re-attributed and written high, ` +
+      `${cleared.size} cleared, ${heldForImpersonation.size} held pending for a missing impersonation result | ` +
+      `${withoutSearchLog} verdicts arrived without a searchLog`,
   )
   if (applied > 0 && !dryRun) await requestRevalidation()
   await prisma.$disconnect()

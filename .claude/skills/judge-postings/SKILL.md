@@ -37,9 +37,11 @@ Run from the `job-fraud` project directory.
    all pending). It groups the postings by employer and creates `logs/judge-<ts>/` holding
    `batch-001.json`, `batch-002.json`, ... with one item per employer that needs a web check
    (`--batch-size` employers each, default `15`), plus `cached.json` for postings whose employer
-   needs none (those are scored at apply time from the cached verdict, no helper needed). It
-   prints `DIR=<dir> BATCHES=<n>` and is read-only. If `BATCHES=0`, skip to step 5: the
-   `cached.json` postings still need applying.
+   needs none (those are scored at apply time from the cached verdict, no helper needed), plus
+   `impersonation-NNN.json` for postings whose apply link goes to a different company's ATS
+   tenant (step 3c). It prints `DIR=<dir> BATCHES=<n> IMPERSONATION=<m>` and is read-only. If
+   `BATCHES=0`, skip to step 3c (or step 5 when `IMPERSONATION=0`): the `cached.json` postings
+   still need applying.
 
 2. **Read** the `batch-NNN.json` files in that directory. Each is already a batch array; do not
    re-split them. Each item stands for one employer; its `employerPostings` field is for the apply
@@ -73,6 +75,17 @@ Run from the `job-fraud` project directory.
    that could not search a posting must leave it out of its array (the prompt says so): an
    uninvestigated `uncertain` verdict would be cached on the employer and reused by every later run.
 
+3c. **Impersonation check (Opus).** The API judge asks Opus, for every posting whose apply link
+   goes to an ATS tenant that does not look like the named employer, whether the two companies are
+   related. Here an Opus helper does it: dispatch one helper per `impersonation-NNN.json` file with
+   `model: "opus"`, the **Impersonation prompt** below and the file's items. Each item is one
+   employer-tenant pair; its `postings` field is for the apply step. Write each helper's array as
+   `impersonation-result-NNN.json` in the same directory. Step 5 will not score a posting that
+   needs this check until a result clears it (`same`, `affiliate` or `uncertain`); a confirmed
+   `impersonation` re-attributes the posting to the real company and writes it High, exactly as
+   the API judge does. A pair the helper could not investigate is left out, and its postings stay
+   pending.
+
 4. **Assemble.** The owning worker `Write`s each helper's returned verdict array as
    `verdicts-<n>.json` **inside the same `logs/judge-<ts>/` directory**. Merging everything into
    one file is optional, the apply step takes a directory.
@@ -80,12 +93,16 @@ Run from the `job-fraud` project directory.
 5. **Apply (single writer).** First `npm run judge-keyless:apply -- --dry-run logs/judge-<ts>/` to see
    how many postings it would score and whether any verdict breaks the tier rule; then run it
    without `--dry-run`. A directory contributes its `verdicts*.json`, its `batch-*.json` (for
-   `employerPostings`) and its `cached.json`. It zod-validates each verdict, rejects one that
+   `employerPostings`), its `cached.json` and its `impersonation-*.json` files. It applies the
+   impersonation results first, then zod-validates each verdict, rejects one that
    breaks the tier rule, stores `web` on the employer once, then asks Jev the text questions and
    composes the score (`fraudScore`, `riskBand`, `reasoning`, `signals`, `judgments`,
    `scoringVersion`, `scoredAt`) for every posting the fetch grouped under that employer, the same
    way the API judge does. It then scores the `cached.json` postings. Skipped verdicts are not
-   fatal; their postings stay pending.
+   fatal; their postings stay pending. Each verdict's `searchLog` is stored in
+   `EmployerWebSearchLog`, where `/audit` shows it as agent-reported; the summary counts verdicts
+   that arrived without one, and lists postings held for a missing impersonation result with
+   their `checkKey`.
    Apply each completed wave serially using its explicit verdict file paths, or apply the
    directory once after all its waves finish, to avoid reapplying earlier waves.
 
@@ -115,9 +132,16 @@ tune weights or rescore existing data unless the current task requests it.
     "applicationAddressType": "business",
     "confidence": 0.85,
     "summary": "<=400 chars"
-  }
+  },
+  "searchLog": [
+    { "query": "acme corp victoria bc", "results": [{ "url": "https://acme.com/about", "title": "About Acme" }] }
+  ]
 }
 ```
+
+`searchLog` lists every search the helper ran, in order, with the results it relied on (full
+URLs). It is the audit trail for the verdict; leave a query's `results` empty when nothing useful
+came back.
 
 Enums — `websiteReachable`/`hasJobsListing`: `yes|no|unknown`; `businessMatch`/`locationMatch`:
 `match|mismatch|uncertain`; `applicationAddressType`: `business|residential|home_business|po_box|virtual|none|uncertain`.
@@ -152,10 +176,46 @@ Report what you could establish and nothing more: `uncertain` / `unknown` are co
 when the search did not settle it, and they are treated as neutral. If web search is unavailable
 or refused for a posting (for example a search budget message), leave that posting out of the
 array entirely rather than returning a verdict you did not investigate. `summary` is shown on the
-site as evidence, so keep it factual and under 400 characters.
+site as evidence, so keep it factual and under 400 characters. Fill `searchLog` with every search
+you ran for that posting and the result URLs you relied on.
 
 Be skeptical but fair: `businessMatch` "mismatch" is for fake, shell, parked or impersonating
 entities, not for a company whose industry differs from the role.
+
+## Impersonation prompt (step 3c: paste, then append the impersonation items)
+
+Each item below is a WorkBC job posting that names the employer `claimedEmployer` but whose
+application link (`applyUrl`) routes to the `tenant` careers site on `provider`. For EACH item,
+use web search to identify the company that owns that careers site, then determine its
+relationship to `claimedEmployer`. Investigate specifically: does one own, operate or manage the
+other? Is the claimed employer a division, brand or trade name of the tenant's group, or the other
+way round? Do they share ownership or leadership? Check the tenant's divisions, brands and about
+pages and the claimed employer's leadership and ownership.
+
+- `same`: the tenant IS the claimed employer (same company, alias or rebrand).
+- `affiliate`: ANY legitimate corporate tie in either direction: parent, subsidiary, sibling,
+  owning group, in-house division or operating arm, brand or trade name, or one owns, operates or
+  manages the other or they share ownership or leadership.
+- `impersonation`: the tenant and the claimed employer are genuinely UNRELATED companies; the
+  posting uses the claimed employer's name but sends applicants to an unrelated company's hiring
+  system.
+- `uncertain`: you cannot confidently establish the relationship.
+
+Choose `impersonation` ONLY if you are confident the two are genuinely unrelated. If there is ANY
+plausible corporate tie, or you are unsure, choose `affiliate` or `uncertain`, never
+`impersonation`. If web search is unavailable or refused for an item, leave it out. Return ONLY a
+JSON array, one object per item you investigated:
+
+```json
+{
+  "checkKey": "<copied from the item>",
+  "relationship": "same | affiliate | impersonation | uncertain",
+  "realCompany": "official name of the company that owns the tenant, or empty string",
+  "confidence": 0.8,
+  "summary": "<=400 chars of reasoning",
+  "searchLog": [{ "query": "...", "results": [{ "url": "https://...", "title": "..." }] }]
+}
+```
 
 ## Scheduling
 

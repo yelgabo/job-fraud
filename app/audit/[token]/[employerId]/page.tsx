@@ -5,20 +5,36 @@ import { parseChecks } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { requireAuditToken } from "../guard"
 import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
+import { AGENT_SEARCH_BLOCK } from "@/lib/shared/agent-search-log"
 
 export const dynamic = "force-dynamic"
 
 type SearchResult = { title?: string; url?: string; page_age?: string; encrypted_content?: string }
 type SearchGroup = { query: string | null; results: SearchResult[]; error: string | null }
 
-// Walk a log row's raw `blocks` (verbatim server_tool_use + web_search_tool_result content blocks)
-// into query->results groups, in the order Claude issued them.
+// Who reported an agent-written log (lib/shared/agent-search-log.ts), or null for an API trail.
+function agentReporter(blocks: unknown): string | null {
+  if (!Array.isArray(blocks)) return null
+  const b = blocks.find((x) => (x as { type?: string })?.type === AGENT_SEARCH_BLOCK) as { reportedBy?: string } | undefined
+  return b ? (b.reportedBy ?? "agent") : null
+}
+
+// Walk a log row's `blocks` into query->results groups, in the order the searches ran: verbatim
+// server_tool_use + web_search_tool_result blocks from the API judge, or one agent-reported block
+// per query from a keyless helper agent.
 function groupBlocks(blocks: unknown): SearchGroup[] {
   if (!Array.isArray(blocks)) return []
   const groups: SearchGroup[] = []
   for (const raw of blocks) {
     const b = raw as { type?: string; name?: string; input?: { query?: unknown }; content?: unknown }
-    if (b?.type === "server_tool_use" && b.name === "web_search") {
+    if (b?.type === AGENT_SEARCH_BLOCK) {
+      const a = raw as { query?: unknown; results?: unknown }
+      groups.push({
+        query: typeof a.query === "string" ? a.query : null,
+        results: Array.isArray(a.results) ? (a.results as SearchResult[]) : [],
+        error: null,
+      })
+    } else if (b?.type === "server_tool_use" && b.name === "web_search") {
       groups.push({ query: typeof b.input?.query === "string" ? b.input.query : null, results: [], error: null })
     } else if (b?.type === "web_search_tool_result") {
       const target = groups[groups.length - 1] ?? { query: null, results: [], error: null }
@@ -119,6 +135,7 @@ export default async function AuditDetailPage({
         {employer.webSearchLogs.length === 0 && <p className="text-sm text-zinc-400">No captured searches.</p>}
         {employer.webSearchLogs.map((log) => {
           const groups = groupBlocks(log.blocks)
+          const reporter = agentReporter(log.blocks)
           const queries = Array.isArray(log.queries) ? (log.queries as string[]) : []
           const totalResults = groups.reduce((n, g) => n + g.results.length, 0)
           return (
@@ -160,10 +177,17 @@ export default async function AuditDetailPage({
                   ))}
                 </ol>
               )}
-              <p className="mt-3 text-[11px] text-zinc-300">
-                Raw blocks stored ({Array.isArray(log.blocks) ? (log.blocks as unknown[]).length : 0}), incl.
-                encrypted_content for replay/citation.
-              </p>
+              {reporter ? (
+                <p className="mt-3 text-[11px] text-zinc-400">
+                  Reported by a keyless helper agent ({reporter}). This is the agent&apos;s own account of its
+                  searches, not a verbatim API trail.
+                </p>
+              ) : (
+                <p className="mt-3 text-[11px] text-zinc-300">
+                  Raw blocks stored ({Array.isArray(log.blocks) ? (log.blocks as unknown[]).length : 0}), incl.
+                  encrypted_content for replay/citation.
+                </p>
+              )}
             </div>
           )
         })}

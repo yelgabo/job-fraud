@@ -9,6 +9,7 @@ import { join } from "node:path"
 import { prisma } from "../lib/db"
 import { parseFlags } from "../lib/shared/json-schemas"
 import { planByEmployer } from "../lib/signals/verification-plan"
+import { planImpersonationChecks } from "../lib/signals/impersonation-plan"
 
 async function main() {
   const argv = process.argv.slice(2)
@@ -58,12 +59,26 @@ async function main() {
   }
   writeFileSync(join(dir, "cached.json"), JSON.stringify(cached, null, 2), "utf8")
 
+  // The API judge runs this check per posting with an Opus API call; here Opus helper agents run
+  // it, and apply holds back any posting it covers until a result for its item is in the dir.
+  const impersonation = planImpersonationChecks(jobs)
+  let impersonationFiles = 0
+  for (let i = 0; i < impersonation.length; i += 10) {
+    impersonationFiles++
+    const name = `impersonation-${String(impersonationFiles).padStart(3, "0")}.json`
+    writeFileSync(join(dir, name), JSON.stringify(impersonation.slice(i, i + 10), null, 2), "utf8")
+  }
+
   console.log(
     `[judge-keyless:fetch] ${jobs.length} pending postings from ${plans.length} employers: ` +
       `${items.length} employers to investigate in ${batches} batch files, ` +
       `${cached.length} postings scored from a cached or presumed verdict (cached.json) -> ${dir}`,
   )
-  console.log(`DIR=${dir} BATCHES=${batches}`)
+  console.log(
+    `[judge-keyless:fetch] ${impersonation.length} employer-tenant pairs need an impersonation check ` +
+      `(${impersonation.reduce((n, i) => n + i.postings.length, 0)} postings) in ${impersonationFiles} impersonation files`,
+  )
+  console.log(`DIR=${dir} BATCHES=${batches} IMPERSONATION=${impersonationFiles}`)
   await prisma.$disconnect()
 }
 

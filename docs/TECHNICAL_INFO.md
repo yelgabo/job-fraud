@@ -46,6 +46,8 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
   (`opus-5-5`) `web_search` call (`lib/ai/check-impersonation.ts`) classifies the relationship
   (`same`/`affiliate`/`impersonation`/`uncertain`); a confirmed impersonation is re-attributed to the
   real company and scored HIGH (`lib/ai/resolve-impersonation.ts`).
+  The keyless path runs the same check with Opus helper agents (`impersonation-NNN.json` items,
+  answered in `impersonation-result-NNN.json`) and applies it through the same write.
 - *Stage 2 — judge text, compose score.* Jev (`lib/ai/jev-judgments.ts`, needs `TYPESAFE_API_KEY`)
   answers typed questions about the posting text; `lib/scoring/verdict.ts` composes the employer
   verdict, the posting's own flags / NOC and those answers through the weight table → `fraudScore`,
