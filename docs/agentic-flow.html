@@ -235,12 +235,12 @@ itself can differ. Only the API judge runs the impersonation check, and its veri
     <div class="stat"><div class="k">Pending</div><div class="v">730</div><div class="s">waiting for a judge run</div></div>
 </div>
 <div class="prose">
-<p><strong>The scheduler is scraping but not judging.</strong> The newest scrape is from
-2 November 2026 at 12:24 UTC, which is the Monday cron run. The newest judgment is from 27 October
-2026 at 13:26 UTC, and 730 postings are waiting. That pattern matches the scheduler script, which only
-judges when <code>ANTHROPIC_API_KEY</code> is set on the scheduler service. I could not read the
-service's variables because this checkout is not linked to the Railway project, so the missing key is
-the likely cause rather than a confirmed one.</p>
+<p><strong>The scheduler was scraping but not judging.</strong> The newest scrape was from
+2 November 2026 at 12:24 UTC, the Monday cron run, while the newest judgment was from 27 October, and
+730 postings were waiting. The scheduler service turned out to have no <code>ANTHROPIC_API_KEY</code>,
+and its script only judges when that key is set. Later on 6 November the backlog was drained with the
+keyless judge (729 postings scored, one left pending) and the key was added to the scheduler, so
+the Monday run now judges up to 1,000 postings after scraping.</p>
 <p><strong>Most published ratings predate the composer.</strong> Of the 23,021 judged postings, 17,033
 have <code>scoringVersion</code> null, which means a model chose the number before the composer existed
 (or the impersonation path wrote it). Another 1,662 are version 1 and 4,326 are version 2. So the rule
@@ -753,8 +753,8 @@ goes.</p>
     has never been compared side by side with its predecessor.</li>
     <li><strong>Aggregator mislocations.</strong> A job in Houston, Texas listed as Houston, BC scores as
     a location mismatch instead of being recognised as out of scope.</li>
-    <li><strong>The scheduler is not judging</strong>, and 17,033 published ratings still come from the
-    model-chosen era (see <a href="#today">Where things stand today</a>).</li>
+    <li><strong>17,033 published ratings still come from the model-chosen era</strong> (see
+    <a href="#today">Where things stand today</a>).</li>
 </ul>
 </section>
 

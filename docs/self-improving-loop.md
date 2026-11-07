@@ -9,7 +9,7 @@ hand. This says what stands in the way, in order of leverage, and what has to st
 | Stage | Runs itself? | What decides |
 | --- | --- | --- |
 | Scrape | Yes, weekly Railway cron (`job-fraud-scheduler`) | nothing to decide |
-| Employer verification | Yes, same cron, once `ANTHROPIC_API_KEY` is on the service | Claude web search, or an agent session |
+| Employer verification | Yes, same cron (`ANTHROPIC_API_KEY` on the service since 2026-11-06) | Claude web search, or an agent session |
 | Text judgments | With the run | Jev, five fixed questions |
 | Score | With the run | `lib/scoring/weights.ts`, pure code |
 | Publish | Automatic once written | 10 minute cache |

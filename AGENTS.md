@@ -99,8 +99,8 @@ What still differs:
 | Web search limit | per-search billing ($10 / 1,000), none per session | Claude Code's WebSearch: about 200 per session, refilling about 100 an hour |
 | Prompt | `lib/ai/verify-employer-web.ts` | the skill's "Agent prompt" |
 
-Use the API judge for bulk and scheduled runs (the `job-fraud-scheduler` service runs it weekly once
-the key is on that service). Use the keyless judge without a key, or for a small high-scrutiny set
+Use the API judge for bulk and scheduled runs (the `job-fraud-scheduler` service runs it weekly; its
+key was added 2026-11-06). Use the keyless judge without a key, or for a small high-scrutiny set
 such as `deep` review requests.
 
 **Keyless step 1 - fetch (read-only, no key).**
