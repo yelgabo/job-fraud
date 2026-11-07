@@ -204,8 +204,9 @@ shows the judged ones. The judge has two front ends. The <em>API judge</em>
 is one Node process that calls Claude through the Anthropic API. The <em>keyless judge</em> is a Claude
 Code session that sends helper agents to research employers on the web. Both hand their evidence to the
 same composer, so the same evidence gets the same score whichever path gathered it. The evidence
-itself can differ. Only the API judge runs the impersonation check, and its verifier sees an
-800-character description excerpt where keyless helpers see 1,800.</p>
+itself can differ. The API judge's verifier sees an 800-character description excerpt where keyless
+helpers see 1,800, and the API path records verbatim search blocks where keyless helpers report
+their own searches.</p>
 <ul class="facts">
     <li>Agents are given no database step. During a run, one process writes: the API judge itself
     (from several concurrent tasks inside it), or <code>judge-keyless:apply</code> on the keyless
@@ -305,7 +306,8 @@ flags stand in for Jev's route judgment and the row stores <code>judgments = nul
         <tr><td>Command</td><td><code>npm run judge</code></td><td><code>judge-keyless:fetch</code>, then helper agents, then <code>judge-keyless:apply</code></td></tr>
         <tr><td>Who researches employers</td><td>Claude through the API, with the server-side <code>web_search</code> tool</td><td>Claude Code helper agents with the WebSearch tool</td></tr>
         <tr><td>Escalation to Opus</td><td>Done in code by <code>verifyEmployerTiered</code></td><td>Done by the orchestrating session; apply rejects any verdict that needs escalation and is not marked as Opus-confirmed</td></tr>
-        <tr><td>Brand-impersonation check</td><td>Yes, Opus 5.5 on each posting whose apply link names a different company</td><td>No, because it needs the API key</td></tr>
+        <tr><td>Brand-impersonation check</td><td>Opus 5.5 API call on each posting whose apply link names a different company</td><td>Opus helper agents, one answer per employer and tenant pair; apply holds a posting that needs the check until a result clears it (since 6 November 2026)</td></tr>
+        <tr><td>Search trail on <code>/audit</code></td><td>Verbatim API search blocks</td><td>The helper's own list of queries and result URLs, labelled agent-reported</td></tr>
         <tr><td>Search limit</td><td>None per run; $10 per 1,000 searches</td><td>About 200 per session, refilling about 100 an hour</td></tr>
         <tr><td>Prompt lives in</td><td><code>lib/ai/verify-employer-web.ts</code></td><td>The "Agent prompt" section of <code>.claude/skills/judge-postings/SKILL.md</code></td></tr>
         <tr><td>Used for</td><td>Bulk and scheduled runs</td><td>Machines without the key, and small high-scrutiny sets</td></tr>
@@ -356,7 +358,7 @@ top-level sessions, because a single owner can restart the run and its progress 
       
     </svg>
   </div>
-  <figcaption>Helpers only research employers and return JSON. The orchestrator writes their output to files, and the apply CLI is the one process that touches the database. A verdict that fails the schema or the tier rule is skipped, and that employer's postings stay pending for the next fetch.</figcaption>
+  <figcaption>Helpers only research employers and return JSON. The orchestrator writes their output to files, and the apply CLI is the one process that touches the database. A verdict that fails the schema or the tier rule is skipped, and that employer's postings stay pending for the next fetch. Not drawn: the fetch also writes impersonation items for postings whose apply link names another company, Opus helpers answer them, and apply writes those answers before scoring.</figcaption>
 </figure>
 <figure class="dg" id="f3">
   <div class="dg-scroll" tabindex="0" role="region" aria-label="Keyless judge sequence. Scrolls sideways on small screens.">
@@ -527,8 +529,11 @@ default) if the service has an Anthropic key. It reaches Postgres over Railway's
 
 <section class="prose">
 <h2 id="impersonation">The brand-impersonation check</h2>
-<p>Before scoring each posting, the API judge compares the applicant tracking system tenant in the
-apply link with the employer the posting names. If a posting says it is from one company but its
+<p>Before scoring each posting, both judges compare the applicant tracking system tenant in the
+apply link with the employer the posting names. On the keyless path the fetch writes one
+<code>impersonation-NNN.json</code> item per employer and tenant pair, an Opus helper agent answers
+it, and apply writes the answer through the same function the API judge uses.
+Below, the API judge's version. If a posting says it is from one company but its
 Workday link belongs to another, Opus 5.5 investigates with web search and classifies the relationship
 as <code>same</code>, <code>affiliate</code>, <code>impersonation</code> or <code>uncertain</code>. The
 prompt tells it to choose impersonation only when it is confident the two companies are unrelated, so
@@ -678,9 +683,10 @@ because the medium band is full of big brands, so weighting it directly would pe
     <li><strong>Least-privilege database login.</strong> Local <code>.env</code> files connect as
     <code>jobfraud_local</code>, which can read and write rows but cannot change the schema or
     truncate tables. Schema changes reach production only through a deploy.</li>
-    <li><strong>An audit trail behind every API web verdict.</strong>
-    <code>EmployerWebSearchLog</code> keeps the raw search blocks for the <code>/audit</code> pages,
-    append-only by convention. Keyless verdicts and presumed verdicts write no search log.</li>
+    <li><strong>An audit trail behind every researched verdict.</strong>
+    <code>EmployerWebSearchLog</code> keeps the API judge's raw search blocks and, since 6 November
+    2026, the keyless helpers' reported queries and result URLs, append-only by convention. Presumed
+    verdicts involve no search and write none.</li>
 </ul>
 </section>
 
@@ -749,8 +755,8 @@ goes.</p>
     <li><strong>Nothing catches immigration brokers.</strong> Jev's <code>brokerRouting</code> answer
     looks promising on 8 postings and is stored on every composed row, but it carries no weight until a
     drawn sample of about 60 is labelled.</li>
-    <li><strong>The keyless path has no impersonation check,</strong> and the Opus 5.5 impersonation check
-    has never been compared side by side with its predecessor.</li>
+    <li><strong>The Opus 5.5 impersonation check has never been compared side by side with its
+    predecessor</strong>, and no labelled impersonation cases exist to measure it against.</li>
     <li><strong>Aggregator mislocations.</strong> A job in Houston, Texas listed as Houston, BC scores as
     a location mismatch instead of being recognised as out of scope.</li>
     <li><strong>17,033 published ratings still come from the model-chosen era</strong> (see
