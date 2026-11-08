@@ -31,7 +31,7 @@ async function main() {
     else if (argv[i] === "--all") all = true // include the quiet ATS-only employers too
   }
 
-  const jobs = await prisma.job.findMany({ where: { scoredAt: null }, include: { employer: true } })
+  const jobs = await prisma.job.findMany({ where: { status: "PENDING" }, include: { employer: true } })
   const byEmp = new Map<string, typeof jobs>()
   for (const j of jobs) {
     if (!j.employerId) continue

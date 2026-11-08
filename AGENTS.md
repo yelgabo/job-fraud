@@ -191,8 +191,8 @@ path to pick. Use it rather than reinventing the sequence.
 employer web-verify (once per employer, skipped for employers whose postings all apply via their
 own matching ATS tenant) -> brand-impersonation pre-check per posting -> per-posting Jev text
 judgments -> composed score (`lib/scoring/verdict.ts`).
-Postings are `pending` while `scoredAt` is null and the site shows only judged ones. Since
-2026-11-08 `Job.status` (`PENDING` / `PUBLISHED`) moves with `scoredAt`, and `Job.verdictKind`
+`Job.status` (`PENDING` / `PUBLISHED`, since 2026-11-08) says whether the site shows a posting;
+every reader filters on it, and `scoredAt` is only the time of the last verdict. `Job.verdictKind`
 (`MODEL` / `COMPOSED` / `IMPERSONATION`) records how the current verdict was produced. Only
 `lib/scoring/write-verdict.ts` writes the verdict columns: it refuses to let a composed verdict
 replace an impersonation, and refuses a "recompute" on a pending row (an open rerun). A new

@@ -21,6 +21,7 @@ type Row = {
   riskBand: string | null
   category: string | null
   scoredAt: Date | null
+  status: "PENDING" | "PUBLISHED"
   postedDate: Date | null
   scrapedAt: Date
 }
@@ -61,16 +62,16 @@ const count = (rows: Row[], where: Record<string, unknown>) =>
 // Deliberately spread across bands, categories, posted-date windows, unparseable posted dates
 // (postedDate null -> scrapedAt fallback) and one still-pending row.
 const CORPUS: Row[] = [
-  { id: "a", riskBand: "high", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
-  { id: "b", riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-10"), scrapedAt: day("2026-07-11") },
-  { id: "c", riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-06-20"), scrapedAt: day("2026-06-21") },
-  { id: "d", riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-02-02"), scrapedAt: day("2026-02-03") },
-  { id: "e", riskBand: "low", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-25"), scrapedAt: day("2026-07-26") },
-  { id: "f", riskBand: "low", category: "Healthcare", scoredAt: day("2026-07-28"), postedDate: null, scrapedAt: day("2026-07-27") },
-  { id: "g", riskBand: "unknown", category: "Healthcare", scoredAt: day("2026-07-28"), postedDate: null, scrapedAt: day("2026-03-01") },
-  { id: "h", riskBand: "low", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-05-15"), scrapedAt: day("2026-05-16") },
+  { id: "a", riskBand: "high", category: "Software & Data", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
+  { id: "b", riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-10"), scrapedAt: day("2026-07-11") },
+  { id: "c", riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-06-20"), scrapedAt: day("2026-06-21") },
+  { id: "d", riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-02-02"), scrapedAt: day("2026-02-03") },
+  { id: "e", riskBand: "low", category: "Food Service", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-25"), scrapedAt: day("2026-07-26") },
+  { id: "f", riskBand: "low", category: "Healthcare", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: null, scrapedAt: day("2026-07-27") },
+  { id: "g", riskBand: "unknown", category: "Healthcare", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: null, scrapedAt: day("2026-03-01") },
+  { id: "h", riskBand: "low", category: "Software & Data", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-05-15"), scrapedAt: day("2026-05-16") },
   // pending: never listed, never counted, in any dimension
-  { id: "p", riskBand: null, category: "Software & Data", scoredAt: null, postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
+  { id: "p", riskBand: null, category: "Software & Data", scoredAt: null, status: "PENDING", postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
 ]
 
 const CATS = ["all", "Software & Data", "Food Service", "Healthcare"] as const
@@ -121,7 +122,7 @@ describe("postedWindowWhere", () => {
 
   it("does not let a recent scrape drag an old posted date into a window", () => {
     const w = postedWindowWhere("30", NOW) as Record<string, unknown>
-    const old = { id: "x", riskBand: "low", category: "Healthcare", scoredAt: NOW, postedDate: day("2026-02-02"), scrapedAt: day("2026-07-29") }
+    const old = { id: "x", riskBand: "low", category: "Healthcare", scoredAt: NOW, status: "PUBLISHED" as const, postedDate: day("2026-02-02"), scrapedAt: day("2026-07-29") }
     expect(matches(old, w)).toBe(false)
   })
 })
@@ -155,7 +156,7 @@ describe("buildPostingsQuery: each dimension's counts exclude only itself", () =
   it("only ever lists judged postings", () => {
     const q = buildPostingsQuery({ band: "all", cat: "all", posted: "any", now: NOW })
     for (const where of [q.rowsWhere, q.bandCountWhere, q.catCountWhere, ...Object.values(q.postedCountWhere)]) {
-      expect(where).toHaveProperty("scoredAt")
+      expect(where).toHaveProperty("status", "PUBLISHED")
     }
     expect(count(CORPUS, q.rowsWhere as Record<string, unknown>)).toBe(CORPUS.length - 1)
   })
@@ -272,15 +273,15 @@ describe("pagination: pages partition the filtered rows and never touch the tab 
 
   // Deliberate ties in fraudScore and title so only the workbcId tiebreaker separates rows.
   const PAGED: PagedRow[] = [
-    { id: "r1", workbcId: "111", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
-    { id: "r2", workbcId: "222", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-27"), scrapedAt: day("2026-07-29") },
-    { id: "r3", workbcId: "333", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-26"), scrapedAt: day("2026-07-29") },
-    { id: "r4", workbcId: "444", title: "Developer", fraudScore: 55, riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-07-25"), scrapedAt: day("2026-07-29") },
-    { id: "r5", workbcId: "555", title: "Developer", fraudScore: 55, riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), postedDate: day("2026-07-24"), scrapedAt: day("2026-07-29") },
-    { id: "r6", workbcId: "666", title: "Barista", fraudScore: 12, riskBand: "low", category: "Food Service", scoredAt: day("2026-07-28"), postedDate: day("2026-07-23"), scrapedAt: day("2026-07-29") },
-    { id: "r7", workbcId: "777", title: "Nurse", fraudScore: 5, riskBand: "low", category: "Healthcare", scoredAt: day("2026-07-28"), postedDate: day("2026-07-22"), scrapedAt: day("2026-07-29") },
+    { id: "r1", workbcId: "111", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
+    { id: "r2", workbcId: "222", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-27"), scrapedAt: day("2026-07-29") },
+    { id: "r3", workbcId: "333", title: "Cook", fraudScore: 80, riskBand: "high", category: "Food Service", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-26"), scrapedAt: day("2026-07-29") },
+    { id: "r4", workbcId: "444", title: "Developer", fraudScore: 55, riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-25"), scrapedAt: day("2026-07-29") },
+    { id: "r5", workbcId: "555", title: "Developer", fraudScore: 55, riskBand: "medium", category: "Software & Data", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-24"), scrapedAt: day("2026-07-29") },
+    { id: "r6", workbcId: "666", title: "Barista", fraudScore: 12, riskBand: "low", category: "Food Service", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-23"), scrapedAt: day("2026-07-29") },
+    { id: "r7", workbcId: "777", title: "Nurse", fraudScore: 5, riskBand: "low", category: "Healthcare", scoredAt: day("2026-07-28"), status: "PUBLISHED", postedDate: day("2026-07-22"), scrapedAt: day("2026-07-29") },
     // pending: must appear on no page
-    { id: "rp", workbcId: "888", title: "Cook", fraudScore: 0, riskBand: null, category: "Food Service", scoredAt: null, postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
+    { id: "rp", workbcId: "888", title: "Cook", fraudScore: 0, riskBand: null, category: "Food Service", scoredAt: null, status: "PENDING", postedDate: day("2026-07-28"), scrapedAt: day("2026-07-29") },
   ]
 
   /** Interpret POSTINGS_ORDER_BY the way the database would (all test values non-null). */

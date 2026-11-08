@@ -45,7 +45,7 @@ export default async function AdminJobPage({
           Admin panel
         </h2>
 
-        {!job.scoredAt && (
+        {job.status === "PENDING" && (
           <p className="mb-3 rounded bg-white px-3 py-2 text-sm text-amber-800">
             Pending — this posting is queued for the next judge run.
           </p>
@@ -123,7 +123,7 @@ export default async function AdminJobPage({
         </div>
       </section>
 
-      {job.scoredAt ? (
+      {job.status === "PUBLISHED" ? (
         <JobReport job={job} />
       ) : (
         <div>

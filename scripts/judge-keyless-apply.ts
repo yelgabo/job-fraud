@@ -26,6 +26,7 @@ import { tierViolation } from "../lib/ai/verify-employer-web"
 import { mailEvidence } from "../lib/shared/mail-evidence"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
+import type { JobStatus, VerdictKind } from "@prisma/client"
 import { planByEmployer, presumedVerdict } from "../lib/signals/verification-plan"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { scoreableWhere } from "../lib/shared/deep-requests"
@@ -168,8 +169,8 @@ async function main() {
     job: Parameters<typeof buildVerdict>[1] & {
       workbcId: string
       externalApplyUrl: string | null
-      reasoning: string | null
-      scoredAt: Date | null
+      verdictKind: VerdictKind | null
+      status: JobStatus
     },
     checks: unknown,
   ) {
@@ -271,7 +272,7 @@ async function main() {
   }
   for (const [employerId, workbcIds] of cachedByEmployer) {
     try {
-      const pending = await prisma.job.findMany({ where: { employerId, scoredAt: null }, include: { employer: true } })
+      const pending = await prisma.job.findMany({ where: { employerId, status: "PENDING" }, include: { employer: true } })
       const [plan] = planByEmployer(pending)
       if (!plan || plan.action === "web") continue
       const employer = pending[0].employer

@@ -16,7 +16,7 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
       _count: { select: { webSearchLogs: true } },
       webSearchLogs: { orderBy: { capturedAt: "desc" }, take: 1, select: { capturedAt: true, queries: true } },
       jobs: {
-        where: { scoredAt: { not: null } },
+        where: { status: "PUBLISHED" },
         orderBy: { fraudScore: "desc" },
         take: 1,
         select: { fraudScore: true, riskBand: true },

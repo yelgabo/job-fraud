@@ -39,7 +39,7 @@ async function main() {
   const args = parseArgs()
 
   const jobs = await prisma.job.findMany({
-    where: { scoredAt: { not: null }, fraudScore: { gte: 0 } },
+    where: { status: "PUBLISHED", fraudScore: { gte: 0 } },
     include: { employer: true },
   })
 

@@ -21,7 +21,7 @@ async function main() {
   }
 
   const jobs = await prisma.job.findMany({
-    where: { scoredAt: null },
+    where: { status: "PENDING" },
     orderBy: { scrapedAt: "asc" },
     take: limit,
     include: { employer: true },

@@ -43,7 +43,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
   const { id } = await params
   const employer = await prisma.employer.findUnique({
     where: { id },
-    include: { jobs: { where: { scoredAt: { not: null } }, orderBy: { fraudScore: "desc" } } },
+    include: { jobs: { where: { status: "PUBLISHED" }, orderBy: { fraudScore: "desc" } } },
   })
   if (!employer) notFound()
 

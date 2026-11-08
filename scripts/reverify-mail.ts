@@ -10,7 +10,6 @@ import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
-import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 
 async function main() {
   const env = loadScrapeEnv()
@@ -55,7 +54,7 @@ async function main() {
       // re-score every job for this employer
       for (const job of group) {
         // A confirmed impersonation was scored without the composer; re-scoring would undo it.
-        if (isImpersonationVerdict(job.reasoning)) continue
+        if (job.verdictKind === "IMPERSONATION") continue
         const { usage: _usage, ...data } = await buildVerdict(jev, { ...job, employerName: rep.employer!.nameDisplay }, checks)
         if (!(await writeComposedVerdict(job.workbcId, data, "judgment"))) continue
         console.log(`   ${job.workbcId} ${job.title} → ${data.riskBand} ${data.fraudScore}`)

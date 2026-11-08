@@ -59,7 +59,7 @@ pipeline). One process writes at a time → no race conditions.
 - Extracts **deterministic signals for free** (no AI): regex flags (mail-to-residential, generic
   email, crypto/fee/ID-upfront, WhatsApp-only), the **NOC occupation code** → job-type category, and
   the **apply-URL → ATS classification** (Workday / Greenhouse / …).
-- Upserts each posting as **pending** (`scoredAt = null`). Re-runs accumulate; nothing is wiped.
+- Upserts each posting as **pending** (`status = PENDING`). Re-runs accumulate; nothing is wiped.
 
 ## 4. Phase ② Judge (AI — two stages + a guard)
 

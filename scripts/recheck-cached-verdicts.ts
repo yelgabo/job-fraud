@@ -30,7 +30,6 @@ import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 import { rescoreVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
-import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 // Measured on the 2026-10-27 published-side run: Opus 5.5 averaged $0.21 per employer check.
@@ -58,7 +57,7 @@ async function main() {
   const jobs = await prisma.job.findMany({ where: { employerId: { not: null } }, include: { employer: true } })
   const byEmployer = new Map<string, typeof jobs>()
   for (const j of jobs) {
-    if (isImpersonationVerdict(j.reasoning)) continue
+    if (j.verdictKind === "IMPERSONATION") continue
     byEmployer.set(j.employerId!, [...(byEmployer.get(j.employerId!) ?? []), j])
   }
 
@@ -67,7 +66,7 @@ async function main() {
   for (const [employerId, list] of byEmployer) {
     const web = (list[0].employer?.checks as { web?: WebVerification } | null)?.web
     if (!web || web.source === "ats-tenant-match") continue
-    const judged = list.filter((j) => j.scoredAt)
+    const judged = list.filter((j) => j.status === "PUBLISHED")
     const rep = pickRepresentative(residential ? list : judged.length ? judged : list)
     const selected = ids
       ? ids.has(employerId)

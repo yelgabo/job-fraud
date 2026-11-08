@@ -82,6 +82,12 @@ machine's section.
 
 ## 1. The Job verdict
 
+**Made explicit on 2026-11-08.** `Job.status` and `Job.verdictKind` now carry this machine, every
+reader filters on them, and `lib/scoring/write-verdict.ts` is the only writer of the verdict
+columns. Its guards stop a composed verdict replacing an impersonation and stop a recompute
+republishing a pending row. The tables below describe the encoding as it was, and still explain
+how `scripts/backfill-status.ts` derives the columns. Bugs 3 and 5 to 10 are not fixed by this.
+
 ### States
 
 | State | Encoding |

@@ -10,7 +10,6 @@ import { composeVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import type { Judgments } from "../lib/scoring/compose"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
-import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 
 function parseArgs() {
   const a = { apply: false, limit: undefined as number | undefined }
@@ -25,9 +24,9 @@ function parseArgs() {
 async function main() {
   const args = parseArgs()
   const jobs = await prisma.job.findMany({
-    // A rerun clears scoredAt but keeps the old verdict; composing it would republish that verdict
-    // and the next judge run would count the rerun as serviced.
-    where: { scoringVersion: { not: null }, scoredAt: { not: null } },
+    // A pending row with a composed verdict is waiting on a rerun; composing it would republish
+    // the verdict the owner sent back. write-verdict refuses that too.
+    where: { verdictKind: "COMPOSED", status: "PUBLISHED" },
     include: { employer: true },
     orderBy: { scoredAt: "asc" },
     take: args.limit,
@@ -36,13 +35,7 @@ async function main() {
 
   const moves: Record<string, number> = {}
   let changed = 0
-  let impersonations = 0
   for (const job of jobs) {
-    // Rows written before the impersonation write cleared scoringVersion can still carry one.
-    if (isImpersonationVerdict(job.reasoning)) {
-      impersonations++
-      continue
-    }
     const judgments = job.judgments as Judgments | null
     const { usage: _usage, ...data } = composeVerdict(job, parseChecks(job.employer?.checks), judgments)
     const from = job.riskBand ?? "?"
@@ -54,7 +47,7 @@ async function main() {
     if (args.apply) await writeComposedVerdict(job.workbcId, data, "recompute")
   }
 
-  console.log(`[recompose] score changed on ${changed}/${jobs.length}, ${impersonations} confirmed impersonations skipped`)
+  console.log(`[recompose] score changed on ${changed}/${jobs.length}`)
   console.log(`[recompose] band moves: ${JSON.stringify(moves)}`)
   if (args.apply && changed > 0) await requestRevalidation()
   await prisma.$disconnect()

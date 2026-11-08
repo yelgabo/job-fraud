@@ -64,7 +64,7 @@ export default async function AuditDetailPage({
     where: { id: employerId },
     include: {
       webSearchLogs: { orderBy: { capturedAt: "desc" } },
-      jobs: { where: { scoredAt: { not: null } }, orderBy: { fraudScore: "desc" } },
+      jobs: { where: { status: "PUBLISHED" }, orderBy: { fraudScore: "desc" } },
     },
   })
   if (!employer) notFound()

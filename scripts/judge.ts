@@ -46,7 +46,7 @@ async function main() {
   const t0 = Date.now()
 
   const jobs = await prisma.job.findMany({
-    where: args.rejudge ? {} : { scoredAt: null },
+    where: args.rejudge ? {} : { status: "PENDING" },
     take: args.limit ?? undefined,
     include: { employer: true },
   })
@@ -237,7 +237,7 @@ async function resolveRerunRequests() {
   const open = await prisma.judgeRequest.findMany({ where: { kind: "rerun", resolvedAt: null } })
   if (open.length === 0) return
   const scored = await prisma.job.findMany({
-    where: { workbcId: { in: open.map((r) => r.workbcId) }, scoredAt: { not: null } },
+    where: { workbcId: { in: open.map((r) => r.workbcId) }, status: "PUBLISHED" },
     select: { workbcId: true, scoredAt: true },
   })
   const scoredAt = new Map(scored.map((j) => [j.workbcId, j.scoredAt!]))

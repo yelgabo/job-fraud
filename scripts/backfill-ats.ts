@@ -11,7 +11,6 @@ import { prisma } from "../lib/db"
 import { parseFlags } from "../lib/shared/json-schemas"
 import { classifyHost, isKnownAts } from "../lib/signals/ats-registry"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
-import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { rescoreVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
@@ -20,7 +19,7 @@ async function main() {
   const apply = process.argv.includes("--apply")
   const includeJudged = process.argv.includes("--include-judged")
   const jobs = await prisma.job.findMany({
-    where: { externalApplyHost: { not: null }, ...(includeJudged ? {} : { scoredAt: null }) },
+    where: { externalApplyHost: { not: null }, ...(includeJudged ? {} : { status: "PENDING" }) },
     include: { employer: true },
   })
 
@@ -35,9 +34,9 @@ async function main() {
     if (provider === j.atsProvider && !needsFlag) continue
     changed++
     const t = (byProvider[provider] ??= { pending: 0, judged: 0 })
-    if (j.scoredAt) t.judged++
+    if (j.status === "PUBLISHED") t.judged++
     else t.pending++
-    const rescore = j.scoredAt !== null && !isImpersonationVerdict(j.reasoning)
+    const rescore = j.status === "PUBLISHED" && j.verdictKind !== "IMPERSONATION"
     if (rescore && j.judgments) fromStored++
     if (!apply) continue
     const applicationFlags = needsFlag ? [...flags, { flag: "ats_known_provider", evidence: j.externalApplyHost! }] : flags

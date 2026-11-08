@@ -70,7 +70,7 @@ async function main() {
   const jobs = []
   for (const band of BANDS) {
     const rows = await prisma.job.findMany({
-      where: { scoredAt: { not: null }, riskBand: band, fraudScore: { gte: 0 } },
+      where: { status: "PUBLISHED", riskBand: band, fraudScore: { gte: 0 } },
       include: { employer: true },
       orderBy: { scoredAt: "desc" },
       take: args.perBand,

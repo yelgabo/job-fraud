@@ -34,7 +34,7 @@ const loadCompanies = unstable_cache(loadCompaniesUncached, ["companies-list"], 
 async function loadCompaniesUncached(page: number) {
   const groups = await prisma.job.groupBy({
     by: ["employerId"],
-    where: { scoredAt: { not: null }, employerId: { not: null } },
+    where: { status: "PUBLISHED", employerId: { not: null } },
     _max: { fraudScore: true },
     _count: true,
   })
@@ -59,7 +59,7 @@ async function loadCompaniesUncached(page: number) {
     }),
     prisma.job.groupBy({
       by: ["employerId", "riskBand"],
-      where: { scoredAt: { not: null }, employerId: { in: ids } },
+      where: { status: "PUBLISHED", employerId: { in: ids } },
       _count: true,
     }),
   ])

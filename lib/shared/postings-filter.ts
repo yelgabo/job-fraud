@@ -99,8 +99,8 @@ export function postedWindowWhere(key: PostedWindowKey, now: Date): Prisma.JobWh
   }
 }
 
-/** Only judged postings are ever listed; `scoredAt === null` means still pending. */
-export const JUDGED_ONLY: Prisma.JobWhereInput = { scoredAt: { not: null } }
+/** Only published postings are ever listed. */
+export const JUDGED_ONLY: Prisma.JobWhereInput = { status: "PUBLISHED" }
 
 export type PostingsQuery = {
   band: BandKey

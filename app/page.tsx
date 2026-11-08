@@ -68,8 +68,8 @@ async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWind
     ),
     // The header describes the whole judged corpus, so both of its numbers ignore the filters:
     // otherwise a filtered numerator sits next to an unfiltered denominator and reads as wrong.
-    prisma.job.count({ where: { scoredAt: { not: null } } }),
-    prisma.job.count({ where: { scoredAt: { not: null }, riskBand: { in: ["high", "medium", "low"] } } }),
+    prisma.job.count({ where: { status: "PUBLISHED" } }),
+    prisma.job.count({ where: { status: "PUBLISHED", riskBand: { in: ["high", "medium", "low"] } } }),
     prisma.job.aggregate({ _max: { scrapedAt: true } }),
     prisma.job.count({ where: q.rowsWhere }),
   ])

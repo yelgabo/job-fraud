@@ -26,7 +26,7 @@ scrape ──▶ pending postings ──▶ judge ──▶ rated postings ─�
 - Fetch postings from WorkBC's JSON APIs — search + per-job detail (`lib/workbc/workbc-api.ts`),
   concurrently (`--concurrency`).
 - Run deterministic flag detectors over the text (`lib/signals/application-flags.ts`).
-- Upsert each posting as **pending** (`scoredAt = null`). Re-runs accumulate; nothing is wiped.
+- Upsert each posting as **pending** (`status = PENDING`). Re-runs accumulate; nothing is wiped.
 
 **Phase 2 — judge** (evaluate; deduped, single DB writer) · `scripts/judge.ts`
 

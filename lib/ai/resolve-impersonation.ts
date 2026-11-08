@@ -2,6 +2,7 @@
 // (re-attribution + deterministic high score) when a posting is confirmed to impersonate a brand.
 // Shared by scripts/rescan-impersonation.ts (corpus sweep) and scripts/judge.ts (ongoing).
 import type Anthropic from "@anthropic-ai/sdk"
+import type { JobStatus, VerdictKind } from "@prisma/client"
 import { prisma } from "../db"
 import { normalizeEmployer } from "../signals/normalize-employer"
 import { tenantEmployerMatch } from "../signals/apply-host"
@@ -11,7 +12,8 @@ import { parseFlags } from "../shared/json-schemas"
 import { bandFor } from "../shared/risk-band"
 import { republishVerdict, writeImpersonationVerdict } from "../scoring/write-verdict"
 
-// Rows written here bypass the composer, so re-scoring scripts must leave them alone.
+// Since 2026-11-08 the prefix only feeds the status backfill (lib/scoring/derive-status.ts);
+// everything else reads Job.verdictKind.
 const IMPERSONATION_PREFIX = "Brand impersonation:"
 export const isImpersonationVerdict = (reasoning: string | null) => reasoning?.startsWith(IMPERSONATION_PREFIX) ?? false
 
@@ -19,16 +21,15 @@ export const isImpersonationVerdict = (reasoning: string | null) => reasoning?.s
  * For the judges: true when the posting carries a confirmed impersonation and must not be
  * composed. After re-attribution the apply-host check compares the tenant with the real company
  * and stops firing, so composing would replace the 90 with an ordinary score. A rerun request
- * clears scoredAt, which takes the posting off the site; the claimed employer's name is not
+ * sends the posting back to pending, which takes it off the site; the claimed employer's name is not
  * stored, so the check cannot be redone, and the confirmed verdict is republished unchanged.
  */
 export async function keepImpersonationVerdict(
-  job: { workbcId: string; reasoning: string | null; scoredAt: Date | null; verdictKind?: string | null },
+  job: { workbcId: string; verdictKind: VerdictKind | null; status: JobStatus },
   dryRun = false,
 ): Promise<boolean> {
-  // The prefix test covers rows the status backfill has not reached yet.
-  if (job.verdictKind !== "IMPERSONATION" && !isImpersonationVerdict(job.reasoning)) return false
-  if (job.scoredAt === null && !dryRun) await republishVerdict(job.workbcId)
+  if (job.verdictKind !== "IMPERSONATION") return false
+  if (job.status === "PENDING" && !dryRun) await republishVerdict(job.workbcId)
   return true
 }
 

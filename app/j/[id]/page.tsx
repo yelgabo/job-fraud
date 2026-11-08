@@ -17,7 +17,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const job = await prisma.job.findUnique({ where: { workbcId: id }, include: { employer: true } })
   if (!job) notFound()
 
-  if (!job.scoredAt) {
+  if (job.status !== "PUBLISHED") {
     return (
       <div className="space-y-4">
         <Link href="/" className="text-sm text-zinc-500 hover:underline">

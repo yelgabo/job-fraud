@@ -45,12 +45,12 @@ const loadAnalysis = unstable_cache(loadAnalysisUncached, ["analysis-page"], {
 
 async function loadAnalysisUncached() {
   const [postingGroups, companyJobs, employers] = await Promise.all([
-    prisma.job.groupBy({ by: ["category", "riskBand"], _count: true, where: { scoredAt: { not: null } } }),
+    prisma.job.groupBy({ by: ["category", "riskBand"], _count: true, where: { status: "PUBLISHED" } }),
     prisma.job.findMany({
-      where: { scoredAt: { not: null }, employerId: { not: null } },
+      where: { status: "PUBLISHED", employerId: { not: null } },
       select: { employerId: true, category: true, riskBand: true },
     }),
-    prisma.employer.findMany({ where: { jobs: { some: { scoredAt: { not: null } } } }, select: { checks: true } }),
+    prisma.employer.findMany({ where: { jobs: { some: { status: "PUBLISHED" } } }, select: { checks: true } }),
   ])
 
   // --- Posting-weighted (per category) ---

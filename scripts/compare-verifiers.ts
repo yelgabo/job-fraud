@@ -49,7 +49,7 @@ async function main() {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) throw new Error("ANTHROPIC_API_KEY must be set in the environment")
   const client = new Anthropic({ maxRetries: 5 })
 
-  const jobs = await prisma.job.findMany({ where: { scoredAt: null }, orderBy: { scrapedAt: "asc" }, take: args.pending, include: { employer: true } })
+  const jobs = await prisma.job.findMany({ where: { status: "PENDING" }, orderBy: { scrapedAt: "asc" }, take: args.pending, include: { employer: true } })
   const byEmp = new Map<string, typeof jobs>()
   for (const j of jobs) if (j.employerId) byEmp.set(j.employerId, [...(byEmp.get(j.employerId) ?? []), j])
   const targets: Array<{ employerId: string; workbcId: string; employer: string; input: WebVerifyInput }> = []
