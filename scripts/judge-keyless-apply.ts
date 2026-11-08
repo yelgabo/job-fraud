@@ -30,7 +30,7 @@ import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { scoreableWhere } from "../lib/shared/deep-requests"
 import { AgentSearchLogSchema, agentSearchLogRow } from "../lib/shared/agent-search-log"
 import { ImpersonationSchema } from "../lib/ai/check-impersonation"
-import { applyImpersonationVerdict } from "../lib/ai/resolve-impersonation"
+import { applyImpersonationVerdict, keepImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { impersonationCheckFor, type ImpersonationItem } from "../lib/signals/impersonation-plan"
 
 /**
@@ -111,6 +111,7 @@ async function main() {
   let deepResolved = 0
   let tokens = 0
   let impostors = 0
+  let keptImpostors = 0
   let withoutSearchLog = 0
   const bands: Record<string, number> = {}
   const scored = new Set<string>()
@@ -163,9 +164,19 @@ async function main() {
   }
 
   async function score(
-    job: Parameters<typeof buildVerdict>[1] & { workbcId: string; externalApplyUrl: string | null },
+    job: Parameters<typeof buildVerdict>[1] & {
+      workbcId: string
+      externalApplyUrl: string | null
+      reasoning: string | null
+      scoredAt: Date | null
+    },
     checks: unknown,
   ) {
+    if (await keepImpersonationVerdict(job, dryRun)) {
+      scored.add(job.workbcId)
+      keptImpostors++
+      return
+    }
     const check = impersonationCheckFor(job.employerName, job.externalApplyUrl)
     if (check && !cleared.has(job.workbcId)) {
       if (!heldForImpersonation.has(job.workbcId)) {
@@ -280,10 +291,10 @@ async function main() {
   )
   console.log(
     `[judge-keyless:apply] impersonation: ${impostors} postings${dryRun ? " would be" : ""} re-attributed and written high, ` +
-      `${cleared.size} cleared, ${heldForImpersonation.size} held pending for a missing impersonation result | ` +
+      `${keptImpostors} confirmed impersonations kept, ${cleared.size} cleared, ${heldForImpersonation.size} held pending for a missing impersonation result | ` +
       `${withoutSearchLog} verdicts arrived without a searchLog`,
   )
-  if (applied > 0 && !dryRun) await requestRevalidation()
+  if ((applied > 0 || keptImpostors > 0) && !dryRun) await requestRevalidation()
   await prisma.$disconnect()
 }
 

@@ -14,6 +14,24 @@ import { bandFor } from "../shared/risk-band"
 const IMPERSONATION_PREFIX = "Brand impersonation:"
 export const isImpersonationVerdict = (reasoning: string | null) => reasoning?.startsWith(IMPERSONATION_PREFIX) ?? false
 
+/**
+ * For the judges: true when the posting carries a confirmed impersonation and must not be
+ * composed. After re-attribution the apply-host check compares the tenant with the real company
+ * and stops firing, so composing would replace the 90 with an ordinary score. A rerun request
+ * clears scoredAt, which takes the posting off the site; the claimed employer's name is not
+ * stored, so the check cannot be redone, and the confirmed verdict is republished unchanged.
+ */
+export async function keepImpersonationVerdict(
+  job: { workbcId: string; reasoning: string | null; scoredAt: Date | null },
+  dryRun = false,
+): Promise<boolean> {
+  if (!isImpersonationVerdict(job.reasoning)) return false
+  if (job.scoredAt === null && !dryRun) {
+    await prisma.job.update({ where: { workbcId: job.workbcId }, data: { scoredAt: new Date() } })
+  }
+  return true
+}
+
 export type JobForCheck = {
   workbcId: string
   title: string

@@ -13,7 +13,7 @@ import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { presumedVerdict, verificationAction } from "../lib/signals/verification-plan"
 import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { TIERED_VERIFIER } from "../lib/ai/verifier-models"
-import { resolveApplyHost } from "../lib/ai/resolve-impersonation"
+import { keepImpersonationVerdict, resolveApplyHost } from "../lib/ai/resolve-impersonation"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { isBillingError } from "../lib/shared/anthropic-errors"
@@ -154,6 +154,7 @@ async function main() {
   let sFail = 0
   let heldBack = 0
   let impostors = 0
+  let keptImpostors = 0
   let totalIn = 0
   let totalOut = 0
   const bands: Record<string, number> = {}
@@ -162,6 +163,10 @@ async function main() {
     jobs.map((job) =>
       sLimit(async () => {
         if (billingAbort) return
+        if (await keepImpersonationVerdict(job)) {
+          keptImpostors++
+          return
+        }
         // The employer was due a fresh check because its cached verdict could not be reused, and
         // that check failed, so scoring now would publish the posting on the stale or missing
         // verdict. Leave it untouched: still pending on a normal run, its old score on --rejudge.
@@ -211,7 +216,7 @@ async function main() {
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail - heldBack} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed) | brand-impersonation re-attributed: ${impostors}`)
+  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail - heldBack - keptImpostors} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed) | brand-impersonation re-attributed: ${impostors}, confirmed impersonations kept: ${keptImpostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(
     `Web-verify (${TIERED_VERIFIER.primary}, alarming verdicts re-checked by ${TIERED_VERIFIER.escalation}): ${escalated} escalated | tokens in=${webIn} out=${webOut} | searches ${webSearches} | ~$${webCost.toFixed(2)} at list price`,

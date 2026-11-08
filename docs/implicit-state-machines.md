@@ -26,14 +26,17 @@ not intend, and records the bugs that come out of them.
 These are the defects the mapping turned up, most serious first. Each is explained in its
 machine's section.
 
-1. **`npm run recompose -- --apply` republishes postings the owner sent back for a rerun, and the
-   next judge run marks the rerun serviced.** A rerun clears only `scoredAt`
+1. **Fixed 2026-11-08: recompose now skips pending rows.** *Was:* `npm run recompose -- --apply`
+   republished postings the owner sent back for a rerun, and the next judge run marked the rerun
+   serviced. A rerun clears only `scoredAt`
    (`app/audit/[token]/j/[id]/actions.ts:33`). Recompose selects every row with a non-null
    `scoringVersion`, whatever its `scoredAt` (`scripts/recompose.ts:27`), and `composeVerdict`
    stamps `scoredAt = now` (`lib/scoring/verdict.ts:45`). The old judgments go back on the site,
    and `resolveRerunRequests` treats any `scoredAt` newer than the request as service
    (`scripts/judge.ts:227-239`).
-2. **Re-judging a confirmed impersonation replaces its 90 with an ordinary composed score.** The
+2. **Fixed 2026-11-08: both judges call `keepImpersonationVerdict`, which leaves a confirmed
+   impersonation uncomposed and republishes it unchanged when a rerun sent it back to pending.**
+   *Was:* re-judging a confirmed impersonation replaced its 90 with an ordinary composed score. The
    impersonation write re-attributes the posting to the real company
    (`lib/ai/resolve-impersonation.ts:125,150-164`). A rerun, a deep request or `--rejudge` sends it
    back through `judge.ts` or `judge-keyless-apply.ts`, neither of which calls

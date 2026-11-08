@@ -24,7 +24,9 @@ function parseArgs() {
 async function main() {
   const args = parseArgs()
   const jobs = await prisma.job.findMany({
-    where: { scoringVersion: { not: null } },
+    // A rerun clears scoredAt but keeps the old verdict; composing it would republish that verdict
+    // and the next judge run would count the rerun as serviced.
+    where: { scoringVersion: { not: null }, scoredAt: { not: null } },
     include: { employer: true },
     orderBy: { scoredAt: "asc" },
     take: args.limit,
