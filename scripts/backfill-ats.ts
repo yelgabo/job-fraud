@@ -13,6 +13,7 @@ import { classifyHost, isKnownAts } from "../lib/signals/ats-registry"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { rescoreVerdict } from "../lib/scoring/verdict"
+import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 async function main() {
@@ -51,7 +52,7 @@ async function main() {
         { ...j, applicationFlags, employerName: j.employer?.nameDisplay ?? null },
         j.employer?.checks ?? null,
       )
-      await prisma.job.update({ where: { workbcId: j.workbcId }, data })
+      if (!(await writeComposedVerdict(j.workbcId, data, "recompute"))) continue
       rescored++
       const key = `${j.riskBand ?? "?"}->${data.riskBand}`
       moves[key] = (moves[key] ?? 0) + 1

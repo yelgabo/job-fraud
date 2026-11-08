@@ -26,8 +26,15 @@ describe("keepImpersonationVerdict", () => {
     expect(update).toHaveBeenCalledOnce()
     const arg = update.mock.calls[0][0] as { where: { workbcId: string }; data: Record<string, unknown> }
     expect(arg.where).toEqual({ workbcId: "42" })
-    expect(Object.keys(arg.data)).toEqual(["scoredAt"])
+    expect(arg.data.status).toBe("PUBLISHED")
     expect(arg.data.scoredAt).toBeInstanceOf(Date)
+    expect(Object.keys(arg.data).sort()).toEqual(["scoredAt", "status"])
+  })
+
+  it("recognises an impersonation by verdictKind once the backfill has run", async () => {
+    const job = { workbcId: "7", reasoning: "Reworded.", scoredAt: new Date(), verdictKind: "IMPERSONATION" }
+    expect(await keepImpersonationVerdict(job)).toBe(true)
+    expect(update).not.toHaveBeenCalled()
   })
 
   it("writes nothing on a dry run", async () => {

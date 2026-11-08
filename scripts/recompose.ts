@@ -7,6 +7,7 @@
 import { prisma } from "../lib/db"
 import { parseChecks } from "../lib/shared/json-schemas"
 import { composeVerdict } from "../lib/scoring/verdict"
+import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import type { Judgments } from "../lib/scoring/compose"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
@@ -50,7 +51,7 @@ async function main() {
       changed++
       if (from !== data.riskBand) console.log(`  ${job.workbcId} ${from} ${job.fraudScore} -> ${data.riskBand} ${data.fraudScore} | ${job.title.slice(0, 50)}`)
     }
-    if (args.apply) await prisma.job.update({ where: { workbcId: job.workbcId }, data })
+    if (args.apply) await writeComposedVerdict(job.workbcId, data, "recompute")
   }
 
   console.log(`[recompose] score changed on ${changed}/${jobs.length}, ${impersonations} confirmed impersonations skipped`)

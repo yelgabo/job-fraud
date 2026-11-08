@@ -16,6 +16,7 @@ import { TIERED_VERIFIER } from "../lib/ai/verifier-models"
 import { keepImpersonationVerdict, resolveApplyHost } from "../lib/ai/resolve-impersonation"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
+import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
@@ -206,8 +207,11 @@ async function main() {
         const { usage, ...data } = verdict
         totalIn += usage.inputTokens
         totalOut += usage.outputTokens
+        if (!(await writeComposedVerdict(job.workbcId, data, "judgment"))) {
+          keptImpostors++
+          return
+        }
         bands[data.riskBand] = (bands[data.riskBand] ?? 0) + 1
-        await prisma.job.update({ where: { workbcId: job.workbcId }, data })
         if (++sDone % 200 === 0) console.log(`[score] ${sDone}/${jobs.length} jobs`)
       }),
     ),

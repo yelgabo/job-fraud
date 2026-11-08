@@ -25,6 +25,7 @@ import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { tierViolation } from "../lib/ai/verify-employer-web"
 import { mailEvidence } from "../lib/shared/mail-evidence"
 import { buildVerdict } from "../lib/scoring/verdict"
+import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { planByEmployer, presumedVerdict } from "../lib/signals/verification-plan"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { scoreableWhere } from "../lib/shared/deep-requests"
@@ -192,7 +193,10 @@ async function main() {
     }
     const { usage, ...data } = await buildVerdict(jev, job, checks)
     tokens += usage.inputTokens
-    await prisma.job.update({ where: { workbcId: job.workbcId }, data })
+    if (!(await writeComposedVerdict(job.workbcId, data, "judgment"))) {
+      keptImpostors++
+      return
+    }
     applied++
     bands[data.riskBand] = (bands[data.riskBand] ?? 0) + 1
   }

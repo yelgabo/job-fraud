@@ -25,6 +25,7 @@
     "export-labelset": "tsx --env-file=.env scripts/export-labelset.ts",
     "measure-questions": "tsx --env-file=.env scripts/measure-questions.ts",
     "recompose": "tsx --env-file=.env scripts/recompose.ts",
+    "backfill-status": "tsx --env-file=.env scripts/backfill-status.ts",
     "eval:snapshot": "tsx --env-file=.env scripts/snapshot-labelled-evidence.ts",
     "eval:labels": "tsx scripts/eval-labels.ts",
     "backfill-ats": "tsx --env-file=.env scripts/backfill-ats.ts",

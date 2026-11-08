@@ -191,7 +191,13 @@ path to pick. Use it rather than reinventing the sequence.
 employer web-verify (once per employer, skipped for employers whose postings all apply via their
 own matching ATS tenant) -> brand-impersonation pre-check per posting -> per-posting Jev text
 judgments -> composed score (`lib/scoring/verdict.ts`).
-Postings are `pending` while `scoredAt` is null and the site shows only judged ones. Running the
+Postings are `pending` while `scoredAt` is null and the site shows only judged ones. Since
+2026-11-08 `Job.status` (`PENDING` / `PUBLISHED`) moves with `scoredAt`, and `Job.verdictKind`
+(`MODEL` / `COMPOSED` / `IMPERSONATION`) records how the current verdict was produced. Only
+`lib/scoring/write-verdict.ts` writes the verdict columns: it refuses to let a composed verdict
+replace an impersonation, and refuses a "recompute" on a pending row (an open rerun). A new
+scorer calls it rather than `prisma.job.update`. `npm run backfill-status` (dry run by default)
+derives both columns from the older fields and lists any row that disagrees. Running the
 stages out of order is not possible from the CLI; the sequencing risk is the *helpers*
 (`rescore-failed`, `reverify-mail`, `rescan-impersonation`), which assume postings already have
 scores and employers already have verdicts. Run `judge` first.

@@ -76,6 +76,13 @@ model Job {
   // deterministic impersonation write), 1 = composed from the weight table. Analysis across
   // time must filter on this rather than guess.
   scoringVersion    Int?
+  // Whether the site shows the posting. Moves with scoredAt (PUBLISHED iff scoredAt is set), and
+  // only lib/scoring/write-verdict.ts writes it.
+  status            JobStatus @default(PENDING)
+  // How the current verdict was produced, kept while a rerun sends the row back to PENDING. Null
+  // until the first verdict. Replaces reading meaning out of scoringVersion = null and the
+  // "Brand impersonation:" reasoning prefix.
+  verdictKind       VerdictKind?
   scrapedAt         DateTime  @default(now())
 
   @@index([riskBand, fraudScore])
@@ -85,6 +92,7 @@ model Job {
   @@index([scoredAt])
   // Lets the whole-corpus counts and the band group-by skip the wide rows (index-only scan).
   @@index([scoredAt, riskBand])
+  @@index([status, riskBand])
   @@index([category])
   @@index([postedDate])
 }
@@ -112,4 +120,18 @@ model JudgeRequest {
   resolvedAt DateTime?
 
   @@index([resolvedAt, createdAt])
+}
+
+enum JobStatus {
+  PENDING
+  PUBLISHED
+}
+
+// MODEL: a model chose the number (before the composer). COMPOSED: the composer derived it from
+// stored judgments and checks, so recompose can redo it. IMPERSONATION: the fixed 90 written by
+// lib/ai/resolve-impersonation.ts, which the composer must never replace.
+enum VerdictKind {
+  MODEL
+  COMPOSED
+  IMPERSONATION
 }

@@ -9,6 +9,7 @@ import { impersonationKey } from "../signals/impersonation-plan"
 import { checkImpersonation, type ImpersonationResult } from "./check-impersonation"
 import { parseFlags } from "../shared/json-schemas"
 import { bandFor } from "../shared/risk-band"
+import { republishVerdict, writeImpersonationVerdict } from "../scoring/write-verdict"
 
 // Rows written here bypass the composer, so re-scoring scripts must leave them alone.
 const IMPERSONATION_PREFIX = "Brand impersonation:"
@@ -22,13 +23,12 @@ export const isImpersonationVerdict = (reasoning: string | null) => reasoning?.s
  * stored, so the check cannot be redone, and the confirmed verdict is republished unchanged.
  */
 export async function keepImpersonationVerdict(
-  job: { workbcId: string; reasoning: string | null; scoredAt: Date | null },
+  job: { workbcId: string; reasoning: string | null; scoredAt: Date | null; verdictKind?: string | null },
   dryRun = false,
 ): Promise<boolean> {
-  if (!isImpersonationVerdict(job.reasoning)) return false
-  if (job.scoredAt === null && !dryRun) {
-    await prisma.job.update({ where: { workbcId: job.workbcId }, data: { scoredAt: new Date() } })
-  }
+  // The prefix test covers rows the status backfill has not reached yet.
+  if (job.verdictKind !== "IMPERSONATION" && !isImpersonationVerdict(job.reasoning)) return false
+  if (job.scoredAt === null && !dryRun) await republishVerdict(job.workbcId)
   return true
 }
 
@@ -165,20 +165,13 @@ export async function applyImpersonationVerdict(
       evidence: `Claims "${employerName}" but applies via "${m.tenant}" (${displayName})'s ${m.provider} ATS — brand misuse`,
     },
   ]
-  await prisma.job.update({
-    where: { workbcId: job.workbcId },
-    data: {
-      employerId: realEmployerId,
-      applicationFlags: flags as never,
-      fraudScore: score,
-      riskBand: bandFor(score),
-      reasoning,
-      signals: signals as never,
-      // Not composed, so not a version: `npm run recompose` selects rows by a non-null
-      // scoringVersion and would overwrite this 90 if a re-judged row kept its old one.
-      scoringVersion: null,
-      scoredAt: new Date(),
-    },
+  await writeImpersonationVerdict(job.workbcId, {
+    employerId: realEmployerId,
+    applicationFlags: flags as never,
+    fraudScore: score,
+    riskBand: bandFor(score),
+    reasoning,
+    signals: signals as never,
   })
 
   return { kind: "impersonation", realCompany: displayName, newEmployerId: realEmployerId, summary: verdict.summary }

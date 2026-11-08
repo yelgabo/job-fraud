@@ -29,6 +29,7 @@ import { TIERED_VERIFIER, VERIFIER_PROFILES, verifierCostUsd } from "../lib/ai/v
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 import { rescoreVerdict } from "../lib/scoring/verdict"
+import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { isImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
@@ -163,7 +164,7 @@ async function main() {
     for (const job of c.judged) {
       try {
         const { usage: _usage, ...data } = await rescoreVerdict(jev, { ...job, employerName: c.name }, checks)
-        await prisma.job.update({ where: { workbcId: job.workbcId }, data })
+        if (!(await writeComposedVerdict(job.workbcId, data, "recompute"))) continue
         rescored++
         const key = `${job.riskBand ?? "?"}->${data.riskBand}`
         bandMoves[key] = (bandMoves[key] ?? 0) + 1

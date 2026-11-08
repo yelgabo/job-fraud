@@ -4,6 +4,7 @@
 import { prisma } from "../lib/db"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
+import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 async function main() {
@@ -16,7 +17,7 @@ async function main() {
   for (const job of failed) {
     try {
       const { usage: _usage, ...data } = await buildVerdict(jev, { ...job, employerName: job.employer?.nameDisplay ?? null }, job.employer?.checks ?? null)
-      await prisma.job.update({ where: { workbcId: job.workbcId }, data })
+      if (!(await writeComposedVerdict(job.workbcId, data, "judgment"))) continue
       fixed++
       console.log(`  ✓ ${job.workbcId} ${job.title} → ${data.riskBand} ${data.fraudScore}`)
     } catch (err) {
