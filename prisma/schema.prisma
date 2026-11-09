@@ -84,6 +84,10 @@ model Job {
   // "Brand impersonation:" reasoning prefix.
   verdictKind       VerdictKind?
   scrapedAt         DateTime  @default(now())
+  // When a scrape last fetched this posting's detail (scrapedAt is set on insert only). The weekly
+  // scrape refetches postings not fetched for a while, so edits on WorkBC reach the row. Null on
+  // rows not fetched since the column was added (2026-11-09).
+  fetchedAt         DateTime?
 
   @@index([riskBand, fraudScore])
   // Matches POSTINGS_ORDER_BY, so the unfiltered list reads its page in index order instead of

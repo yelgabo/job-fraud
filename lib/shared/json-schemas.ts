@@ -30,6 +30,10 @@ export const WebVerificationSchema = z.object({
   // it had none). applicationAddressType describes that address only, so a posting that mails to a
   // different one needs its own check. Absent on verdicts stored before 2026-11-08.
   addressChecked: z.string().optional(),
+  // When the web research behind this verdict happened (ISO). Employer.checkedAt is when a verdict
+  // was stored, which for a presumption or a re-applied file is not a check at all. Absent on
+  // presumed verdicts and on verdicts stored before 2026-11-09.
+  verifiedAt: z.string().optional(),
 })
 
 export type WebVerification = z.infer<typeof WebVerificationSchema>
