@@ -51,6 +51,8 @@ requests resolved only on a written verdict, the uncertain flag reaching the sco
 revalidation, the public refresh after a rerun, review requests written in one transaction without
 duplicates, and the home page's scan date.
 
+A fourth pass found more, listed under "A fourth pass: more implicit state" below; those are open.
+
 Left as is, on purpose: the real company a posting is re-attributed to is not web-checked. Its only
 posting presents as the other brand, so a check on it would call the real company a mismatch; two
 employers are affected. Railway's edge cache still serves pages for up to 600 s after a purge.
@@ -296,6 +298,167 @@ stdout, and logs go to the container's disk (`scripts/logger.ts:19`).
 `Boolean?` that scrape only ever writes as null (`scrape.ts:184-187`), so it carries no state at
 all. `postedDate` null covers both a missing and an unparseable date
 (`lib/shared/posted-date-backfill.ts:36-41`). None of these has caused a defect.
+
+## A fourth pass: more implicit state
+
+Found from `main` at bcedb7b, after the three rounds of fixes above. Every claim was read in the
+code. The counts come from read-only queries against production on 2026-11-08. Each problem
+listed here is still open.
+
+### A posting that leaves WorkBC
+
+No state exists for a posting WorkBC has removed. No code deletes a `Job` or marks it delisted. A
+failed detail fetch is counted and skipped (`scripts/scrape.ts:171-176`, `lib/workbc/workbc-api.ts:131-133`).
+The refetch only reaches postings the current search returns (`scrape.ts:100-109`), so a removed
+posting is never fetched again and simply stays published. The employer page lists it under
+"Postings in this scan" (`app/e/[id]/page.tsx:146`).
+
+There are 16,785 of 23,750 published postings that nothing has fetched in 60 days. Many of them
+come from older, broader scrapes and fall outside the cron's three searches, so the database
+cannot tell a posting that was taken down from one that is still listed but out of the search.
+That missing distinction is the problem. A scam posting WorkBC took down keeps its public rating
+indefinitely.
+
+### The job page shows the employer's current verdict, not the one its score used
+
+A posting's score and signals are stored on the posting, but the "Employer checks" panel on its
+page renders the employer's live `checks.web` (`components/JobReport.tsx:175`,
+`components/EmployerChecks.tsx:84-87`). The two drift apart whenever the employer is checked
+again. The mailing-address row shows the problem most clearly. It shows the employer's
+`applicationAddressType` on every posting, including postings that apply online, which the
+composer deliberately does not score on it (`lib/scoring/compose.ts:94-99`). It also shows it on
+postings that mail to a different address from the one the verdict checked.
+
+Recompute writers have the same gap. `recompose` and `recheck-cached-verdicts` score published
+postings against the employer's current verdict without testing `addressChecked`
+(`scripts/recompose.ts:47`), so a posting that mails to address A can be recomposed with the type
+found for address B. No row is affected yet, because no stored verdict carries `addressChecked`
+until Monday's run. The 68 employers whose postings give more than one address are the ones
+exposed once it does.
+
+### "Presumed real" shown as "verified"
+
+`checks.web.source = "ats-tenant-match"` marks a presumption, but only the employer page and the
+date wording read it (`lib/shared/verification-date.ts:13-15`, `EmployerChecks.tsx:91`).
+`/companies` prints "✓ verified" for any `businessMatch: "match"` (`app/companies/page.tsx:175-181`),
+`/analysis` counts presumptions as web-checked companies (`app/analysis/page.tsx:102-106`), and
+the audit pages show `businessMatch` with no source. This affects 380 of the 4,283 employers that
+have a verdict. The same company is "✓ verified" on `/companies` and "no web check was made" on
+its own page.
+
+### `scoredAt` does four jobs
+
+`scoredAt` is the publication flag's partner, the judgment time, the clock rerun resolution
+compares with (`lib/shared/judge-requests.ts:17`), and the public "Reviewed on" date
+(`components/JobReport.tsx:56`). Writers that review nothing still stamp it. A recompose stamps
+it on every row through `composeVerdict` (`lib/scoring/verdict.ts:45`), and `republishVerdict`
+stamps it on an unchanged impersonation (`lib/scoring/write-verdict.ts:69-71`). A send-back
+clears it, and no other column keeps the date of the original judgment. After
+`npm run recompose -- --apply`, every recomposed posting reads "Reviewed on" the recompose date.
+
+### A pending posting that holds a verdict says it was never evaluated
+
+`PENDING` with a non-null `verdictKind` means "sent back, old verdict kept". Both job pages read
+only `status` and print "This posting hasn't been evaluated yet" (`app/j/[id]/page.tsx:20-29`,
+`app/audit/[token]/j/[id]/page.tsx:126-133`). The audit banner also says "queued for the next
+judge run" for postings that are held back. No row is in this state today. Postings held for an
+unchecked address or a failed impersonation check will be in it for a week at a time.
+
+### The scrape run has no record
+
+`JudgeRun` covers judging only. A scrape in which every detail fetch fails exits 0 and prints a
+failure count (`scrape.ts:171,247`), which is the silent-failure pattern `JudgeRun` fixed for
+judging. The manual skill's routine pass (`--recent week --skip-existing`, no refetch;
+`.claude/skills/update-postings/SKILL.md:72`) and the cron's pass (`--refetch-after-days 28`;
+`scripts/scheduled-refresh.sh`) leave the database in different states, and "last scan" cannot
+tell them apart (`lib/shared/last-scan.ts:7-11`).
+
+### The refetch overwrites evidence that other writers added
+
+The new refetch rewrites rows that earlier scrapes never touched again, so these are new
+exposures:
+
+- A non-impersonation update replaces `applicationFlags` wholesale (`scrape.ts:221,235`) and drops
+  `apply_host_mismatch_review`, which `resolve-impersonation.ts:161-165` added. Flags are left out
+  of `contentChanged`, so the row stays published without its review marker. No row has the flag
+  today.
+- The employer enrichment uses the `employerId` derived from the posting's claimed name
+  (`scrape.ts:196-202`). On a refetched impersonation, it writes the impersonator's mailing
+  address onto the brand's `Employer.addressRaw`. The guard at `:231-235` covers only the `Job`.
+- When a stub carries no employer name, `employerId` is written as null (`scrape.ts:126,196-197`),
+  which counts as a content change and sends the posting back to be scored with no employer
+  check. This is inferred. How often a stub lacks a name is unknown.
+
+### Judge runs: crashed and "failed" runs that are neither
+
+- An exception outside the guarded spots, such as a database error in the presumption loop
+  (`scripts/judge.ts:100-104`) or in keyless apply's employer-less scoring
+  (`scripts/judge-keyless-apply.ts:347`), leaves the run `RUNNING` forever. The audit page cannot
+  tell that run from a live one. Nothing stops two runs at once either. The run table could serve
+  as a lease but is not used as one.
+- `runOutcome` derives the outcome from counts (`lib/shared/judge-run.ts:7-10`), and
+  `pendingAtStart` counts every pending posting in the database. A keyless apply whose postings
+  the Monday cron already judged scores nothing, while newer postings are pending, so the run is
+  recorded `FAILED` and exits 1 when nothing went wrong.
+
+### Keyless waves conflict with `applied.json`
+
+The judge-postings skill says to apply each wave by its explicit verdict files
+(`.claude/skills/judge-postings/SKILL.md:111-112`). An explicit file adds its directory to the
+applied set (`judge-keyless-apply.ts:71-73`), and apply marks every directory applied (`:390`).
+The second wave is therefore refused unless `--force` is passed, which also turns off the
+double-apply guard. Explicit verdict files without their batch files also score only the named
+posting (`:322`). This came in with the third round's manifest change.
+
+### A third judge path that bypasses the guards
+
+`local-verify-fetch` decides "needs a check" with `if (web) continue`
+(`scripts/local-verify-fetch.ts:59-62`) instead of `verificationAction`. `local-verify-apply`
+writes with a raw `update` (`scripts/local-verify-apply.ts:60-61`) instead of `storeEmployerWeb`,
+and sets no `verifiedBy`, `verifiedAt` or `addressChecked`. `local-score-fetch` writes no
+manifest, so keyless apply refuses its output. Neither path has docs beyond `package.json`. Its
+verdicts heal on the next real run, since they fail `tierViolation` or count as having missed an
+address, but that second check is paid for twice and the concurrency guard does not cover it.
+
+### Smaller ones
+
+- **Search logs are not tied to the verdict they produced.** A log is stored even when
+  `storeEmployerWeb` refused the verdict (`judge.ts:150-158`, `judge-keyless-apply.ts:309-320`).
+  Impersonation searches land on the real company, which has no `checks.web`. The audit index
+  treats the newest log as the current verdict's (`app/audit/[token]/page.tsx:28-31`).
+- **Labels join the fixture by section number.** `measureAgreement` never checks `workbcId`
+  (`lib/eval/agreement.ts:51,61`). `export-labelset` overwrites the worksheet and key in
+  `docs/labelset` by default, and its draw has no `orderBy`, so the same seed does not give the
+  same postings (`scripts/export-labelset.ts:17,41,135-136`). After a re-export, old labels are
+  scored against different postings without an error.
+- **Freshness lives in three caches.** These are the edge
+  (`s-maxage=600, stale-while-revalidate=31535400`, `middleware.ts:7`), each replica's data cache,
+  and ISR. `reverify-mail`, `backfill-categories` and `local-verify-apply` change public data
+  without calling `requestRevalidation`. `docs/launch-runbook.md:48-52` records 50 minutes of
+  stale counts, so the "up to 600 s" written above understates it.
+- **Home-page counts and rows are separate cache entries.** They expire on their own timers
+  (`app/page.tsx:48-59`), so after a missed purge the tab counts and page rows can come from
+  different snapshots, and postings repeat or vanish across pages.
+- **`backfill-categories` rewrites `category` on published rows without re-scoring**
+  (`scripts/backfill-categories.ts:9,18`), and `category` feeds `composeScore`.
+- **Dead employer columns.** No code writes `Employer.website` or the top-level `checks` probe
+  keys; production has 0 of each. The `/e/` header reads them (`app/e/[id]/page.tsx:63-70`), so
+  every employer shows "no website" above a web section that names its site. `applicationUrl` is
+  written and never read.
+
+### Order to fix
+
+1. Delisting. Fixing it means recording when the cron last saw a posting in a search
+   (`lastListedAt`) and, for postings it no longer sees, a detail fetch that tells a removed
+   posting from a still-listed one. That needs a measurement first: how many of the 16,785 the
+   detail API still returns.
+2. The verdict snapshot. Store the employer verdict a score used (or its `addressChecked` and
+   address type) on the posting, render the page from it, and have recompute writers refuse a
+   posting whose address the current verdict did not check.
+3. One-line fixes: read `source` on `/companies`, `/analysis` and the audit pages; show the old
+   verdict on a pending page; keep `apply_host_mismatch_review` across a refetch; skip the
+   employer enrichment on impersonations; let a keyless dir take several explicit waves.
+4. A `ScrapeRun` row beside `JudgeRun`, and a `finishJudgeRun` in each script's top-level catch.
 
 ## What to make explicit
 
