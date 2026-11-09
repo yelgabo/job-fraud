@@ -449,7 +449,12 @@ address, but that second check is paid for twice and the concurrency guard does 
   (`s-maxage=600, stale-while-revalidate=31535400`, `middleware.ts:7`), each replica's data cache,
   and ISR. `reverify-mail`, `backfill-categories` and `local-verify-apply` change public data
   without calling `requestRevalidation`. `docs/launch-runbook.md:48-52` records 50 minutes of
-  stale counts, so the "up to 600 s" written above understates it.
+  stale counts, so the "up to 600 s" written above understates it. Seen on 2026-11-09: ten hours
+  after the 12:28 UTC scrape, `/` still said "last scan 2026-11-02" for one request. The
+  `stale-while-revalidate` of about a year is Next's default `expireTime`, copied into
+  `middleware.ts`; `/api/revalidate` purges only the origin, so the edge keeps the copy stored
+  before the run and hands it to the first visitor after the 600 s, refreshing in the background
+  for the next one.
 - **Home-page counts and rows are separate cache entries.** They expire on their own timers
   (`app/page.tsx:48-59`), so after a missed purge the tab counts and page rows can come from
   different snapshots, and postings repeat or vanish across pages.
