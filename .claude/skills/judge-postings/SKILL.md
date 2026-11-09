@@ -5,7 +5,7 @@ description: Evaluate pending (unjudged) job-fraud postings by dispatching paral
 
 # Judge postings
 
-Scraping only collects raw postings (`scoredAt` null = pending). Judging evaluates them.
+Scraping only collects raw postings (`status` = `PENDING`). Judging evaluates them.
 
 ## Fast path (recommended): deduped Node judge
 

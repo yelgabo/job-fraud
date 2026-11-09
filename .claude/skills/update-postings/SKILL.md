@@ -55,13 +55,13 @@ session is for draining a backlog larger than one week's cap, for `deep` review 
 ## Procedure
 
 0. **Drain the review queue** (owner flags from the /audit admin pages, `JudgeRequest` table).
-   - `kind: "rerun"` rows need no action here — flagging already cleared the job's `scoredAt`,
+   - `kind: "rerun"` rows need no action here — flagging already sent the job back to `PENDING`,
      so step 3's normal judging covers them. Stamp `resolvedAt` after the posting is re-scored.
    - `kind: "deep"` rows: for each, dispatch ONE fraud-analyst agent (judge-postings prompt)
      with just that posting, appending the request's `note` as "Owner context: <note>" so the
      agent investigates the owner's concern. Give the agent's verdict the flagged posting's
      `workbcId` and apply it via `judge-keyless:apply`. Apply re-scores that posting even though it
-     is judged (a deep request leaves `scoredAt` set) and stamps `resolvedAt` itself; its summary
+     is judged (a deep request leaves it `PUBLISHED`) and stamps `resolvedAt` itself; its summary
      line reports how many deep requests it resolved.
    - Query/stamp with `npx tsx --env-file=.env -e` one-liners on `prisma.judgeRequest`.
 
