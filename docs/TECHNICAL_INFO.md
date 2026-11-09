@@ -66,7 +66,7 @@ warning line on High-band postings) ·
 wording) · `/audit/<token>` internal web-search audit (token-gated, unlinked).
 
 Risk band derives from the score (`lib/shared/risk-band.ts`): **low** `<30`, **medium** `30–69`, **high**
-`≥70`, **unknown** for scoring failures. The UI shows only judged postings (`scoredAt` set).
+`≥70`, **unknown** for scoring failures. The UI shows only published postings (`status = PUBLISHED`).
 
 All three filter dimensions are composed in one place, `lib/shared/postings-filter.ts`: each
 dimension's tab counts apply the *other two* filters and not itself, which is what makes the tab
@@ -189,8 +189,10 @@ a failed week is caught up by the next), the Victoria city pass, then `npm run j
 $JUDGE_LIMIT`. Since 2026-11-08 a missing `ANTHROPIC_API_KEY` fails the run after scraping
 instead of exiting 0, and the judge exits nonzero when a bad key or an empty wallet aborts it or
 when it scores nothing while postings are pending. Every judge run on either path writes a
-`JudgeRun` row (outcome, pending at start, scored, held, failed); the five newest show on the
-`/audit/<token>` index. It runs inside Railway and reaches Postgres over the private
+`JudgeRun` row (outcome, pending at start, scored, held, failed), and every scrape a `ScrapeRun`
+row (arguments, listed, fetched, written, sent back, failed); the five newest of each show on the
+`/audit/<token>` index. A scrape that finds nothing or whose detail fetches all fail exits nonzero;
+the script still judges, then fails the run. It runs inside Railway and reaches Postgres over the private
 network. Its settings are on the service, set through the Railway API:
 
 | Setting | Value |

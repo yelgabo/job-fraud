@@ -2,6 +2,7 @@ import Link from "next/link"
 import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
+import { employerCheckLabel } from "@/lib/shared/employer-check"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { orderEmployerAggs } from "@/lib/shared/companies-query"
 import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
@@ -137,7 +138,7 @@ export default async function CompaniesPage({
                 <th className="px-4 py-2.5 font-medium">Postings</th>
                 <th className="px-4 py-2.5 font-medium">Risk mix</th>
                 <th className="px-4 py-2.5 font-medium">Top score</th>
-                <th className="px-4 py-2.5 font-medium">Web check</th>
+                <th className="px-4 py-2.5 font-medium">Employer check</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -172,13 +173,7 @@ export default async function CompaniesPage({
                     </span>
                   </td>
                   <td className="px-4 py-3 align-top text-xs text-zinc-500">
-                    {r.web
-                      ? r.web.businessMatch === "mismatch"
-                        ? "⚠ business mismatch"
-                        : r.web.businessMatch === "match"
-                          ? "✓ verified"
-                          : "uncertain"
-                      : "—"}
+                    {employerCheckLabel(r.web) ?? "—"}
                   </td>
                 </tr>
               ))}

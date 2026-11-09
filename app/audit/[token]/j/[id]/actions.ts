@@ -6,6 +6,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { webEnv } from "@/lib/env"
 import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
+import { SENT_BACK } from "@/lib/scoring/write-verdict"
 import { requestRevalidation } from "@/lib/shared/request-revalidation"
 import { tokenMatches } from "@/lib/shared/token-match"
 
@@ -60,11 +61,9 @@ export async function flagForJudge(token: string, workbcId: string, formData: Fo
       // up. A deep request keeps its current score, and the posting stays on the site, until
       // judge-keyless:apply re-scores it from the agent's verdict (lib/shared/deep-requests.ts).
       if (kind !== "rerun") return null
-      // sendBackToPending's write, inlined because it cannot join this transaction.
-      // lib/scoring/write-verdict.ts owns the rule; keep the two in step.
       return tx.job.update({
         where: { workbcId },
-        data: { scoredAt: null, status: "PENDING" },
+        data: SENT_BACK,
         select: { employerId: true },
       })
     },

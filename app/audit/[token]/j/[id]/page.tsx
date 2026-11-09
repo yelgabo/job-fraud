@@ -2,6 +2,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
 import { JobReport } from "@/components/JobReport"
+import { verdictState } from "@/lib/shared/verdict-state"
 import { requireAuditToken } from "../../guard"
 import { addNote, flagForJudge } from "./actions"
 
@@ -25,6 +26,7 @@ export default async function AdminJobPage({
     prisma.judgeRequest.findMany({ where: { workbcId: id }, orderBy: { createdAt: "desc" } }),
   ])
   const openRequests = requests.filter((r) => !r.resolvedAt)
+  const state = verdictState(job)
 
   const addNoteAction = addNote.bind(null, token, id)
   const flagAction = flagForJudge.bind(null, token, id)
@@ -45,9 +47,17 @@ export default async function AdminJobPage({
           Admin panel
         </h2>
 
-        {job.status === "PENDING" && (
+        {state === "withheld" && (
           <p className="mb-3 rounded bg-white px-3 py-2 text-sm text-amber-800">
-            Pending — this posting is queued for the next judge run.
+            Pending, with its verdict withheld from the public site. It was sent back (a rerun request or a
+            WorkBC edit) or held by a judge run, and it stays off the site until a judge run scores it again. A
+            run can hold it back again.
+          </p>
+        )}
+        {state === "unjudged" && (
+          <p className="mb-3 rounded bg-white px-3 py-2 text-sm text-amber-800">
+            Pending and never judged. It stays off the public site until a judge run scores it; a run can hold
+            it back.
           </p>
         )}
         {openRequests.length > 0 && (
@@ -123,8 +133,16 @@ export default async function AdminJobPage({
         </div>
       </section>
 
-      {job.status === "PUBLISHED" ? (
+      {state === "published" ? (
         <JobReport job={job} />
+      ) : state === "withheld" ? (
+        <div className="space-y-3">
+          <p className="rounded border border-dashed border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+            The verdict below was sent back or held, and is withheld from the public site. The public page
+            says the posting is being re-evaluated.
+          </p>
+          <JobReport job={job} />
+        </div>
       ) : (
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">{job.title}</h1>

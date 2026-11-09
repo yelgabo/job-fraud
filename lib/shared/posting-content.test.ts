@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { contentChanged, dueForRefetch, salaryChanged } from "./posting-content"
+import { contentChanged, dueForRefetch, salaryChanged, keepJudgeFlags } from "./posting-content"
 
 const base = {
   title: "Cook",
@@ -43,5 +43,23 @@ describe("dueForRefetch", () => {
     expect(dueForRefetch({ fetchedAt: new Date("2026-11-01T00:00:00Z"), scrapedAt: new Date("2026-01-01") }, 28, now)).toBe(false)
     expect(dueForRefetch({ fetchedAt: null, scrapedAt: new Date("2026-10-01T00:00:00Z") }, 28, now)).toBe(true)
     expect(dueForRefetch({ fetchedAt: null, scrapedAt: new Date("2026-11-05T00:00:00Z") }, 28, now)).toBe(false)
+  })
+})
+
+describe("keepJudgeFlags", () => {
+  const review = { flag: "apply_host_mismatch_review", evidence: "uncertain" }
+  const ats = { flag: "ats_known_provider", evidence: "x.myworkdayjobs.com" }
+  const url = "https://x.myworkdayjobs.com/a"
+
+  it("keeps the judge's review flag across a refetch of the same apply link", () => {
+    expect(keepJudgeFlags({ externalApplyUrl: url, flags: [ats, review] }, { externalApplyUrl: url, flags: [ats] })).toEqual([ats, review])
+  })
+
+  it("drops it when the apply link changed, so the new link is checked afresh", () => {
+    expect(keepJudgeFlags({ externalApplyUrl: url, flags: [review] }, { externalApplyUrl: null, flags: [] })).toEqual([])
+  })
+
+  it("drops a scrape-derived flag the new text no longer supports", () => {
+    expect(keepJudgeFlags({ externalApplyUrl: url, flags: [ats] }, { externalApplyUrl: url, flags: [] })).toEqual([])
   })
 })

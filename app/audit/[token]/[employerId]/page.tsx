@@ -5,6 +5,7 @@ import { parseChecks } from "@/lib/shared/json-schemas"
 import { ScoreChip } from "@/components/ScoreChip"
 import { requireAuditToken } from "../guard"
 import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
+import { isPresumed } from "@/lib/shared/employer-check"
 import { AGENT_SEARCH_BLOCK } from "@/lib/shared/agent-search-log"
 
 export const dynamic = "force-dynamic"
@@ -87,6 +88,11 @@ export default async function AuditDetailPage({
         <section className="rounded-lg border border-zinc-200 bg-white p-4 text-sm">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Current verdict</h2>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-zinc-700">
+            <span>
+              source:{" "}
+              <b>{isPresumed(web) ? "presumed from its own hiring-system account, no web search" : "web search"}</b>
+              {web.verifiedBy ? ` (${web.verifiedBy})` : ""}
+            </span>
             <span>business: <b>{web.businessMatch}</b></span>
             <span>location: <b>{web.locationMatch}</b></span>
             <span>jobs page: <b>{web.hasJobsListing}</b></span>

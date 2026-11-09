@@ -1,4 +1,5 @@
 import type { WebVerification } from "./json-schemas"
+import { isPresumed } from "./employer-check"
 
 /**
  * The dated line under an employer's verdict. Employer.checkedAt is when a verdict was stored,
@@ -10,7 +11,7 @@ export function verificationDateText(
   checkedAt: Date | null | undefined,
   formatDate: (d: Date) => string,
 ): string | null {
-  if (web?.source === "ats-tenant-match") {
+  if (isPresumed(web)) {
     const on = checkedAt ? ` on ${formatDate(checkedAt)}` : ""
     return `Presumed real${on} because every posting applies through the employer's own account on a recognized hiring system; no web check was made`
   }

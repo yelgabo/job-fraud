@@ -192,7 +192,10 @@ employer web-verify (once per employer, skipped for employers whose postings all
 own matching ATS tenant) -> brand-impersonation pre-check per posting -> per-posting Jev text
 judgments -> composed score (`lib/scoring/verdict.ts`).
 `Job.status` (`PENDING` / `PUBLISHED`, since 2026-11-08) says whether the site shows a posting;
-every reader filters on it, and `scoredAt` is only the time of the last verdict. `Job.verdictKind`
+every reader filters on it. `scoredAt` is when the current verdict was last published, by any
+writer, and is null while pending. `judgedAt` (since 2026-11-08) is when a judgment last produced the
+verdict: recompose and republish leave it alone and a send-back keeps it, so it is the "Reviewed on"
+date. `Job.verdictKind`
 (`MODEL` / `COMPOSED` / `IMPERSONATION`) records how the current verdict was produced. Only
 `lib/scoring/write-verdict.ts` writes the verdict columns: it refuses to let a composed verdict
 replace an impersonation, and refuses a "recompute" on a pending row (an open rerun). A new
@@ -343,7 +346,9 @@ network). The weekly refresh runs inside Railway as the **`job-fraud-scheduler`*
 (Mondays 12:17 UTC, start command `scripts/scheduled-refresh.sh`): both scrape passes, then
 `npm run judge -- --limit $JUDGE_LIMIT`, failing the run when `ANTHROPIC_API_KEY` is missing.
 Each judge run writes a `JudgeRun` row whose outcome (`OK`, `PARTIAL`, `FAILED`, `ABORTED`, or
-`RUNNING` with no `finishedAt` for a process that died) is the record of what a run did. It reaches
+`RUNNING` with no `finishedAt` for a process that died) is the record of what a run did. Each
+scrape writes a `ScrapeRun` row the same way (`FAILED` when the search finds nothing, every detail
+fetch fails, or the process throws); a failed scrape still lets the judge run, then fails the cron. It reaches
 Postgres over the private network, so it publishes new verdicts with no human involved and keeps
 working if the public TCP proxy is removed again. Its settings live on the Railway service;
 `docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or

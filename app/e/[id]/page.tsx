@@ -6,6 +6,7 @@ import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
 import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
 import { verificationDateText } from "@/lib/shared/verification-date"
+import { PRESUMED_LABEL, isPresumed } from "@/lib/shared/employer-check"
 
 // Rendered on demand per employer, then cached up to 10 minutes; a re-judged verdict appears
 // within that window. The empty generateStaticParams opts the route into on-demand static
@@ -50,6 +51,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
 
   const checks = parseChecks(employer.checks)
   const dateText = verificationDateText(checks.web, employer.checkedAt, (d) => d.toLocaleString("en-CA"))
+  const presumed = isPresumed(checks.web)
 
   return (
     <div className="space-y-6">
@@ -93,7 +95,9 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
 
       {checks.web && (
         <section className="rounded-lg border border-zinc-200 bg-white p-4 text-sm">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Web verification</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {presumed ? "Employer check (no web search)" : "Web verification"}
+          </h2>
           <div className="flex flex-wrap items-center gap-2">
             {checks.web.websiteUrl ? (
               <a
@@ -107,12 +111,16 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
             ) : (
               <span className="italic text-zinc-400">no site found</span>
             )}
-            <TriBadge
-              value={checks.web.businessMatch}
-              good="real / matches"
-              bad="business mismatch"
-              unknown="business uncertain"
-            />
+            {presumed ? (
+              <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">{PRESUMED_LABEL}</span>
+            ) : (
+              <TriBadge
+                value={checks.web.businessMatch}
+                good="real / matches"
+                bad="business mismatch"
+                unknown="business uncertain"
+              />
+            )}
             <TriBadge
               value={checks.web.locationMatch}
               good="location agrees"

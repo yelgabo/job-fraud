@@ -11,8 +11,12 @@ touch .env
 # plus those not fetched for 28 days; a refetched posting whose text changed goes back to pending.
 # Unset, not empty: lib/env.ts rejects an empty REVALIDATE_TOKEN. Pending postings are not shown on
 # the site, so only the judge run needs to refresh its cache.
-env -u REVALIDATE_TOKEN npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing --refetch-after-days 28
-env -u REVALIDATE_TOKEN npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing --refetch-after-days 28
+#
+# A scrape exits nonzero when its search finds nothing or every detail fetch fails (see ScrapeRun).
+# The judge still runs, since postings already pending are unaffected, and the cron fails at the end.
+scrape_failed=0
+env -u REVALIDATE_TOKEN npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing --refetch-after-days 28 || scrape_failed=1
+env -u REVALIDATE_TOKEN npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing --refetch-after-days 28 || scrape_failed=1
 
 # A missing key used to skip judging and exit 0, so the cron looked healthy while postings piled up
 # (730 pending by 2026-11-06). It now fails the run. judge.ts itself exits nonzero when a bad key or
@@ -22,3 +26,8 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   exit 1
 fi
 npm run judge -- --limit "${JUDGE_LIMIT:-1000}"
+
+if [ "$scrape_failed" -ne 0 ]; then
+  echo "[refresh] a scrape pass failed; its ScrapeRun row has the counts" >&2
+  exit 1
+fi

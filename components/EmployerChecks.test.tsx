@@ -25,6 +25,11 @@ describe("EmployerChecks date row", () => {
     expect(html).not.toMatch(/Checked on|Web-checked/)
   })
 
+  it("does not say a presumed business identity matches the posting", () => {
+    const html = renderToStaticMarkup(<EmployerChecks checks={{ web: { ...web, source: "ats-tenant-match" } }} />)
+    expect(html).toMatch(/Business identity<\/th><td[^>]*>presumed real, not looked up</)
+  })
+
   it("dates a web check by its research time", () => {
     const html = renderToStaticMarkup(
       <EmployerChecks checks={{ web: { ...web, verifiedAt: "2026-11-03T10:00:00Z" } }} checkedAt={checkedAt} />,

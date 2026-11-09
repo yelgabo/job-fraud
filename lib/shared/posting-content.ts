@@ -1,6 +1,8 @@
 // What a judgment of a posting rests on, as the scraper writes it. When any of it changes on WorkBC
 // the published rating describes a posting that no longer exists, so the scraper sends it back.
 // Flags are left out: they derive from the description, and later steps add flags of their own.
+import type { ApplicationFlag } from "./json-schemas"
+
 export type PostingContent = {
   title: string
   descriptionMd: string
@@ -36,4 +38,20 @@ export function contentChanged(before: PostingContent, after: PostingContent): b
 export function dueForRefetch(row: { fetchedAt: Date | null; scrapedAt: Date }, days: number, now: Date): boolean {
   const last = row.fetchedAt ?? row.scrapedAt
   return now.getTime() - last.getTime() >= days * 86_400_000
+}
+
+/**
+ * Flags a judge run adds after the scrape, which a refetch would otherwise drop by replacing the
+ * flags wholesale. apply_host_mismatch_review records an uncertain impersonation answer about the
+ * apply link, so it is kept only while the link is unchanged; a new link is checked afresh.
+ */
+const ADDED_BY_JUDGE = ["apply_host_mismatch_review"]
+
+export function keepJudgeFlags(
+  before: { externalApplyUrl: string | null; flags: ApplicationFlag[] },
+  after: { externalApplyUrl: string | null; flags: ApplicationFlag[] },
+): ApplicationFlag[] {
+  if ((before.externalApplyUrl ?? null) !== (after.externalApplyUrl ?? null)) return after.flags
+  const kept = before.flags.filter((f) => ADDED_BY_JUDGE.includes(f.flag) && !after.flags.some((g) => g.flag === f.flag))
+  return [...after.flags, ...kept]
 }

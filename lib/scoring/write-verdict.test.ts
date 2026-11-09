@@ -43,6 +43,14 @@ describe("write-verdict", () => {
     expect(data).toMatchObject({ ...verdict, status: "PUBLISHED", verdictKind: "COMPOSED" })
   })
 
+  it("moves the review date on a judgment and leaves it alone on a recompute", async () => {
+    updateMany.mockResolvedValue({ count: 1 })
+    await writeComposedVerdict("1", verdict, "judgment")
+    await writeComposedVerdict("1", verdict, "recompute")
+    expect(updateMany.mock.calls[0][0].data.judgedAt).toBe(verdict.scoredAt)
+    expect(updateMany.mock.calls[1][0].data).not.toHaveProperty("judgedAt")
+  })
+
   it("reports a refused write", async () => {
     updateMany.mockResolvedValue({ count: 0 })
     expect(await writeComposedVerdict("1", verdict, "recompute")).toBe(false)
@@ -61,12 +69,14 @@ describe("write-verdict", () => {
     expect(where).toEqual({ workbcId: "9" })
     expect(data).toMatchObject({ fraudScore: 90, scoringVersion: null, status: "PUBLISHED", verdictKind: "IMPERSONATION" })
     expect(data.scoredAt).toBeInstanceOf(Date)
+    expect(data.judgedAt).toBe(data.scoredAt)
   })
 
   it("moves status with scoredAt when republishing and when sending back", async () => {
     await republishVerdict("3")
     await sendBackToPending("4")
     expect(update.mock.calls[0][0].data).toMatchObject({ status: "PUBLISHED" })
+    expect(update.mock.calls[0][0].data).not.toHaveProperty("judgedAt")
     expect(update.mock.calls[0][0].data.scoredAt).toBeInstanceOf(Date)
     expect(update.mock.calls[1][0]).toEqual({ where: { workbcId: "4" }, data: { scoredAt: null, status: "PENDING" } })
   })

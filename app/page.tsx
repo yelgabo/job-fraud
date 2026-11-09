@@ -6,7 +6,7 @@ import { PaginationNav } from "@/components/PaginationNav"
 import { CATEGORIES } from "@/lib/signals/job-category"
 import { effectivePostedDate } from "@/lib/shared/posted-date"
 import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
-import { lastScanAt } from "@/lib/shared/last-scan"
+import { LATEST_FINISHED_SCRAPE, lastScanAt } from "@/lib/shared/last-scan"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import {
   BANDS,
@@ -61,7 +61,7 @@ const loadRows = unstable_cache(loadRowsUncached, ["postings-rows"], {
 async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWindowKey) {
   const q = buildPostingsQuery({ band, cat, posted, now: new Date() })
 
-  const [grouped, catGrouped, postedCounts, total, scored, agg, filteredTotal] = await Promise.all([
+  const [grouped, catGrouped, postedCounts, total, scored, agg, filteredTotal, latestRun] = await Promise.all([
     prisma.job.groupBy({ by: ["riskBand"], _count: true, where: q.bandCountWhere }),
     prisma.job.groupBy({ by: ["category"], _count: true, where: q.catCountWhere }),
     Promise.all(
@@ -74,6 +74,7 @@ async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWind
     // Both maxima in one aggregate, so it stays a single scan.
     prisma.job.aggregate({ _max: { scrapedAt: true, fetchedAt: true } }),
     prisma.job.count({ where: q.rowsWhere }),
+    prisma.scrapeRun.findFirst(LATEST_FINISHED_SCRAPE),
   ])
 
   const counts: Record<string, number> = { all: 0 }
@@ -91,7 +92,12 @@ async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWind
     dateCounts: Object.fromEntries(postedCounts) as Record<PostedWindowKey, number>,
     total,
     scored,
-    lastScraped: lastScanAt(agg._max.scrapedAt, agg._max.fetchedAt)?.toISOString() ?? null,
+    lastScraped:
+      lastScanAt({
+        latestRunFinishedAt: latestRun?.finishedAt ?? null,
+        maxScrapedAt: agg._max.scrapedAt,
+        maxFetchedAt: agg._max.fetchedAt,
+      })?.toISOString() ?? null,
     filteredTotal,
   }
 }

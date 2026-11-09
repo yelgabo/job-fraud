@@ -1,6 +1,9 @@
 import pLimit from "p-limit"
 import { prisma } from "../lib/db"
-import { contentChanged, dueForRefetch } from "../lib/shared/posting-content"
+import { contentChanged, dueForRefetch, keepJudgeFlags } from "../lib/shared/posting-content"
+import { finishScrapeRun, startScrapeRun, type ScrapeCounts } from "../lib/shared/scrape-run"
+import { findOrCreateEmployer } from "../lib/shared/find-or-create-employer"
+import { parseFlags } from "../lib/shared/json-schemas"
 import { SENT_BACK } from "../lib/scoring/write-verdict"
 import { webEnv } from "../lib/env"
 import type { JobStub } from "../lib/workbc/scrape-workbc"
@@ -54,6 +57,9 @@ async function main() {
   const logPath = `logs/scrape-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`
   const log = new JsonlLogger(logPath)
   const t0 = Date.now()
+  const run = args.dryRun ? null : await startScrapeRun(process.argv.slice(2))
+  const counts: ScrapeCounts = { listed: 0, toFetch: 0, written: 0, sentBack: 0, failed: 0 }
+  let crash: string | undefined
 
   try {
     // Phase A: search (WorkBC JSON API)
@@ -88,6 +94,7 @@ async function main() {
       if (byId.size >= target) break
     }
     let stubs = [...byId.values()].slice(0, target)
+    counts.listed = stubs.length
     log.log({ stage: "search:done", ok: stubs.length > 0, meta: { stubCount: stubs.length } })
     if (stubs.length === 0) {
       console.error("Hard exit: 0 listings found. DB not touched.")
@@ -117,6 +124,8 @@ async function main() {
         return
       }
     }
+
+    counts.toFetch = stubs.length
 
     // Phase A.5: pre-upsert employer identities from the (reliable) search stubs, sequentially.
     // Doing this first means the parallel job-upserts below never race on the employer unique key.
@@ -151,18 +160,16 @@ async function main() {
               salary: true,
               location: true,
               employerId: true,
+              applicationFlags: true,
               status: true,
               verdictKind: true,
             },
           })
       ).map((r) => [r.workbcId, r]),
     )
-    let sentBack = 0
 
     // Phase B: per-job detail (WorkBC JSON API) + flags + upsert, run with bounded concurrency.
     const limit = pLimit(args.concurrency)
-    let written = 0
-    let detailFail = 0
     let done = 0
     await Promise.all(
       stubs.map((stub) =>
@@ -170,7 +177,7 @@ async function main() {
           const dt0 = Date.now()
           const detail = await fetchJobDetailApi(stub.workbcId).catch(() => null)
           if (!detail) {
-            detailFail++
+            counts.failed++
             log.log({ workbcId: stub.workbcId, stage: "detail", ok: false, error: "fetch_failed" })
             return
           }
@@ -193,10 +200,20 @@ async function main() {
           }
 
           if (!args.dryRun) {
+            const prev = previous.get(stub.workbcId)
+            // A confirmed impersonation was re-attributed to the real company and given the
+            // apply_host_mismatch flag. The posting still names the brand, so updating it from
+            // WorkBC would point it back at the brand and drop the flag while its 90 stayed.
+            const impersonation = prev?.verdictKind === "IMPERSONATION"
             const name = stub.employerName ?? detail.employerName
-            const employerId = name ? empIdCache.get(normalizeEmployer(name)) ?? null : null
-            // enrich the employer with detail-derived fields (same-row update — safe under concurrency)
-            if (employerId && (detail.addressRaw || externalApplyUrl)) {
+            // Phase A.5 registered only the stubs' names, so a name found in the detail alone is
+            // created here; writing null instead detached the posting and sent it back to pending.
+            // With no name anywhere the earlier attribution stands.
+            const employerId = name
+              ? empIdCache.get(normalizeEmployer(name)) ?? (await findOrCreateEmployer(name))
+              : prev?.employerId ?? null
+            // The detail's address and apply link are the impersonator's, not the brand's it names.
+            if (employerId && !impersonation && (detail.addressRaw || externalApplyUrl)) {
               await prisma.employer
                 .update({ where: { id: employerId }, data: { addressRaw: detail.addressRaw ?? undefined, applicationUrl: externalApplyUrl ?? undefined } })
                 .catch(() => {})
@@ -218,23 +235,23 @@ async function main() {
               externalApplyHost,
               atsProvider,
               externalApplyOk: null,
-              applicationFlags: appFlags as never,
+              applicationFlags: (prev
+                ? keepJudgeFlags(
+                    { externalApplyUrl: prev.externalApplyUrl, flags: parseFlags(prev.applicationFlags) },
+                    { externalApplyUrl, flags: appFlags },
+                  )
+                : appFlags) as never,
               nocCode,
               nocGroup,
               category: categoryForNoc(nocCode),
               fetchedAt: new Date(),
             }
-            const prev = previous.get(stub.workbcId)
-            // A confirmed impersonation was re-attributed to the real company and given the
-            // apply_host_mismatch flag. The posting still names the brand, so updating it from
-            // WorkBC would point it back at the brand and drop the flag while its 90 stayed.
-            const impersonation = prev?.verdictKind === "IMPERSONATION"
             const { employerId: _employerId, applicationFlags: _flags, ...unattributed } = fields
             const changed = prev?.status === "PUBLISHED" && !impersonation && contentChanged(prev, fields)
-            if (changed) sentBack++
+            if (changed) counts.sentBack++
             const update = { ...(impersonation ? unattributed : fields), ...(changed ? SENT_BACK : {}) }
             await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update })
-            written++
+            counts.written++
           }
           log.log({ workbcId: stub.workbcId, stage: "detail", ok: true, durationMs: Date.now() - dt0, meta: { flagCount: appFlags.length, ats: atsProvider } })
           if (++done % 100 === 0) console.log(`[detail] ${done}/${stubs.length} processed`)
@@ -244,11 +261,22 @@ async function main() {
 
     console.log(`\n=== SCRAPE SUMMARY ===`)
     console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-    console.log(`Collected ${written} postings from ${empIdCache.size} employers; ${sentBack} published postings changed on WorkBC and went back to pending; ${detailFail} detail fetch failures`)
+    console.log(`Collected ${counts.written} postings from ${empIdCache.size} employers; ${counts.sentBack} published postings changed on WorkBC and went back to pending; ${counts.failed} detail fetch failures`)
     console.log(`Next: run the judge-postings skill (or npm run judge-keyless:fetch) to evaluate pending postings.`)
     console.log(`Log: ${logPath}`)
-    if (!args.dryRun && written > 0) await requestRevalidation()
+    if (!args.dryRun && counts.written > 0) await requestRevalidation()
+  } catch (e) {
+    crash = (e as Error).message ?? String(e)
+    throw e
   } finally {
+    if (run) {
+      const outcome = await finishScrapeRun(run, counts, crash).catch((e) => {
+        console.error(`[scrape] could not record the run: ${(e as Error).message}`)
+        return null
+      })
+      if (outcome) console.log(`[scrape] run ${run}: ${outcome}`)
+      if (outcome === "FAILED" && !process.exitCode) process.exitCode = 1
+    }
     await prisma.$disconnect().catch(() => {})
     log.close()
   }

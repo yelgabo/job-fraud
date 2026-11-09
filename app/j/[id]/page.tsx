@@ -2,6 +2,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { prisma } from "@/lib/db"
 import { JobReport } from "@/components/JobReport"
+import { PUBLIC_PENDING_TEXT, verdictState } from "@/lib/shared/verdict-state"
 
 // Rendered on demand per posting, then cached up to 10 minutes; a re-judged score appears within
 // that window. The empty generateStaticParams opts the route into on-demand static generation
@@ -17,14 +18,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const job = await prisma.job.findUnique({ where: { workbcId: id }, include: { employer: true } })
   if (!job) notFound()
 
-  if (job.status !== "PUBLISHED") {
+  const state = verdictState(job)
+  if (state !== "published") {
     return (
       <div className="space-y-4">
         <Link href="/" className="text-sm text-zinc-500 hover:underline">
           ← Back to all postings
         </Link>
         <h1 className="text-2xl font-semibold text-zinc-900">{job.title}</h1>
-        <p className="text-zinc-600">This posting hasn’t been evaluated yet.</p>
+        <p className="text-zinc-600">{PUBLIC_PENDING_TEXT[state]}</p>
       </div>
     )
   }

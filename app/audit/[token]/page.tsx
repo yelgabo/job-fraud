@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
 import { requireAuditToken } from "./guard"
 import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
+import { isPresumed } from "@/lib/shared/employer-check"
+import { scrapeRunStatus } from "@/lib/shared/scrape-run-status"
 
 export const dynamic = "force-dynamic"
 
@@ -39,7 +41,11 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
     select: { workbcId: true, title: true },
   })
   const titleFor = new Map(requestJobs.map((j) => [j.workbcId, j.title]))
-  const runs = await prisma.judgeRun.findMany({ orderBy: { startedAt: "desc" }, take: 5 })
+  const [runs, scrapeRuns] = await Promise.all([
+    prisma.judgeRun.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
+    prisma.scrapeRun.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
+  ])
+  const now = new Date()
 
   return (
     <div className="space-y-6">
@@ -76,25 +82,55 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
         )}
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-5">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Recent judge runs</h2>
-        {runs.length === 0 ? (
-          <p className="text-sm text-zinc-400">No judge run recorded yet.</p>
-        ) : (
-          <ul className="space-y-1 text-sm">
-            {runs.map((r) => (
-              <li key={r.id} className="text-zinc-700">
-                <span className={r.outcome === "OK" ? "font-semibold text-zinc-700" : "font-semibold text-red-700"}>
-                  {r.outcome}
-                </span>{" "}
-                {r.path.toLowerCase()} · {new Date(r.startedAt).toLocaleString("en-CA")} · {r.pendingAtStart} pending at
-                start, {r.scored} scored, {r.held} held, {r.failed} failed
-                {r.note ? <span className="ml-2 text-zinc-500">{r.note}</span> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-lg border border-zinc-200 bg-white p-5">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Recent judge runs</h2>
+          {runs.length === 0 ? (
+            <p className="text-sm text-zinc-400">No judge run recorded yet.</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {runs.map((r) => (
+                <li key={r.id} className="text-zinc-700">
+                  <span className={r.outcome === "OK" ? "font-semibold text-zinc-700" : "font-semibold text-red-700"}>
+                    {r.outcome}
+                  </span>{" "}
+                  {r.path.toLowerCase()} · {new Date(r.startedAt).toLocaleString("en-CA")} · {r.pendingAtStart} pending at
+                  start, {r.scored} scored, {r.held} held, {r.failed} failed
+                  {r.note ? <span className="ml-2 text-zinc-500">{r.note}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-lg border border-zinc-200 bg-white p-5">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Recent scrape runs</h2>
+          {scrapeRuns.length === 0 ? (
+            <p className="text-sm text-zinc-400">No scrape run recorded yet.</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {scrapeRuns.map((r) => {
+                const status = scrapeRunStatus(r, now)
+                return (
+                  <li key={r.id} className="text-zinc-700">
+                    <span
+                      className={
+                        status === "OK" || status === "RUNNING" ? "font-semibold text-zinc-700" : "font-semibold text-red-700"
+                      }
+                    >
+                      {status}
+                    </span>{" "}
+                    {new Date(r.startedAt).toLocaleString("en-CA")} ·{" "}
+                    <code className="rounded bg-zinc-100 px-1 text-xs">{r.args || "(no args)"}</code> · {r.listed} listed,{" "}
+                    {r.toFetch} to fetch, {r.written} written, {r.sentBack} sent back, {r.failed} failed
+                    {r.note ? <span className="ml-2 text-zinc-500">{r.note}</span> : null}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
@@ -124,6 +160,9 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
                     {web ? (
                       <span className={web.businessMatch === "mismatch" ? "text-red-700" : "text-zinc-600"}>
                         {web.businessMatch}
+                        {isPresumed(web) ? (
+                          <span className="ml-1 text-xs text-zinc-400">(presumed, no web search)</span>
+                        ) : null}
                       </span>
                     ) : (
                       <span className="text-zinc-400">—</span>

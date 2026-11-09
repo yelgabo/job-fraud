@@ -10,6 +10,7 @@ import { impersonationKey } from "../signals/impersonation-plan"
 import { checkImpersonation, ImpersonationSchema, type ImpersonationResult } from "./check-impersonation"
 import { parseFlags } from "../shared/json-schemas"
 import { bandFor } from "../shared/risk-band"
+import { findOrCreateEmployer } from "../shared/find-or-create-employer"
 import { republishVerdict, writeImpersonationVerdict } from "../scoring/write-verdict"
 
 // Since 2026-11-08 the prefix only feeds the status backfill (lib/scoring/derive-status.ts);
@@ -81,21 +82,6 @@ async function mergeFlag(job: JobForCheck, flag: string, evidence: string): Prom
   flags.push({ flag, evidence })
   await prisma.job.update({ where: { workbcId: job.workbcId }, data: { applicationFlags: flags as never } })
   return flags
-}
-
-// Find-or-create an employer by normalized name, tolerant of a concurrent creator (unique race).
-async function upsertEmployer(displayName: string): Promise<string> {
-  const nameNormalized = normalizeEmployer(displayName)
-  const existing = await prisma.employer.findUnique({ where: { nameNormalized } })
-  if (existing) return existing.id
-  try {
-    const created = await prisma.employer.create({ data: { nameNormalized, nameDisplay: displayName } })
-    return created.id
-  } catch {
-    const again = await prisma.employer.findUnique({ where: { nameNormalized } })
-    if (again) return again.id
-    throw new Error(`could not upsert employer "${displayName}"`)
-  }
 }
 
 // Runs the full apply-host resolution for one job. On "impersonation" it performs the DB writes
@@ -173,7 +159,8 @@ export async function applyImpersonationVerdict(
   }
 
   const displayName = verdict.realCompany || titleCaseSlug(m.tenant)
-  const realEmployerId = await upsertEmployer(displayName)
+  const realEmployerId = await findOrCreateEmployer(displayName)
+  if (!realEmployerId) throw new Error(`real company "${displayName}" has no usable name`)
 
   if (searchLog) {
     await prisma.employerWebSearchLog.create({

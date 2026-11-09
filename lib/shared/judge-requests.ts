@@ -3,8 +3,9 @@ import { prisma } from "../db"
 
 /**
  * A rerun is serviced by any pass that publishes its posting again after the request was filed.
- * Recompute writes cannot do that to a pending row (lib/scoring/write-verdict.ts), so a newer
- * scoredAt here means a fresh judgment or a kept impersonation.
+ * scoredAt, not judgedAt: a kept impersonation is republished without a new judgment and must
+ * still close the request. Recompute writes cannot publish a pending row
+ * (lib/scoring/write-verdict.ts), so a newer scoredAt means a fresh judgment or a kept impersonation.
  */
 export async function resolveRerunRequests(): Promise<number> {
   const open = await prisma.judgeRequest.findMany({ where: { kind: "rerun", resolvedAt: null } })

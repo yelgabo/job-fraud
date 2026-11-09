@@ -41,6 +41,7 @@ function makeJob(overrides: Partial<Job> = {}): Job & { employer: Employer | nul
     status: "PUBLISHED",
     verdictKind: "MODEL",
     scoredAt: new Date("2026-07-01T00:00:00Z"),
+    judgedAt: new Date("2026-07-01T00:00:00Z"),
     scrapedAt: new Date("2026-06-30T00:00:00Z"),
     fetchedAt: null,
     ...overrides,
@@ -94,5 +95,20 @@ describe("JobReport apply-link presentation by risk band", () => {
     )
     expect(anchorFor(html, "https://www.workbc.ca/jobs/12345678")).toContain(PROMINENT)
     expect(html).not.toContain(WARNING_TEXT)
+  })
+})
+
+describe("JobReport review date", () => {
+  it("dates the review by the judgment, not by the last recompose or republish", () => {
+    const html = renderToStaticMarkup(
+      <JobReport job={makeJob({ judgedAt: new Date("2026-07-01T00:00:00Z"), scoredAt: new Date("2026-11-05T00:00:00Z") })} />,
+    )
+    expect(html).toContain("Reviewed on 2026-07-01")
+    expect(html).not.toContain("2026-11-05")
+  })
+
+  it("does not fall back to scoredAt", () => {
+    const html = renderToStaticMarkup(<JobReport job={makeJob({ judgedAt: null })} />)
+    expect(html).toContain("Not yet reviewed")
   })
 })

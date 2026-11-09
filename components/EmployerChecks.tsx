@@ -1,6 +1,7 @@
 import type { Checks } from "@/lib/shared/json-schemas"
 import { scoredAddressType } from "@/lib/shared/address-type"
 import { verificationDateText } from "@/lib/shared/verification-date"
+import { isPresumed } from "@/lib/shared/employer-check"
 
 // Keyed, plain-language rendering of an employer's verification record, replacing the raw
 // JSON dump the posting page used to show. Every known field of ChecksSchema has a row here;
@@ -61,6 +62,7 @@ export function EmployerChecks({ checks, checkedAt }: { checks: Checks; checkedA
   const rows: Array<{ label: string; value: React.ReactNode }> = []
 
   if (web) {
+    const presumed = isPresumed(web)
     rows.push({
       label: "Website found",
       value: web.websiteUrl ? (
@@ -75,7 +77,10 @@ export function EmployerChecks({ checks, checkedAt }: { checks: Checks; checkedA
       label: "Website reachable",
       value: web.websiteReachable === "unknown" ? "not checked" : web.websiteReachable,
     })
-    rows.push({ label: "Business identity", value: MATCH_TEXT[web.businessMatch] ?? web.businessMatch })
+    rows.push({
+      label: "Business identity",
+      value: presumed ? "presumed real, not looked up" : (MATCH_TEXT[web.businessMatch] ?? web.businessMatch),
+    })
     rows.push({ label: "Location", value: MATCH_TEXT[web.locationMatch] ?? web.locationMatch })
     rows.push({
       label: "Job listings on its site",
@@ -86,11 +91,10 @@ export function EmployerChecks({ checks, checkedAt }: { checks: Checks; checkedA
       value: ADDRESS_TYPE_TEXT[scoredAddressType(web)] ?? web.applicationAddressType,
     })
     rows.push({
-      label: "How it was verified",
-      value:
-        web.source === "ats-tenant-match"
-          ? "presumed real: every posting applies through the employer's own account on a recognized hiring system"
-          : "web search",
+      label: "How the verdict was reached",
+      value: presumed
+        ? "presumed real: every posting applies through the employer's own account on a recognized hiring system"
+        : "web search",
     })
     rows.push({ label: "Confidence", value: web.confidence.toFixed(2) })
     if (web.summary) rows.push({ label: "Summary", value: web.summary })

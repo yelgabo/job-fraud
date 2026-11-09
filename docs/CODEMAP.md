@@ -216,7 +216,8 @@ removed; the pipeline now uses `lib/workbc/` + `lib/ai/verify-employer-web.ts`.)
 ## `prisma/`
 - `schema.prisma` — `Employer`, `Job`, and `EmployerWebSearchLog` models. `Job.status` is
   `PENDING` or `PUBLISHED`, `Job.verdictKind` is `MODEL`, `COMPOSED` or `IMPERSONATION`, and only
-  `lib/scoring/write-verdict.ts` writes them with the scoring fields; `scoredAt` is the verdict time. Job also carries `nocCode`/`nocGroup`/`category`
+  `lib/scoring/write-verdict.ts` writes them with the scoring fields; `scoredAt` is the publication
+  time and `judgedAt` the time of the judgment behind it. `ScrapeRun` and `JudgeRun` record each run. Job also carries `nocCode`/`nocGroup`/`category`
   (NOC occupation + derived job-type bucket; `category` indexed) and a **pair** of posted-date fields:
   the raw `postedAt String?` exactly as the producer wrote it (still what the judge prompt sees) plus
   `postedDate DateTime?`, indexed, parsed from it and null when the raw value is unusable. Filter on

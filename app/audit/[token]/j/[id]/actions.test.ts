@@ -59,7 +59,6 @@ describe("flagForJudge", () => {
     )
     expect(tx.judgeRequest.create).toHaveBeenCalledWith({ data: { workbcId: "123", kind: "rerun", note: "looks wrong" } })
     expect(tx.reviewNote.create).toHaveBeenCalledWith({ data: { workbcId: "123", body: "[rerun flag] looks wrong" } })
-    // The same shape as sendBackToPending in lib/scoring/write-verdict.ts.
     expect(tx.job.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { workbcId: "123" }, data: { scoredAt: null, status: "PENDING" } }),
     )

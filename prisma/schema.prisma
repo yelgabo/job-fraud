@@ -8,16 +8,16 @@ datasource db {
 }
 
 model Employer {
-  id              String    @id @default(cuid())
-  nameNormalized  String    @unique
-  nameDisplay     String
-  website         String?
-  applicationUrl  String?
-  addressRaw      String?
-  checks          Json      @default("{}")
-  checkedAt       DateTime?
-  jobs            Job[]
-  webSearchLogs   EmployerWebSearchLog[]
+  id             String                 @id @default(cuid())
+  nameNormalized String                 @unique
+  nameDisplay    String
+  website        String?
+  applicationUrl String?
+  addressRaw     String?
+  checks         Json                   @default("{}")
+  checkedAt      DateTime?
+  jobs           Job[]
+  webSearchLogs  EmployerWebSearchLog[]
 }
 
 // Raw audit trail of the Claude web_search activity behind each employer verification.
@@ -25,20 +25,20 @@ model Employer {
 // Kept OUT of Employer.checks so prod pages (which read checks on every render) never pull these
 // large encrypted_content blobs; consumed only by a separate, non-prod audit UI.
 model EmployerWebSearchLog {
-  id          String   @id @default(cuid())
-  employerId  String
-  employer    Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
-  capturedAt  DateTime @default(now())
-  queries     Json     // string[] — the searches Claude ran (quick-scan convenience)
-  blocks      Json     // raw server_tool_use(web_search) + web_search_tool_result blocks, incl. encrypted_content
+  id         String   @id @default(cuid())
+  employerId String
+  employer   Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  capturedAt DateTime @default(now())
+  queries    Json // string[] — the searches Claude ran (quick-scan convenience)
+  blocks     Json // raw server_tool_use(web_search) + web_search_tool_result blocks, incl. encrypted_content
 
   @@index([employerId, capturedAt])
 }
 
 model Job {
-  workbcId          String    @id
+  workbcId          String       @id
   employerId        String?
-  employer          Employer? @relation(fields: [employerId], references: [id], onDelete: SetNull)
+  employer          Employer?    @relation(fields: [employerId], references: [id], onDelete: SetNull)
   title             String
   location          String?
   salary            String?
@@ -56,7 +56,7 @@ model Job {
   externalApplyHost String?
   atsProvider       String?
   externalApplyOk   Boolean?
-  applicationFlags  Json      @default("[]")
+  applicationFlags  Json         @default("[]")
   // NOC occupation classification (from WorkBC) + derived coarse job-type bucket for filtering
   // and analysis. nocCode/nocGroup are kept raw so finer breakdowns stay possible.
   nocCode           String?
@@ -67,7 +67,14 @@ model Job {
   riskBand          String?
   reasoning         String?
   signals           Json?
+  // When the current verdict was last published, by any writer: a judgment, a recompute or a
+  // republish. Null while PENDING. Not a review date; see judgedAt.
   scoredAt          DateTime?
+  // When a judgment last produced this posting's verdict: a judge run on either path, or an
+  // impersonation check. Recompose, recheck and republish leave it alone, and a send-back keeps it,
+  // so it is the date the site shows as "Reviewed on". Filled from scoredAt on 2026-11-08 for older
+  // rows, which for rows recomposed before then is the recompose date.
+  judgedAt          DateTime?
   // Raw Jev text judgments the composer consumed, kept so a reweight (`npm run recompose`)
   // never needs inference. Null on rows scored before the composer, and on rows composed
   // without a TYPESAFE_API_KEY.
@@ -78,12 +85,12 @@ model Job {
   scoringVersion    Int?
   // Whether the site shows the posting. Moves with scoredAt (PUBLISHED iff scoredAt is set), and
   // only lib/scoring/write-verdict.ts writes it.
-  status            JobStatus @default(PENDING)
+  status            JobStatus    @default(PENDING)
   // How the current verdict was produced, kept while a rerun sends the row back to PENDING. Null
   // until the first verdict. Replaces reading meaning out of scoringVersion = null and the
   // "Brand impersonation:" reasoning prefix.
   verdictKind       VerdictKind?
-  scrapedAt         DateTime  @default(now())
+  scrapedAt         DateTime     @default(now())
   // When a scrape last fetched this posting's detail (scrapedAt is set on insert only). The weekly
   // scrape refetches postings not fetched for a while, so edits on WorkBC reach the row. Null on
   // rows not fetched since the column was added (2026-11-09).
@@ -142,6 +149,34 @@ model JudgeRun {
   note           String?
 
   @@index([startedAt])
+}
+
+// One row per scrape run. Before this a run that fetched nothing (every detail request failing)
+// exited 0 and looked like a quiet week. Written by lib/shared/scrape-run.ts.
+model ScrapeRun {
+  id         String           @id @default(cuid())
+  startedAt  DateTime         @default(now())
+  finishedAt DateTime?
+  outcome    ScrapeRunOutcome @default(RUNNING)
+  // The command-line arguments, so a --recent pass and a full sweep can be told apart.
+  args       String
+  listed     Int              @default(0)
+  toFetch    Int              @default(0)
+  written    Int              @default(0)
+  sentBack   Int              @default(0)
+  failed     Int              @default(0)
+  note       String?
+
+  @@index([startedAt])
+}
+
+// FAILED: the search found nothing, every detail fetch failed, or the process threw. PARTIAL:
+// some detail fetches failed. RUNNING with no finishedAt: still running, or killed.
+enum ScrapeRunOutcome {
+  RUNNING
+  OK
+  PARTIAL
+  FAILED
 }
 
 // A decided brand-impersonation check for one claimed employer and ATS tenant pair (the key is

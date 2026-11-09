@@ -2,6 +2,7 @@ import Link from "next/link"
 import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db"
 import { parseChecks } from "@/lib/shared/json-schemas"
+import { tallyEmployerChecks } from "@/lib/shared/employer-check"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
 import { CATEGORIES } from "@/lib/signals/job-category"
@@ -96,15 +97,7 @@ async function loadAnalysisUncached() {
   const compOverall = emptyTally()
   for (const band of overallEmp.values()) addBand(compOverall, band)
 
-  // Unverifiable companies (web-verdict businessMatch === "mismatch")
-  let webMismatch = 0,
-    webChecked = 0
-  for (const e of employers) {
-    const bm = parseChecks(e.checks).web?.businessMatch
-    if (!bm) continue
-    webChecked++
-    if (bm === "mismatch") webMismatch++
-  }
+  const { webChecked, webMismatch, presumed } = tallyEmployerChecks(employers.map((e) => parseChecks(e.checks).web))
 
   // By-company category rows, sorted by company elevated-rate desc.
   const compRows = [...compCat.entries()]
@@ -117,15 +110,14 @@ async function loadAnalysisUncached() {
     .filter((r) => r.t.total > 0)
     .sort((a, b) => elev(b.t) - elev(a.t))
 
-  return { postOverall, compOverall, webMismatch, webChecked, compRows, postRows }
+  return { postOverall, compOverall, webMismatch, webChecked, presumed, compRows, postRows }
 }
 
 const elev = (t: Tally) => pct(t.medium + t.high, t.total)
 const high = (t: Tally) => pct(t.high, t.total)
 
 export default async function AnalysisPage() {
-  const { postOverall, compOverall, webMismatch, webChecked, compRows, postRows } =
-    await loadAnalysis()
+  const { postOverall, compOverall, webMismatch, webChecked, presumed, compRows, postRows } = await loadAnalysis()
 
   return (
     <div className="space-y-8">
@@ -144,11 +136,13 @@ export default async function AnalysisPage() {
         <p className="mt-3 text-sm text-zinc-700">
           <span className="font-semibold">{pct(compOverall.medium + compOverall.high, compOverall.total).toFixed(1)}%</span>{" "}
           of <span className="font-semibold">{compOverall.total.toLocaleString()}</span> companies are
-          elevated risk ({compOverall.high.toLocaleString()} have a high-risk posting) — vs{" "}
+          elevated risk ({compOverall.high.toLocaleString()} have a high-risk posting), against{" "}
           <span className="font-semibold">{elev(postOverall).toFixed(1)}%</span> of{" "}
           {postOverall.total.toLocaleString()} postings. {webMismatch.toLocaleString()} of{" "}
           {webChecked.toLocaleString()} web-checked companies are unverifiable as a real business
-          (businessMatch = mismatch).
+          (businessMatch = mismatch). Another {presumed.toLocaleString()} were presumed real without a
+          web check, because every one of their postings applies through the company&apos;s own account
+          on a recognized hiring system; they are not in that count.
         </p>
       </header>
 

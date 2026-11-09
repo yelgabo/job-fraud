@@ -37,7 +37,13 @@ export async function writeComposedVerdict(
 ): Promise<boolean> {
   const { count } = await prisma.job.updateMany({
     where: composedWriteWhere(workbcId, kind),
-    data: { ...verdict, status: "PUBLISHED", verdictKind: "COMPOSED" },
+    data: {
+      ...verdict,
+      // A recompute re-derives the old judgment; only a fresh one moves the review date.
+      ...(kind === "judgment" ? { judgedAt: verdict.scoredAt } : {}),
+      status: "PUBLISHED",
+      verdictKind: "COMPOSED",
+    },
   })
   return count === 1
 }
@@ -52,25 +58,27 @@ export type ImpersonationVerdict = {
 }
 
 export async function writeImpersonationVerdict(workbcId: string, verdict: ImpersonationVerdict): Promise<void> {
+  const now = new Date()
   await prisma.job.update({
     where: { workbcId },
     data: {
       ...verdict,
       // recompose selects rows by a non-null scoringVersion; null keeps this row out of it.
       scoringVersion: null,
-      scoredAt: new Date(),
+      scoredAt: now,
+      judgedAt: now,
       status: "PUBLISHED",
       verdictKind: "IMPERSONATION",
     },
   })
 }
 
-/** Republishes the verdict a row already holds, unchanged. */
+/** Republishes the verdict a row already holds, unchanged; judgedAt stays the original judgment's. */
 export async function republishVerdict(workbcId: string): Promise<void> {
   await prisma.job.update({ where: { workbcId }, data: { scoredAt: new Date(), status: "PUBLISHED" } })
 }
 
-/** Off the site until the next judge run; the old verdict is kept. Also folded into scrape upserts. */
+/** Off the site until the next judge run; the old verdict and its judgedAt are kept. Also folded into scrape upserts. */
 export const SENT_BACK = { scoredAt: null, status: "PENDING" } as const
 
 /** A rerun request: off the site now, re-judged on the next update. */

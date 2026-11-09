@@ -302,8 +302,19 @@ all. `postedDate` null covers both a missing and an unparseable date
 ## A fourth pass: more implicit state
 
 Found from `main` at bcedb7b, after the three rounds of fixes above. Every claim was read in the
-code. The counts come from read-only queries against production on 2026-11-08. Each problem
-listed here is still open.
+code. The counts come from read-only queries against production on 2026-11-08.
+
+**Status, 2026-11-09.** Delisting and the verdict snapshot are accepted as they are. These are fixed:
+
+| Problem | Fix |
+|---|---|
+| Presumed shown as verified | `lib/shared/employer-check.ts` is the one test of `source`; `/companies`, `/analysis`, `/e/`, the employer checks panel and both audit pages use it, and `/analysis` counts presumed companies apart from web-checked ones |
+| `scoredAt` doing four jobs | `Job.judgedAt`, set only by judgment writes and impersonation verdicts, kept across a send-back, and shown as "Reviewed on"; `scoredAt` stays the publication time and the rerun clock |
+| Pending page says "never evaluated" | `lib/shared/verdict-state.ts`: a withheld row says it is being re-evaluated, and the audit mirror shows the withheld verdict |
+| No scrape record | `ScrapeRun`, written by `lib/shared/scrape-run.ts`; a scrape that finds nothing, fetches nothing or throws exits nonzero, the scheduler judges anyway and then fails; "last scan" reads the latest finished run |
+| Refetch overwrites evidence | `keepJudgeFlags` keeps `apply_host_mismatch_review` while the apply link is unchanged; no employer enrichment on an impersonation; a name found only in the detail creates its employer, and no name keeps the earlier one |
+
+The rest of this section is as found.
 
 ### A posting that leaves WorkBC
 

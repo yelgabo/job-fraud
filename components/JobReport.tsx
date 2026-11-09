@@ -53,7 +53,7 @@ export function JobReport({ job }: { job: Job & { employer: Employer | null } })
               Posted {formatPostedDate(posted)}
             </span>
             {" · "}
-            {job.scoredAt ? `Reviewed on ${job.scoredAt.toISOString().slice(0, 10)}` : "Not yet reviewed"}
+            {job.judgedAt ? `Reviewed on ${job.judgedAt.toISOString().slice(0, 10)}` : "Not yet reviewed"}
             {" · "}
             <Link href={`/about#${RATING_ANCHOR}`} className="underline hover:text-zinc-700">
               What do these ratings mean?
