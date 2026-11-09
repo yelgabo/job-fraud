@@ -1,5 +1,6 @@
 import type { Checks } from "@/lib/shared/json-schemas"
 import { scoredAddressType } from "@/lib/shared/address-type"
+import { verificationDateText } from "@/lib/shared/verification-date"
 
 // Keyed, plain-language rendering of an employer's verification record, replacing the raw
 // JSON dump the posting page used to show. Every known field of ChecksSchema has a row here;
@@ -107,7 +108,8 @@ export function EmployerChecks({ checks, checkedAt }: { checks: Checks; checkedA
     rows.push({ label: "Address in the claimed city", value: yesNo(checks.addressMatchesCity) })
   if (checks.addressFlags && checks.addressFlags.length > 0)
     rows.push({ label: "Address flags", value: checks.addressFlags.join(", ") })
-  if (checkedAt) rows.push({ label: "Checked on", value: checkedAt.toISOString().slice(0, 10) })
+  const dateText = verificationDateText(web, checkedAt, (d) => d.toISOString().slice(0, 10))
+  if (dateText) rows.push({ label: "Date", value: dateText })
 
   if (rows.length === 0 && !hasExtras) {
     return <p className="mt-3 text-sm text-zinc-400">This employer has not been checked yet.</p>

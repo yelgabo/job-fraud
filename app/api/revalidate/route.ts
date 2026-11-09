@@ -3,11 +3,11 @@ import { revalidatePath, revalidateTag } from "next/cache"
 // default config, which does not read tsconfig path aliases.
 import { webEnv } from "../../../lib/env"
 import { DATA_CACHE_TAG } from "../../../lib/shared/cache-tags"
-import { WARM_PATHS, warmOrigin } from "../../../lib/shared/warm-targets"
+import { WARM_PATHS, replicaId, warmOrigin } from "../../../lib/shared/warm-targets"
 import { tokenMatches } from "../../../lib/shared/token-match"
 
 /**
- * Bearer-token gate shared by both phases, following the AUDIT_TOKEN pattern: when the env var
+ * Bearer-token gate shared by every phase, following the AUDIT_TOKEN pattern: when the env var
  * is unset, every request is denied (deny by default).
  */
 function authorized(req: Request): boolean {
@@ -45,49 +45,78 @@ async function warmCaches(origin: string) {
   return timings
 }
 
+function warmSummary(timings: Awaited<ReturnType<typeof warmCaches>>) {
+  return {
+    warmed: timings.filter((t) => t.ok).length,
+    warmFailed: timings.filter((t) => !t.ok).length,
+    timings,
+  }
+}
+
 /**
- * POST /api/revalidate - refresh every public cached surface now instead of waiting out the
- * 600 s revalidation window. Called by the write-side CLI scripts (scrape, judge, judge-keyless:apply)
- * at the end of a successful run; the timer remains the backstop when this is never called.
+ * The list/aggregate pages ('/', '/companies', '/analysis') cache at the data layer under one
+ * shared tag; the per-URL ISR pages are marked stale across all their instances by passing the
+ * route pattern with the explicit 'page' type (required for dynamic routes - see
+ * node_modules/next/dist/server/web/spec-extension/revalidate.js).
+ */
+function queuePurge() {
+  revalidateTag(DATA_CACHE_TAG)
+  revalidatePath("/j/[id]", "page")
+  revalidatePath("/e/[id]", "page")
+}
+
+/**
+ * POST /api/revalidate - refresh every public cached surface of the replica that serves the
+ * request, instead of waiting out the 600 s revalidation window. Called by the write-side CLI
+ * scripts through lib/shared/request-revalidation.ts, which repeats the call until it has seen
+ * every replica; the timer remains the backstop.
  *
- * Two phases behind the same token gate, called as two separate requests:
+ * Next.js defers revalidateTag/revalidatePath issued inside a route handler: they only queue the
+ * tags, and the purge runs when the handler resolves (executeRevalidates in
+ * node_modules/next/dist/server/route-modules/app-route/module.js). A warm inside the purging
+ * request would render against the old cache. So this handler purges through a loopback request
+ * to its own process (`?phase=purge`) and then warms through loopback too. In Next 15.5 the
+ * queued tag expiry is written synchronously as that inner handler resolves, before its response
+ * is sent, so the warm renders that follow see the cleared cache. Loopback reaches this same process, so purge and warm
+ * always hit the same replica's cache; going through the public domain would let the load
+ * balancer split them across replicas. This handler must not queue a purge itself, or the purge
+ * would land after the warm and wipe it.
  *
- *   1. POST /api/revalidate             purges the caches, responds { revalidated: true }
- *   2. POST /api/revalidate?phase=warm  re-renders WARM_PATHS, responds with warm counts
- *
- * The split is load-bearing, not cosmetic. Next.js defers revalidateTag/revalidatePath issued
- * inside a route handler: they only queue the tags, and the actual purge runs after the handler
- * resolves (see node_modules/next/dist/server/web/spec-extension/revalidate.js and the
- * executeRevalidates pendingWaitUntil in route-modules/app-route/module.js). Warming inside the
- * purge request would therefore render against the still-valid old cache and any entries it
- * wrote would be invalidated moments later when the queued purge lands. Only a fresh request
- * arriving after the purge response sees the cleared cache, so the caller
- * (lib/shared/request-revalidation.ts) sends the warm phase second.
+ *   POST /api/revalidate              purge + warm this replica, responds { revalidated, replica, warmed, ... }
+ *   POST /api/revalidate?phase=purge  purge only (the loopback step above)
+ *   POST /api/revalidate?phase=warm   warm only, kept for callers built before the combined call
  */
 export async function POST(req: Request) {
+  const replica = replicaId()
   if (!authorized(req)) {
     return Response.json({ revalidated: false }, { status: 401 })
   }
 
-  const url = new URL(req.url)
-  if (url.searchParams.get("phase") === "warm") {
-    // Warm phase: page renders only, no cache invalidation. Must never call
-    // revalidateTag/revalidatePath or it would wipe the very entries it just primed.
-    const timings = await warmCaches(warmOrigin())
-    return Response.json({
-      warmed: timings.filter((t) => t.ok).length,
-      warmFailed: timings.filter((t) => !t.ok).length,
-      timings,
-    })
+  const phase = new URL(req.url).searchParams.get("phase")
+  if (phase === "purge") {
+    queuePurge()
+    return Response.json({ revalidated: true, replica })
+  }
+  if (phase === "warm") {
+    return Response.json({ replica, ...warmSummary(await warmCaches(warmOrigin())) })
   }
 
-  // Purge phase. The list/aggregate pages ('/', '/companies', '/analysis') cache at the data
-  // layer under one shared tag; the per-URL ISR pages are marked stale across all their
-  // instances by passing the route pattern with the explicit 'page' type (required for dynamic
-  // routes - see node_modules/next/dist/server/web/spec-extension/revalidate.js). No fetches
-  // happen here: the purge only takes effect after this handler resolves.
-  revalidateTag(DATA_CACHE_TAG)
-  revalidatePath("/j/[id]", "page")
-  revalidatePath("/e/[id]", "page")
-  return Response.json({ revalidated: true })
+  const origin = warmOrigin()
+  try {
+    const purge = await fetch(new URL("/api/revalidate?phase=purge", origin), {
+      method: "POST",
+      headers: { authorization: req.headers.get("authorization") ?? "" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!purge.ok) {
+      console.warn(`[revalidate] loopback purge responded ${purge.status}`)
+      return Response.json({ revalidated: false, replica }, { status: 502 })
+    }
+  } catch (err) {
+    console.warn(`[revalidate] loopback purge failed: ${(err as Error).message}`)
+    return Response.json({ revalidated: false, replica }, { status: 502 })
+  }
+
+  return Response.json({ revalidated: true, replica, ...warmSummary(await warmCaches(origin)) })
 }
