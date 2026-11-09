@@ -30,8 +30,9 @@ Goal: the site stays up through the first spike after the public announcement, w
    ```
 
    The running deployment picks it up without a redeploy. Set 2026-10-27, so this step is done
-   unless someone scaled back. Each replica keeps its own data cache, so a
-   `/api/revalidate` call refreshes only one of them; the other catches up within 10 minutes.
+   unless someone scaled back. Each replica keeps its own data cache, so one `/api/revalidate`
+   call refreshes only one of them; `requestRevalidation` repeats the call until the responses
+   name two replicas (up to five calls), and logs which it reached.
 3. **Warm the edge through the public domain** after the last deploy, so the first visitors hit
    the cache:
 

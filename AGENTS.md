@@ -197,7 +197,13 @@ every reader filters on it, and `scoredAt` is only the time of the last verdict.
 `lib/scoring/write-verdict.ts` writes the verdict columns: it refuses to let a composed verdict
 replace an impersonation, and refuses a "recompute" on a pending row (an open rerun). A new
 scorer calls it rather than `prisma.job.update`. `npm run backfill-status` (dry run by default)
-derives both columns from the older fields and lists any row that disagrees. Running the
+derives both columns from the older fields and lists any row that disagrees. Employer verdicts
+likewise go through `lib/shared/employer-verdict.ts` (`storeEmployerWeb`), which will not overwrite
+a verdict another run stored after the writer read the employer, and brand-impersonation answers
+are saved in `ImpersonationAnswer` and reused by both paths (delete a row to force a re-check).
+The weekly scrape refetches known postings not fetched for 28 days (`--refetch-after-days`,
+`Job.fetchedAt`); a published posting whose text, apply link, pay, place or employer changed goes
+back to pending. `scripts/measure-refetch-drift.ts` measures that rate read-only. Running the
 stages out of order is not possible from the CLI; the sequencing risk is the *helpers*
 (`rescore-failed`, `reverify-mail`, `rescan-impersonation`), which assume postings already have
 scores and employers already have verdicts. Run `judge` first.

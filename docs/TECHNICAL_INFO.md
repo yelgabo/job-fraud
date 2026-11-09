@@ -313,10 +313,13 @@ prod data by running `scrape`/`judge` locally against the same DB: the site serv
 up to 10 minutes (`revalidate`/`unstable_cache` 600 s on the public pages), so data updates appear
 without a deploy, within the revalidation window. When `REVALIDATE_TOKEN` is set locally (matching
 the deployed service's env var), the write-side CLIs (`scrape`, `judge`, `judge-keyless:apply`) also POST
-`/api/revalidate` at the end of a successful run, which refreshes the public pages immediately and
-then sends a second `?phase=warm` request that re-renders the common filter pages
-(`lib/shared/warm-targets.ts`) so their first visitors get cache hits; if the token is unset or the
-endpoint is unreachable, the run logs one warning and the 600 s timer remains the backstop
+`/api/revalidate` at the end of a successful run. Each call purges and then re-renders the common
+filter pages (`lib/shared/warm-targets.ts`) on the replica that served it, both through loopback to
+that same process, and reports the replica; the caller repeats it until it has reached two
+replicas or made five calls (since 2026-11-09; before, purge and warm were separate requests the
+load balancer could split across replicas). A rerun flagged on `/audit` refreshes the same way.
+If the token is unset or the endpoint is unreachable, the run logs one warning and the 600 s timer
+remains the backstop
 (`lib/shared/request-revalidation.ts`, `app/api/revalidate/route.ts`). If
 GitHub auto-deploy doesn't pick up a push, `railway up --detach` forces a deploy.
 

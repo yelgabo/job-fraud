@@ -43,9 +43,17 @@ normal weekly runs:
 | One address's verdict reused for another | verdicts record `addressChecked`; another address triggers a check, and within a run is held |
 | Agent-chosen labels | keyless verdicts need one of the three tier labels; `source` from an agent is dropped |
 
-Not fixed: a re-scrape that changes a posting's text still leaves its rating published; the
-`checkedAt` wording; the purge-and-warm replica race; and a deep request left open when a later
-posting of the same employer fails in the same apply.
+A third round on 2026-11-09 fixed the rest of the open list: refetching changed postings and
+sending them back to pending, guarded employer-verdict writes, saved impersonation answers,
+`web.verifiedAt` and the employer-page date wording, `reverify-mail` re-scoring published postings
+only, recompose skipping rows without judgments, `backfill-ats` scoring before it writes, deep
+requests resolved only on a written verdict, the uncertain flag reaching the score, replica-safe
+revalidation, the public refresh after a rerun, review requests written in one transaction without
+duplicates, and the home page's scan date.
+
+Left as is, on purpose: the real company a posting is re-attributed to is not web-checked. Its only
+posting presents as the other brand, so a check on it would call the real company a mismatch; two
+employers are affected. Railway's edge cache still serves pages for up to 600 s after a purge.
 
 1. **Fixed 2026-11-08: recompose now skips pending rows.** *Was:* `npm run recompose -- --apply`
    republished postings the owner sent back for a rerun, and the next judge run marked the rerun
