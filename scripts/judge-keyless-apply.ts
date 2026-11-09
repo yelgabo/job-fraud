@@ -18,20 +18,19 @@
 // --dry-run validates and plans everything, then writes nothing and asks Jev nothing.
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { basename, join } from "node:path"
-import { z } from "zod"
 import { prisma } from "../lib/db"
-import { WebVerificationSchema } from "../lib/shared/json-schemas"
+import { ImpersonationResultSchema, VerdictSchema } from "../lib/shared/keyless-verdict"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { tierViolation } from "../lib/ai/verify-employer-web"
-import { mailEvidence } from "../lib/shared/mail-evidence"
+import { addressKey, addressUnchecked, mailEvidence } from "../lib/shared/mail-evidence"
+import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import type { JobStatus, VerdictKind } from "@prisma/client"
 import { planByEmployer, presumedVerdict } from "../lib/signals/verification-plan"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { scoreableWhere } from "../lib/shared/deep-requests"
-import { AgentSearchLogSchema, agentSearchLogRow } from "../lib/shared/agent-search-log"
-import { ImpersonationSchema } from "../lib/ai/check-impersonation"
+import { agentSearchLogRow } from "../lib/shared/agent-search-log"
 import { applyImpersonationVerdict, keepImpersonationVerdict } from "../lib/ai/resolve-impersonation"
 import { impersonationCheckFor, type ImpersonationItem } from "../lib/signals/impersonation-plan"
 
@@ -63,19 +62,6 @@ function resolveFiles(args: string[]) {
   return { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles }
 }
 
-// Anything else an agent returns (a fraudScore, signals, prose) is dropped here: the score is
-// composed, never copied. Older verdict files therefore still apply, minus their numbers.
-export const VerdictSchema = z.object({
-  workbcId: z.string(),
-  web: WebVerificationSchema.optional(),
-  searchLog: AgentSearchLogSchema.optional(),
-})
-
-export const ImpersonationResultSchema = ImpersonationSchema.extend({
-  checkKey: z.string(),
-  searchLog: AgentSearchLogSchema.optional(),
-})
-
 const readJsonArray = (f: string): unknown[] => {
   const raw = JSON.parse(readFileSync(f, "utf8"))
   return Array.isArray(raw) ? raw : [raw]
@@ -103,6 +89,7 @@ async function main() {
       `(${jev ? "Jev + composer" : "composer only, no TYPESAFE_API_KEY"})`,
   )
 
+  const run = dryRun ? null : await startJudgeRun("KEYLESS")
   const openDeep = await prisma.judgeRequest.findMany({ where: { kind: "deep", resolvedAt: null }, select: { workbcId: true } })
   const openDeepIds = new Set(openDeep.map((r) => r.workbcId))
   const noDeep = new Set<string>()
@@ -120,6 +107,8 @@ async function main() {
   /** Postings whose impersonation check came back same, affiliate or uncertain. */
   const cleared = new Set<string>()
   const heldForImpersonation = new Set<string>()
+  /** Postings whose mailing address the employer's verdict was not shown; checked on a later fetch. */
+  const heldForAddress = new Set<string>()
 
   const impItems = new Map<string, ImpersonationItem>()
   for (const it of impersonationItemFiles.flatMap(readJsonArray) as ImpersonationItem[]) impItems.set(it.checkKey, it)
@@ -179,6 +168,11 @@ async function main() {
       keptImpostors++
       return
     }
+    const web = (checks as { web?: { addressChecked?: string } } | null)?.web
+    if (web && addressUnchecked(web, job.applicationFlags)) {
+      heldForAddress.add(job.workbcId)
+      return
+    }
     const check = impersonationCheckFor(job.employerName, job.externalApplyUrl)
     if (check && !cleared.has(job.workbcId)) {
       if (!heldForImpersonation.has(job.workbcId)) {
@@ -231,7 +225,7 @@ async function main() {
       }
       let checks = (job.employer?.checks as Record<string, unknown> | null) ?? {}
       if (d.web && job.employerId) {
-        checks = { ...checks, web: d.web }
+        checks = { ...checks, web: { ...d.web, addressChecked: addressKey(job.applicationFlags) } }
         if (!dryRun) await prisma.employer.update({ where: { id: job.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
         if (!d.searchLog) withoutSearchLog++
         else if (!dryRun) {
@@ -267,9 +261,13 @@ async function main() {
     select: { workbcId: true, employerId: true },
   })
   const cachedByEmployer = new Map<string, string[]>()
+  const withoutEmployer: string[] = []
   for (const j of cachedJobs) {
     if (j.employerId) cachedByEmployer.set(j.employerId, [...(cachedByEmployer.get(j.employerId) ?? []), j.workbcId])
+    else withoutEmployer.push(j.workbcId)
   }
+  // No Employer row to hold a verdict, so these are scored with no employer check, as judge.ts does.
+  if (withoutEmployer.length > 0) await scorePostings(withoutEmployer, {})
   for (const [employerId, workbcIds] of cachedByEmployer) {
     try {
       const pending = await prisma.job.findMany({ where: { employerId, status: "PENDING" }, include: { employer: true } })
@@ -296,10 +294,21 @@ async function main() {
   )
   console.log(
     `[judge-keyless:apply] impersonation: ${impostors} postings${dryRun ? " would be" : ""} re-attributed and written high, ` +
-      `${keptImpostors} confirmed impersonations kept, ${cleared.size} cleared, ${heldForImpersonation.size} held pending for a missing impersonation result | ` +
+      `${keptImpostors} confirmed impersonations kept, ${cleared.size} cleared, ${heldForImpersonation.size} held pending for a missing impersonation result, ` +
+      `${heldForAddress.size} held for a mailing address their employer's verdict was not shown | ` +
       `${withoutSearchLog} verdicts arrived without a searchLog`,
   )
   if ((applied > 0 || keptImpostors > 0) && !dryRun) await requestRevalidation()
+  if (run) {
+    const outcome = await finishJudgeRun(run.id, {
+      pendingAtStart: run.pendingAtStart,
+      scored: applied + keptImpostors,
+      held: heldForImpersonation.size + heldForAddress.size,
+      failed: skipped + tierRejected,
+    })
+    console.log(`[judge-keyless:apply] run ${run.id}: ${outcome}`)
+    if (outcome === "FAILED") process.exitCode = 1
+  }
   await prisma.$disconnect()
 }
 

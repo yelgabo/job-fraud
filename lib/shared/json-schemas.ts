@@ -26,6 +26,10 @@ export const WebVerificationSchema = z.object({
   // Which verifier produced a web verdict: a profile name from lib/ai/verifier-models.ts, or
   // "haiku-5.5>opus-5.5" when the first model's alarming verdict was replaced by the second's.
   verifiedBy: z.string().optional(),
+  // The mailing address the verifier was shown (addressKey of the representative posting; "" when
+  // it had none). applicationAddressType describes that address only, so a posting that mails to a
+  // different one needs its own check. Absent on verdicts stored before 2026-11-08.
+  addressChecked: z.string().optional(),
 })
 
 export type WebVerification = z.infer<typeof WebVerificationSchema>

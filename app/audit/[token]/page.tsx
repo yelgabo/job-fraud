@@ -39,6 +39,7 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
     select: { workbcId: true, title: true },
   })
   const titleFor = new Map(requestJobs.map((j) => [j.workbcId, j.title]))
+  const runs = await prisma.judgeRun.findMany({ orderBy: { startedAt: "desc" }, take: 5 })
 
   return (
     <div className="space-y-6">
@@ -69,6 +70,26 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
                   {titleFor.get(r.workbcId) ?? r.workbcId}
                 </Link>
                 {r.note ? <span className="ml-2 text-zinc-500">— “{r.note}”</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-5">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Recent judge runs</h2>
+        {runs.length === 0 ? (
+          <p className="text-sm text-zinc-400">No judge run recorded yet.</p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {runs.map((r) => (
+              <li key={r.id} className="text-zinc-700">
+                <span className={r.outcome === "OK" ? "font-semibold text-zinc-700" : "font-semibold text-red-700"}>
+                  {r.outcome}
+                </span>{" "}
+                {r.path.toLowerCase()} · {new Date(r.startedAt).toLocaleString("en-CA")} · {r.pendingAtStart} pending at
+                start, {r.scored} scored, {r.held} held, {r.failed} failed
+                {r.note ? <span className="ml-2 text-zinc-500">{r.note}</span> : null}
               </li>
             ))}
           </ul>

@@ -13,8 +13,11 @@ touch .env
 env -u REVALIDATE_TOKEN npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing
 env -u REVALIDATE_TOKEN npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing
 
-if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  npm run judge -- --limit "${JUDGE_LIMIT:-1000}"
-else
-  echo "[refresh] ANTHROPIC_API_KEY not set: new postings stay pending until a judge run"
+# A missing key used to skip judging and exit 0, so the cron looked healthy while postings piled up
+# (730 pending by 2026-11-06). It now fails the run. judge.ts itself exits nonzero when a bad key or
+# an empty wallet aborts it, or when it scores nothing with postings pending (see JudgeRun).
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "[refresh] ANTHROPIC_API_KEY not set: scraped, but nothing was judged" >&2
+  exit 1
 fi
+npm run judge -- --limit "${JUDGE_LIMIT:-1000}"

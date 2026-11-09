@@ -10,6 +10,7 @@ import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
+import { addressKey } from "../lib/shared/mail-evidence"
 
 async function main() {
   const env = loadScrapeEnv()
@@ -42,7 +43,10 @@ async function main() {
         descriptionExcerpt: rep.descriptionMd.slice(0, 800),
         applicationText: mailEvidence,
       })
-      const checks = { ...((rep.employer!.checks as Record<string, unknown>) ?? {}), web: out.result }
+      const checks = {
+        ...((rep.employer!.checks as Record<string, unknown>) ?? {}),
+        web: { ...out.result, addressChecked: addressKey(rep.applicationFlags) },
+      }
       await prisma.employer.update({ where: { id: employerId }, data: { checks: checks as never } })
       // Append the raw web_search audit trail (separate table; not read by prod pages).
       await prisma.employerWebSearchLog.create({

@@ -23,7 +23,7 @@ import pLimit from "p-limit"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { prisma } from "../lib/db"
 import { WebVerificationSchema, type WebVerification } from "../lib/shared/json-schemas"
-import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
+import { addressKey, mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { tierViolation, verifyEmployerWeb } from "../lib/ai/verify-employer-web"
 import { TIERED_VERIFIER, VERIFIER_PROFILES, verifierCostUsd } from "../lib/ai/verifier-models"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
@@ -157,7 +157,10 @@ async function main() {
   for (const c of chosen) {
     const p = proposals.get(c.employerId)
     if (!p) continue
-    const checks = { ...((c.rep.employer!.checks as Record<string, unknown>) ?? {}), web: p.web }
+    const checks = {
+      ...((c.rep.employer!.checks as Record<string, unknown>) ?? {}),
+      web: { ...p.web, addressChecked: addressKey(c.rep.applicationFlags) },
+    }
     await prisma.employer.update({ where: { id: c.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
     const before: string[] = [], after: string[] = []
     for (const job of c.judged) {

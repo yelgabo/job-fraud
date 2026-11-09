@@ -45,7 +45,26 @@ describe("verificationAction", () => {
 
   it("reuses an alarming cached verdict the escalation model gave", () => {
     expect(verificationAction("Acme", [online], web({ businessMatch: "mismatch", verifiedBy: "opus-5.5" }))).toBe("reuse")
-    expect(verificationAction("Acme", [mailing], web({ applicationAddressType: "residential", verifiedBy: "haiku-5.5>opus-5.5" }))).toBe("reuse")
+    expect(
+      verificationAction("Acme", [mailing], web({ applicationAddressType: "residential", verifiedBy: "haiku-5.5>opus-5.5", addressChecked: "12 main st" })),
+    ).toBe("reuse")
+  })
+
+  it("re-verifies a posting that mails to an address the cached verdict was not shown", () => {
+    const elsewhere = { externalApplyUrl: null, applicationFlags: [{ flag: "mail_physical_resume", evidence: "99 Other Rd" }] }
+    const checked = web({ applicationAddressType: "business", addressChecked: "12 main st" })
+    expect(verificationAction("Acme", [mailing], checked)).toBe("reuse")
+    expect(verificationAction("Acme", [elsewhere], checked)).toBe("web")
+  })
+
+  it("re-verifies once a verdict stored before it recorded its address", () => {
+    expect(verificationAction("Acme", [mailing], web({ applicationAddressType: "business" }))).toBe("web")
+    expect(verificationAction("Acme", [online], web({ applicationAddressType: "business" }))).toBe("reuse")
+  })
+
+  it("does not presume an employer whose own-tenant posting also gives a mailing address", () => {
+    const tenantAndMail = { ...ownTenant, applicationFlags: mailing.applicationFlags }
+    expect(verificationAction("Acme", [tenantAndMail], undefined)).toBe("web")
   })
 
   it("re-verifies everything on a rejudge", () => {
@@ -68,9 +87,9 @@ describe("planByEmployer", () => {
     expect(plans[0].representative.workbcId).toBe("2")
   })
 
-  it("treats each posting without an employer as its own check", () => {
+  it("scores each posting without an employer with no employer check, as the API judge does", () => {
     const plans = planByEmployer([job("1", null), job("2", null)])
-    expect(plans.map((p) => [p.representative.workbcId, p.action])).toEqual([["1", "web"], ["2", "web"]])
+    expect(plans.map((p) => [p.representative.workbcId, p.action])).toEqual([["1", "reuse"], ["2", "reuse"]])
   })
 })
 

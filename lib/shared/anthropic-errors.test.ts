@@ -8,10 +8,8 @@ describe("isBillingError", () => {
     expect(isBillingError(new Error(msg))).toBe(true)
   })
 
-  // The reason `.env.example` ships ANTHROPIC_API_KEY commented out: a placeholder key passes the
-  // non-empty check in lib/env.ts, every call then 401s, and a 401 is NOT fatal here, so judge.ts
-  // writes a failed verdict plus a scoredAt timestamp for each posting rather than leaving it pending.
-  it("does not match an invalid-key 401, so a placeholder key marks postings judged", () => {
+  // A 401 is caught by isAuthError instead; billing and auth stay separate so each abort names its cause.
+  it("does not match an invalid-key 401", () => {
     const msg =
       '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
     expect(isBillingError(new Error(msg))).toBe(false)
@@ -21,5 +19,17 @@ describe("isBillingError", () => {
     expect(isBillingError(new Error("429 rate_limit_error"))).toBe(false)
     expect(isBillingError(new Error("tool input failed zod validation"))).toBe(false)
     expect(isBillingError(null)).toBe(false)
+  })
+})
+
+describe("isAuthError", () => {
+  it("matches a 401 or 403 by status or by the API's error type", async () => {
+    const { isAuthError, isFatalApiError } = await import("./anthropic-errors")
+    expect(isAuthError(Object.assign(new Error("x"), { status: 401 }))).toBe(true)
+    expect(isAuthError(Object.assign(new Error("x"), { status: 403 }))).toBe(true)
+    expect(isAuthError(new Error('401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'))).toBe(true)
+    expect(isAuthError(Object.assign(new Error("429 rate_limit_error"), { status: 429 }))).toBe(false)
+    expect(isAuthError(null)).toBe(false)
+    expect(isFatalApiError(new Error("Your credit balance is too low to access the Anthropic API"))).toBe(true)
   })
 })

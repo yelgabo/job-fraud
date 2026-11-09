@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { cachedVerdictMissedAnAddress, hasMailAddress, mailEvidence, pickRepresentative } from "./mail-evidence"
+import { addressKey, addressUnchecked, cachedVerdictMissedAnAddress, hasMailAddress, mailEvidence, pickRepresentative } from "./mail-evidence"
 
 const mail = (evidence: string) => [{ flag: "mail_physical_resume", evidence }]
 const email = [{ flag: "generic_email_domain", evidence: "a@gmail.com" }]
@@ -39,21 +39,32 @@ describe("pickRepresentative", () => {
 })
 
 describe("cachedVerdictMissedAnAddress", () => {
-  it("re-verifies when a cached none is contradicted by an address", () => {
-    expect(cachedVerdictMissedAnAddress("none", [{ applicationFlags: mail("By mail: 3444 Caldera Ct") }])).toBe(true)
+  it("re-verifies when a verdict that saw no address meets a posting that gives one", () => {
+    expect(cachedVerdictMissedAnAddress({ addressChecked: "" }, [{ applicationFlags: mail("By mail: 3444 Caldera Ct") }])).toBe(true)
   })
 
-  it("leaves a cached none alone when no posting gives an address", () => {
-    expect(cachedVerdictMissedAnAddress("none", [{ applicationFlags: email }])).toBe(false)
+  it("leaves a verdict alone when no posting gives an address", () => {
+    expect(cachedVerdictMissedAnAddress({ addressChecked: "" }, [{ applicationFlags: email }])).toBe(false)
+    expect(cachedVerdictMissedAnAddress({}, [{ applicationFlags: email }])).toBe(false)
   })
 
-  it("never disturbs a verdict that already classified an address", () => {
-    for (const verdict of ["business", "residential", "po_box", "virtual", "uncertain"]) {
-      expect(cachedVerdictMissedAnAddress(verdict, [{ applicationFlags: mail("By mail: x") }])).toBe(false)
-    }
+  it("reuses a verdict for the address it was shown, compared without case or spacing", () => {
+    const checked = { addressChecked: addressKey(mail("By mail:  3444 Caldera Ct")) }
+    expect(cachedVerdictMissedAnAddress(checked, [{ applicationFlags: mail("by mail: 3444 CALDERA CT") }])).toBe(false)
   })
 
-  it("treats an absent verdict as nothing to re-verify (it gets verified anyway)", () => {
-    expect(cachedVerdictMissedAnAddress(undefined, [{ applicationFlags: mail("By mail: x") }])).toBe(false)
+  it("re-verifies a posting that mails to a different address", () => {
+    const checked = { addressChecked: addressKey(mail("By mail: 3444 Caldera Ct")) }
+    expect(cachedVerdictMissedAnAddress(checked, [{ applicationFlags: mail("By mail: PO Box 12") }])).toBe(true)
+  })
+
+  it("re-verifies once a verdict stored before it recorded its address", () => {
+    expect(cachedVerdictMissedAnAddress({}, [{ applicationFlags: mail("By mail: x") }])).toBe(true)
+  })
+})
+
+describe("addressUnchecked", () => {
+  it("never holds a posting that gives no address", () => {
+    expect(addressUnchecked({ addressChecked: "1 main st" }, email)).toBe(false)
   })
 })

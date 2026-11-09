@@ -26,14 +26,30 @@ export function pickRepresentative<T extends { applicationFlags: unknown }>(post
   return postings.find((p) => hasMailAddress(p.applicationFlags)) ?? postings[0]
 }
 
+/** A posting's mailing address in a form that compares equal across postings; "" for none. */
+export function addressKey(flagsJson: unknown): string {
+  return mailEvidence(flagsJson).toLowerCase().replace(/\s+/g, " ").trim()
+}
+
 /**
- * Whether a cached verdict of "none" is contradicted by a posting that does give an address.
- * Without this the miss is permanent: the verdict is reused on every later run, so an employer
- * only ever gets one chance to have its address looked at.
+ * Whether a verdict leaves this posting's mailing address unchecked. The verdict's
+ * applicationAddressType describes only the address it was shown (`addressChecked`), so a posting
+ * that mails somewhere else is unchecked even when the employer is. A verdict stored before
+ * addressChecked existed counts any address as unchecked, which re-checks it once and records one.
+ */
+export function addressUnchecked(web: { addressChecked?: string }, flagsJson: unknown): boolean {
+  const key = addressKey(flagsJson)
+  return key !== "" && web.addressChecked !== key
+}
+
+/**
+ * Whether a cached verdict missed an address one of these postings gives. Without this the miss is
+ * permanent: the verdict is reused on every later run, so an employer only ever gets one chance to
+ * have its address looked at, and a second address never does.
  */
 export function cachedVerdictMissedAnAddress(
-  cachedAddressType: string | undefined,
+  cachedWeb: { addressChecked?: string },
   postings: Array<{ applicationFlags: unknown }>,
 ): boolean {
-  return cachedAddressType === "none" && postings.some((p) => hasMailAddress(p.applicationFlags))
+  return postings.some((p) => addressUnchecked(cachedWeb, p.applicationFlags))
 }

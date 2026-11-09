@@ -3,7 +3,7 @@
 // and compare-verifiers uses it so a model comparison runs on the employers a real run would check.
 
 import type { WebVerification } from "../shared/json-schemas"
-import { cachedVerdictMissedAnAddress, mailEvidence, pickRepresentative } from "../shared/mail-evidence"
+import { cachedVerdictMissedAnAddress, hasMailAddress, mailEvidence, pickRepresentative } from "../shared/mail-evidence"
 import { tierViolation } from "../ai/verify-employer-web"
 import { allApplyHostsMatch, matchedProvider } from "./apply-host"
 
@@ -17,11 +17,13 @@ export function verificationAction(
 ): VerificationAction {
   if (opts.rejudge) return "web"
   const allMatch = allApplyHostsMatch(employerName, postings.map((p) => p.externalApplyUrl))
-  if (!cachedWeb) return allMatch ? "presume" : "web"
+  // A presumption checks no address, so an employer with a mailing address is always looked up.
+  const anyAddress = postings.some((p) => hasMailAddress(p.applicationFlags))
+  if (!cachedWeb) return allMatch && !anyAddress ? "presume" : "web"
   const staleAts = cachedWeb.source === "ats-tenant-match" && !allMatch
-  // A cached "none" only means the representative posting we sent last time carried no
-  // mailing address. If any posting does, the address has never actually been looked at.
-  const missedAddress = cachedVerdictMissedAnAddress(cachedWeb.applicationAddressType, postings)
+  // The cached verdict describes only the address it was shown; a posting that mails anywhere
+  // else (or anywhere, after a "none") has never had its address looked at.
+  const missedAddress = cachedVerdictMissedAnAddress(cachedWeb, postings)
   // Verdicts stored before the tiered check can raise a rating with no escalation
   // model behind them; on the first 73 re-checked, Opus overturned 47.
   const unconfirmed = tierViolation(cachedWeb, mailEvidence(pickRepresentative(postings).applicationFlags)) !== null
@@ -44,6 +46,7 @@ export function presumedVerdict(
     confidence: 0.8,
     summary: `Presumed legitimate without web search: all postings apply via the company's own matching ${provider} tenant.`,
     source: "ats-tenant-match",
+    addressChecked: "",
   }
 }
 
@@ -65,7 +68,8 @@ export type EmployerPlan<J extends PlannedJob> = {
 
 /**
  * Groups pending postings by employer and decides each employer once. A posting with no employer
- * is its own group and always needs a check, since there is no cached verdict to reuse.
+ * is its own group and is scored with no employer check ("reuse" of nothing), as judge.ts does:
+ * there is no Employer row to store a verdict on, so a web check would be thrown away.
  */
 export function planByEmployer<J extends PlannedJob>(jobs: J[]): EmployerPlan<J>[] {
   const groups = new Map<string, J[]>()
@@ -78,7 +82,7 @@ export function planByEmployer<J extends PlannedJob>(jobs: J[]): EmployerPlan<J>
     const cached = (emp?.checks as { web?: WebVerification } | null | undefined)?.web
     return {
       employerId: list[0].employerId,
-      action: emp ? verificationAction(emp.nameDisplay, list, cached) : "web",
+      action: emp ? verificationAction(emp.nameDisplay, list, cached) : "reuse",
       representative: pickRepresentative(list),
       postings: list,
     }

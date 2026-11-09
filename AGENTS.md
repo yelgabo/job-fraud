@@ -335,7 +335,9 @@ page; `prisma/schema.prisma` and `app/audit/` are authoritative.
 `.github/workflows/test.yml` is the only workflow (tsc, vitest, build on push/PR; no DB, no
 network). The weekly refresh runs inside Railway as the **`job-fraud-scheduler`** cron service
 (Mondays 12:17 UTC, start command `scripts/scheduled-refresh.sh`): both scrape passes, then
-`npm run judge -- --limit $JUDGE_LIMIT` when `ANTHROPIC_API_KEY` is set on that service. It reaches
+`npm run judge -- --limit $JUDGE_LIMIT`, failing the run when `ANTHROPIC_API_KEY` is missing.
+Each judge run writes a `JudgeRun` row whose outcome (`OK`, `PARTIAL`, `FAILED`, `ABORTED`, or
+`RUNNING` with no `finishedAt` for a process that died) is the record of what a run did. It reaches
 Postgres over the private network, so it publishes new verdicts with no human involved and keeps
 working if the public TCP proxy is removed again. Its settings live on the Railway service;
 `docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or

@@ -67,7 +67,9 @@ Run from the `job-fraud` project directory.
    `web.verifiedBy` on every verdict before writing it: `"haiku-5.5"` for a kept Haiku verdict,
    `"haiku-5.5>opus-5.5"` for a replaced one. A verdict whose Opus re-check fails is dropped, not
    kept, so that employer's postings stay pending. Step 5 enforces this: it rejects any verdict
-   needing escalation that is not marked as Opus-confirmed.
+   needing escalation that is not marked as Opus-confirmed, and since 2026-11-08 any verdict whose
+   `verifiedBy` is missing or not one of `haiku-5.5`, `opus-5.5` and `haiku-5.5>opus-5.5`. It drops
+   a `source` field from helper output and records the checked mailing address itself.
 
    **Search budget.** Claude Code's WebSearch tool allows about 200 searches per session, shared
    by every helper, refilling at about 100 an hour (the API path has no such cap). At two to three

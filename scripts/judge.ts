@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
-import { mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
+import { addressKey, addressUnchecked, mailEvidence, pickRepresentative } from "../lib/shared/mail-evidence"
 import { presumedVerdict, verificationAction } from "../lib/signals/verification-plan"
 import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { TIERED_VERIFIER } from "../lib/ai/verifier-models"
@@ -17,7 +17,8 @@ import { keepImpersonationVerdict, resolveApplyHost } from "../lib/ai/resolve-im
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
-import { isBillingError } from "../lib/shared/anthropic-errors"
+import { isAuthError, isFatalApiError } from "../lib/shared/anthropic-errors"
+import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
@@ -44,15 +45,20 @@ async function main() {
   const jev = jevClientFromEnv()
   console.log(jev ? "[judge] stage 2: Jev text judgments + composer" : "[judge] stage 2: composer only (no TYPESAFE_API_KEY, route judged by flags)")
   const t0 = Date.now()
+  const run = await startJudgeRun("API")
 
   const jobs = await prisma.job.findMany({
     where: args.rejudge ? {} : { status: "PENDING" },
+    // Oldest first, as the keyless fetch does: without an order, --limit took whatever Postgres
+    // returned first, so the same postings could be passed over run after run.
+    orderBy: { scrapedAt: "asc" },
     take: args.limit ?? undefined,
     include: { employer: true },
   })
   console.log(`[judge] ${jobs.length} jobs to evaluate`)
   if (jobs.length === 0) {
     await resolveRerunRequests()
+    await finishJudgeRun(run.id, { pendingAtStart: run.pendingAtStart, scored: 0, held: 0, failed: 0 })
     await prisma.$disconnect()
     return
   }
@@ -95,11 +101,20 @@ async function main() {
     empChecks.set(d.id, checks)
   }
 
-  // Tripped by an out-of-credit billing error (a 400, not a retryable 429). Once set, queued tasks
-  // no-op and the run aborts after the stage — so we never mass-write "unknown" on an empty wallet.
+  // Tripped by an out-of-credit billing error (a 400, not a retryable 429) or a bad key (401/403).
+  // Once set, queued tasks no-op and the run aborts after the stage, leaving the rest pending.
   let billingAbort = false
-  const ABORT_MSG =
-    "Anthropic API credit exhausted (billing error). Jobs scored so far are saved; the rest remain pending. Top up at console.anthropic.com → Billing, then re-run `npm run judge`."
+  let abortCause = ""
+  const tripAbort = (e: unknown) => {
+    billingAbort = true
+    abortCause ||= isAuthError(e)
+      ? "Anthropic API key rejected (401/403). Jobs scored so far are saved; the rest remain pending. Fix ANTHROPIC_API_KEY, then re-run `npm run judge`."
+      : "Anthropic API credit exhausted (billing error). Jobs scored so far are saved; the rest remain pending. Top up at console.anthropic.com → Billing, then re-run `npm run judge`."
+  }
+  const abortRun = async (counts: { scored: number; held: number; failed: number }) => {
+    await finishJudgeRun(run.id, { pendingAtStart: run.pendingAtStart, ...counts }, { note: abortCause })
+    throw new Error(abortCause)
+  }
 
   let vDone = 0
   let vFail = 0
@@ -130,7 +145,10 @@ async function main() {
           webSearches += out.usage.webSearchRequests
           webCost += out.costUsd
           if (out.escalated) escalated++
-          const checks = { ...((rep.employer!.checks as Record<string, unknown>) ?? {}), web: out.result }
+          const checks = {
+            ...((rep.employer!.checks as Record<string, unknown>) ?? {}),
+            web: { ...out.result, addressChecked: addressKey(rep.applicationFlags) },
+          }
           await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
           // Append the raw web_search audit trail (separate table; not read by prod pages).
           await prisma.employerWebSearchLog.create({
@@ -138,7 +156,7 @@ async function main() {
           })
           empChecks.set(d.id, checks)
         } catch (e) {
-          if (isBillingError(e)) { billingAbort = true; return }
+          if (isFatalApiError(e)) { tripAbort(e); return }
           vFail++
           failedEmployers.add(d.id)
           console.error(`  [verify] ${rep.employer!.nameDisplay}: ${(e as Error).message.slice(0, 120)}`)
@@ -147,13 +165,14 @@ async function main() {
       }),
     ),
   )
-  if (billingAbort) throw new Error(ABORT_MSG)
+  if (billingAbort) await abortRun({ scored: 0, held: 0, failed: vFail })
   console.log(`[judge] employer verify done: ${toWebVerify.length - vFail} ok, ${vFail} failed | ${toPresume.length} presumed legit (no web search)`)
 
   // --- Stage 2: judge text (Jev) + compose (code); reuses employer verdict + job fields ---
   let sDone = 0
   let sFail = 0
   let heldBack = 0
+  let heldForAddress = 0
   let impostors = 0
   let keptImpostors = 0
   let totalIn = 0
@@ -175,6 +194,13 @@ async function main() {
           heldBack++
           return
         }
+        // The employer's verdict was shown another posting's mailing address and says nothing
+        // about this one. The next run sees an unchecked address and verifies with this posting.
+        const web = (job.employerId ? empChecks.get(job.employerId) : undefined)?.web as { addressChecked?: string } | undefined
+        if (web && addressUnchecked(web, job.applicationFlags)) {
+          heldForAddress++
+          return
+        }
         // Brand-impersonation pre-check: if the apply URL routes to a different company than the
         // claimed employer and a web-check confirms it, this re-attributes the posting + writes a
         // HIGH score itself — so skip normal scoring for that job.
@@ -187,7 +213,7 @@ async function main() {
             return
           }
         } catch (e) {
-          if (isBillingError(e)) { billingAbort = true; return }
+          if (isFatalApiError(e)) { tripAbort(e); return }
           // other web-check failure — fall through to normal scoring
         }
         let verdict
@@ -216,11 +242,12 @@ async function main() {
       }),
     ),
   )
-  if (billingAbort) throw new Error(ABORT_MSG)
+  const scored = jobs.length - sFail - heldBack - heldForAddress
+  if (billingAbort) await abortRun({ scored: sDone + keptImpostors, held: heldBack + heldForAddress, failed: sFail })
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${jobs.length - sFail - heldBack - keptImpostors} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed) | brand-impersonation re-attributed: ${impostors}, confirmed impersonations kept: ${keptImpostors}`)
+  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${scored - keptImpostors} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed, ${heldForAddress} held for a mailing address their employer's verdict was not shown) | brand-impersonation re-attributed: ${impostors}, confirmed impersonations kept: ${keptImpostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(
     `Web-verify (${TIERED_VERIFIER.primary}, alarming verdicts re-checked by ${TIERED_VERIFIER.escalation}): ${escalated} escalated | tokens in=${webIn} out=${webOut} | searches ${webSearches} | ~$${webCost.toFixed(2)} at list price`,
@@ -228,6 +255,14 @@ async function main() {
   console.log(`Jev tokens: in=${totalIn} out=${totalOut}`)
   await resolveRerunRequests()
   if (jobs.length > 0 || toWebVerify.length > 0) await requestRevalidation()
+  const outcome = await finishJudgeRun(run.id, {
+    pendingAtStart: run.pendingAtStart,
+    scored,
+    held: heldBack + heldForAddress,
+    failed: sFail,
+  })
+  console.log(`[judge] run ${run.id}: ${outcome}`)
+  if (outcome === "FAILED") process.exitCode = 1
   await prisma.$disconnect()
 }
 

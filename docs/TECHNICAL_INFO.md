@@ -186,8 +186,11 @@ need it). The manual commands remain the right tool for catch-up runs, backfills
 **Scheduled refresh.** The `job-fraud-scheduler` service in the same Railway project runs
 `scripts/scheduled-refresh.sh` every Monday at 12:17 UTC: the term pass in its full-depth form (so
 a failed week is caught up by the next), the Victoria city pass, then `npm run judge -- --limit
-$JUDGE_LIMIT` if `ANTHROPIC_API_KEY` is set on the service. Without the key it scrapes only and the
-postings wait for a manual judge run. It runs inside Railway and reaches Postgres over the private
+$JUDGE_LIMIT`. Since 2026-11-08 a missing `ANTHROPIC_API_KEY` fails the run after scraping
+instead of exiting 0, and the judge exits nonzero when a bad key or an empty wallet aborts it or
+when it scores nothing while postings are pending. Every judge run on either path writes a
+`JudgeRun` row (outcome, pending at start, scored, held, failed); the five newest show on the
+`/audit/<token>` index. It runs inside Railway and reaches Postgres over the private
 network. Its settings are on the service, set through the Railway API:
 
 | Setting | Value |
