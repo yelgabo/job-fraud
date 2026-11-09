@@ -5,9 +5,10 @@ const DEFAULT_ENDPOINT = "https://job-fraud-production.up.railway.app/api/revali
 const DEFAULT_REPLICAS = 2
 
 // Each call that lands on an already-refreshed replica costs one purge and a warm cycle on it.
-// If the balancer picks a replica at random, five calls all land on the same one of two
-// replicas 1 time in 16.
-export const MAX_ATTEMPTS = 5
+// On 2026-11-09 the first four of five calls reached the same replica. fetch reuses its socket,
+// and a balancer that routes per connection keeps a reused socket on one replica, so every call
+// now opens its own connection. At random, ten calls miss one of two replicas 1 time in 512.
+export const MAX_ATTEMPTS = 10
 
 type RevalidateBody = { revalidated?: boolean; replica?: string; warmed?: number; warmFailed?: number }
 
@@ -60,7 +61,7 @@ async function refreshReplicas(): Promise<void> {
       // Purge plus eight sequential page renders, each capped at 15 s on the server.
       res = await fetch(url, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, connection: "close" },
         signal: AbortSignal.timeout(150_000),
       })
     } catch (err) {

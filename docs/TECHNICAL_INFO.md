@@ -202,7 +202,7 @@ network. Its settings are on the service, set through the Railway API:
 | start command | `bash scripts/scheduled-refresh.sh` |
 | cron schedule | `17 12 * * 1` (UTC; a run still in progress makes Railway skip the next) |
 | restart policy | `NEVER` (a failed run waits for the next schedule instead of re-scraping) |
-| variables | `DATABASE_URL=${{Postgres-t4uu.DATABASE_URL}}`, `REVALIDATE_TOKEN=${{job-fraud.REVALIDATE_TOKEN}}`, `TYPESAFE_API_KEY`, `JUDGE_LIMIT=1000`, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, `ANTHROPIC_API_KEY` (added 2026-11-06; until then the cron scraped without judging) |
+| variables | `DATABASE_URL=${{Postgres-t4uu.DATABASE_URL}}`, `REVALIDATE_TOKEN=${{job-fraud.REVALIDATE_TOKEN}}`, `TYPESAFE_API_KEY`, `JUDGE_LIMIT=2000` (1000 until 2026-11-09, when a week of 783 new and 329 changed postings left 113 over the cap), `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, `ANTHROPIC_API_KEY` (added 2026-11-06; until then the cron scraped without judging) |
 
 ```bash
 railway cron list --service job-fraud-scheduler          # recent runs and their outcome

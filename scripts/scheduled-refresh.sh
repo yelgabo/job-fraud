@@ -25,7 +25,7 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "[refresh] ANTHROPIC_API_KEY not set: scraped, but nothing was judged" >&2
   exit 1
 fi
-npm run judge -- --limit "${JUDGE_LIMIT:-1000}"
+npm run judge -- --limit "${JUDGE_LIMIT:-2000}"
 
 if [ "$scrape_failed" -ne 0 ]; then
   echo "[refresh] a scrape pass failed; its ScrapeRun row has the counts" >&2

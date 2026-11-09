@@ -522,7 +522,7 @@ a flag that turns every queued task into a no-op, and the run throws after the c
 completed rows saved. A Jev failure leaves that one posting pending, because composing it without
 judgments would store a different kind of row under the same <code>scoringVersion</code>.</p>
 <p>The weekly <code>job-fraud-scheduler</code> Railway cron service runs this path. On Mondays at 12:17
-UTC it runs both scrape passes and then <code>npm run judge -- --limit $JUDGE_LIMIT</code> (1,000 by
+UTC it runs both scrape passes and then <code>npm run judge -- --limit $JUDGE_LIMIT</code> (2,000 by
 default) if the service has an Anthropic key. It reaches Postgres over Railway's private network.</p>
 </div>
 </section>

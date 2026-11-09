@@ -40,6 +40,8 @@ describe("requestRevalidation", () => {
       expect(String(url)).toBe("http://site.test/api/revalidate")
       expect(init.method).toBe("POST")
       expect(init.headers.authorization).toBe("Bearer tok")
+      // A reused socket stays on one replica behind a per-connection balancer.
+      expect(init.headers.connection).toBe("close")
     }
     expect(vi.mocked(console.log).mock.calls.at(-1)?.[0]).toMatch(/2 replicas \(a, b\) in 3 calls/)
   })
