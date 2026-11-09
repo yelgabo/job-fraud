@@ -14,16 +14,18 @@
 // results are applied first, through the same write the API judge uses, and a posting that needs
 // the check is not scored until a result clears it. A helper's searchLog is stored in
 // EmployerWebSearchLog so /audit shows the searches behind the verdict.
-// Run: npm run judge-keyless:apply -- [--dry-run] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]
-// --dry-run validates and plans everything, then writes nothing and asks Jev nothing.
-import { readFileSync, readdirSync, statSync } from "node:fs"
-import { basename, join } from "node:path"
+// Run: npm run judge-keyless:apply -- [--dry-run] [--force] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]
+// --dry-run validates and plans everything, then writes nothing and asks Jev nothing. --force applies
+// a dir that was already applied or has no manifest.json.
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { basename, dirname, join } from "node:path"
 import { prisma } from "../lib/db"
 import { ImpersonationResultSchema, VerdictSchema } from "../lib/shared/keyless-verdict"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { tierViolation } from "../lib/ai/verify-employer-web"
 import { addressKey, addressUnchecked, mailEvidence } from "../lib/shared/mail-evidence"
 import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
+import { settleRequests } from "../lib/shared/judge-requests"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import type { JobStatus, VerdictKind } from "@prisma/client"
@@ -35,8 +37,10 @@ import { applyImpersonationVerdict, keepImpersonationVerdict } from "../lib/ai/r
 import { impersonationCheckFor, type ImpersonationItem } from "../lib/signals/impersonation-plan"
 
 /**
- * A dir contributes its verdicts*.json, cached.json, batch-*.json (for the posting lists),
- * impersonation-NNN.json (the check items) and impersonation-result*.json (the helpers' answers).
+ * A dir contributes its verdicts*.json, cached.json, batch-NNN.json (for the posting lists),
+ * impersonation-NNN.json (the check items) and impersonation-result*.json (the helpers' answers),
+ * in numeric order (verdicts-2 before verdicts-10). Any other file is ignored. A file named on the
+ * command line that matches none of those is read as verdicts.
  */
 function resolveFiles(args: string[]) {
   const verdictFiles: string[] = []
@@ -44,22 +48,49 @@ function resolveFiles(args: string[]) {
   const batchFiles: string[] = []
   const impersonationItemFiles: string[] = []
   const impersonationResultFiles: string[] = []
-  const add = (f: string) => {
+  const dirs = new Set<string>()
+  const add = (f: string, explicit: boolean) => {
     const b = basename(f)
     if (b === "cached.json") cachedFiles.push(f)
-    else if (/^batch-.*\.json$/i.test(b)) batchFiles.push(f)
+    else if (/^batch-\d+\.json$/i.test(b)) batchFiles.push(f)
     else if (/^impersonation-result.*\.json$/i.test(b)) impersonationResultFiles.push(f)
     else if (/^impersonation-\d+\.json$/i.test(b)) impersonationItemFiles.push(f)
-    else verdictFiles.push(f)
+    else if (explicit || /^verdicts.*\.json$/i.test(b)) verdictFiles.push(f)
   }
   for (const a of args) {
     if (statSync(a).isDirectory()) {
-      for (const f of readdirSync(a)) {
-        if (/verdicts.*\.json$|^batch-.*\.json$|^cached\.json$|^impersonation-.*\.json$/i.test(f)) add(join(a, f))
-      }
-    } else add(a)
+      dirs.add(a)
+      const names = readdirSync(a).sort((x, y) => x.localeCompare(y, undefined, { numeric: true }))
+      for (const f of names) add(join(a, f), false)
+    } else {
+      dirs.add(dirname(a))
+      add(a, true)
+    }
   }
-  return { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles }
+  return { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles, dirs: [...dirs] }
+}
+
+/**
+ * The fetch time the run's verdicts were researched against, from each dir's manifest.json. A dir
+ * already applied, or one with no manifest, is refused unless --force: applying twice duplicated
+ * every search log, and an old dir overwrote verdicts written since.
+ */
+function fetchedAtOf(dirs: string[], force: boolean): Date | null {
+  let earliest: Date | null = null
+  for (const d of dirs) {
+    const applied = join(d, "applied.json")
+    if (existsSync(applied) && !force) {
+      throw new Error(`${d} was already applied (${applied}); pass --force to apply it again`)
+    }
+    const manifest = join(d, "manifest.json")
+    if (!existsSync(manifest)) {
+      if (force) continue
+      throw new Error(`${d} has no manifest.json (fetched before 2026-11-08?); pass --force to apply it anyway`)
+    }
+    const at = new Date((JSON.parse(readFileSync(manifest, "utf8")) as { fetchedAt: string }).fetchedAt)
+    if (!earliest || at < earliest) earliest = at
+  }
+  return earliest
 }
 
 const readJsonArray = (f: string): unknown[] => {
@@ -69,19 +100,23 @@ const readJsonArray = (f: string): unknown[] => {
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run")
-  const args = process.argv.slice(2).filter((a) => a !== "--dry-run")
+  const force = process.argv.includes("--force")
+  const args = process.argv.slice(2).filter((a) => a !== "--dry-run" && a !== "--force")
   if (args.length === 0) {
-    console.error("usage: npm run judge-keyless:apply -- [--dry-run] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]")
+    console.error("usage: npm run judge-keyless:apply -- [--dry-run] [--force] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]")
     process.exit(1)
   }
-  const { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles } = resolveFiles(args)
+  const { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles, dirs } = resolveFiles(args)
+  const fetchedAt = fetchedAtOf(dirs, force)
   const verdicts = verdictFiles.flatMap(readJsonArray)
   const cachedEntries = cachedFiles.flatMap(readJsonArray) as Array<{ workbcId: string }>
   // The fetch's posting list per employer, keyed by the representative posting the verdict names.
   // Without the batch files a verdict scores only the posting it names.
   const postingsFor = new Map<string, string[]>()
-  for (const item of batchFiles.flatMap(readJsonArray) as Array<{ workbcId: string; employerPostings?: string[] }>) {
+  const employerFor = new Map<string, string>()
+  for (const item of batchFiles.flatMap(readJsonArray) as Array<{ workbcId: string; employerId?: string | null; employerPostings?: string[] }>) {
     postingsFor.set(item.workbcId, item.employerPostings ?? [item.workbcId])
+    if (item.employerId) employerFor.set(item.workbcId, item.employerId)
   }
   const jev = jevClientFromEnv()
   console.log(
@@ -102,6 +137,7 @@ async function main() {
   let impostors = 0
   let keptImpostors = 0
   let withoutSearchLog = 0
+  let newerKept = 0
   const bands: Record<string, number> = {}
   const scored = new Set<string>()
   /** Postings whose impersonation check came back same, affiliate or uncertain. */
@@ -223,15 +259,24 @@ async function main() {
         console.error(`  skip (tier): ${d.workbcId} - ${violation}`)
         continue
       }
-      let checks = (job.employer?.checks as Record<string, unknown> | null) ?? {}
-      if (d.web && job.employerId) {
+      // The employer the fetch grouped these postings under: an impersonation result applied above
+      // may have moved the representative posting to another company since.
+      const employerId = employerFor.get(d.workbcId) ?? job.employerId
+      const employer = employerId ? await prisma.employer.findUnique({ where: { id: employerId } }) : null
+      let checks = (employer?.checks as Record<string, unknown> | null) ?? {}
+      const newer = fetchedAt && employer?.checkedAt && employer.checkedAt > fetchedAt
+      if (d.web && employer && newer) {
+        // Written after this dir was fetched (another run, or an earlier verdict for the same
+        // employer in this one): it stands, and these postings are scored on it.
+        newerKept++
+      } else if (d.web && employer) {
         checks = { ...checks, web: { ...d.web, addressChecked: addressKey(job.applicationFlags) } }
-        if (!dryRun) await prisma.employer.update({ where: { id: job.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
+        if (!dryRun) await prisma.employer.update({ where: { id: employer.id }, data: { checks: checks as never, checkedAt: new Date() } })
         if (!d.searchLog) withoutSearchLog++
         else if (!dryRun) {
-          const row = agentSearchLogRow(d.searchLog, d.web.verifiedBy ?? "agent")
+          const row = agentSearchLogRow(d.searchLog, d.web.verifiedBy)
           await prisma.employerWebSearchLog.create({
-            data: { employerId: job.employerId, queries: row.queries as never, blocks: row.blocks as never },
+            data: { employerId: employer.id, queries: row.queries as never, blocks: row.blocks as never },
           })
         }
       }
@@ -296,10 +341,12 @@ async function main() {
     `[judge-keyless:apply] impersonation: ${impostors} postings${dryRun ? " would be" : ""} re-attributed and written high, ` +
       `${keptImpostors} confirmed impersonations kept, ${cleared.size} cleared, ${heldForImpersonation.size} held pending for a missing impersonation result, ` +
       `${heldForAddress.size} held for a mailing address their employer's verdict was not shown | ` +
-      `${withoutSearchLog} verdicts arrived without a searchLog`,
+      `${withoutSearchLog} verdicts arrived without a searchLog, ${newerKept} not stored because the employer has a newer verdict`,
   )
   if ((applied > 0 || keptImpostors > 0) && !dryRun) await requestRevalidation()
   if (run) {
+    await settleRequests("[judge-keyless:apply]")
+    for (const d of dirs) writeFileSync(join(d, "applied.json"), JSON.stringify({ appliedAt: new Date().toISOString(), run: run.id }, null, 2), "utf8")
     const outcome = await finishJudgeRun(run.id, {
       pendingAtStart: run.pendingAtStart,
       scored: applied + keptImpostors,

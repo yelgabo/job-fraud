@@ -23,8 +23,29 @@ not intend, and records the bugs that come out of them.
 
 ## Bugs found
 
-These are the defects the mapping turned up, most serious first. Each is explained in its
-machine's section.
+These are the defects the mapping turned up, in the order they were found and judged on their own,
+not weighed by how often they happen. Each is explained in its machine's section.
+
+**Status, 2026-11-08.** Bugs 1 to 10 are fixed, together with four found later that happen in
+normal weekly runs:
+
+| Bug | Fix |
+|---|---|
+| 1, 2 | `Job.status` and `Job.verdictKind`; every verdict write goes through `lib/scoring/write-verdict.ts` |
+| 3 | `scrape.ts` leaves `employerId` and `applicationFlags` alone on an impersonation |
+| 4 | the fetch records each verdict's employer, and apply stores the verdict there |
+| 5 | the fetch writes `manifest.json`; apply refuses an applied or unmanifested dir and never overwrites a verdict newer than the fetch; files sort numerically and match strictly |
+| 6, 7 | `lib/shared/judge-requests.ts`: both judges resolve reruns and close requests whose posting is gone |
+| 8 | the API judge holds a posting whose impersonation check failed, as keyless does |
+| 9 | a posting with no employer is scored without an employer check on both paths |
+| 10 | `judge.ts` takes pending postings oldest first |
+| Silent failed runs | `JudgeRun` records every run; a 401/403 aborts; a run that scores nothing exits nonzero; the scheduler fails without a key |
+| One address's verdict reused for another | verdicts record `addressChecked`; another address triggers a check, and within a run is held |
+| Agent-chosen labels | keyless verdicts need one of the three tier labels; `source` from an agent is dropped |
+
+Not fixed: a re-scrape that changes a posting's text still leaves its rating published; the
+`checkedAt` wording; the purge-and-warm replica race; and a deep request left open when a later
+posting of the same employer fails in the same apply.
 
 1. **Fixed 2026-11-08: recompose now skips pending rows.** *Was:* `npm run recompose -- --apply`
    republished postings the owner sent back for a rerun, and the next judge run marked the rerun

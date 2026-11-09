@@ -94,7 +94,10 @@ Run from the `job-fraud` project directory.
 
 5. **Apply (single writer).** First `npm run judge-keyless:apply -- --dry-run logs/judge-<ts>/` to see
    how many postings it would score and whether any verdict breaks the tier rule; then run it
-   without `--dry-run`. A directory contributes its `verdicts*.json`, its `batch-*.json` (for
+   without `--dry-run`. Apply refuses a directory with no `manifest.json` (the fetch writes it) or
+   one it has already applied (`applied.json`); `--force` overrides both, and is rarely right. It
+   does not store a verdict over one an employer received after the fetch. A directory contributes
+   its `verdicts*.json`, its `batch-*.json` (for
    `employerPostings`), its `cached.json` and its `impersonation-*.json` files. It applies the
    impersonation results first, then zod-validates each verdict, rejects one that
    breaks the tier rule, stores `web` on the employer once, then asks Jev the text questions and

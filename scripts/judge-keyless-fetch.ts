@@ -30,7 +30,7 @@ async function main() {
 
   const items = plans
     .filter((p) => p.action === "web")
-    .map(({ representative: j, postings }) => ({
+    .map(({ representative: j, postings, employerId }) => ({
       workbcId: j.workbcId,
       title: j.title,
       employer: j.employer?.nameDisplay ?? null,
@@ -41,16 +41,22 @@ async function main() {
       externalApplyOk: j.externalApplyOk,
       flags: parseFlags(j.applicationFlags),
       descriptionExcerpt: j.descriptionMd.slice(0, 1800),
-      // Not for the helper: the apply step scores exactly these postings with this employer's verdict.
+      // Not for the helper: the apply step stores the verdict on this employer and scores exactly
+      // these postings with it. Recorded here because an impersonation result applied first can
+      // re-attribute the representative posting to another company.
+      employerId,
       employerPostings: postings.map((p) => p.workbcId),
     }))
   const cached = plans
     .filter((p) => p.action !== "web")
     .flatMap((p) => p.postings.map((j) => ({ workbcId: j.workbcId, action: p.action })))
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const fetchedAt = new Date()
+  const stamp = fetchedAt.toISOString().replace(/[:.]/g, "-")
   const dir = join("logs", `judge-${stamp}`)
   mkdirSync(dir, { recursive: true })
+  // Apply compares employer verdicts against fetchedAt, and refuses a dir without this file.
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify({ fetchedAt: fetchedAt.toISOString(), pending: jobs.length }, null, 2), "utf8")
   let batches = 0
   for (let i = 0; i < items.length; i += batchSize) {
     batches++

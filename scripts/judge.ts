@@ -19,6 +19,7 @@ import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { isAuthError, isFatalApiError } from "../lib/shared/anthropic-errors"
 import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
+import { settleRequests } from "../lib/shared/judge-requests"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
@@ -57,7 +58,7 @@ async function main() {
   })
   console.log(`[judge] ${jobs.length} jobs to evaluate`)
   if (jobs.length === 0) {
-    await resolveRerunRequests()
+    await settleRequests("[judge]")
     await finishJudgeRun(run.id, { pendingAtStart: run.pendingAtStart, scored: 0, held: 0, failed: 0 })
     await prisma.$disconnect()
     return
@@ -173,6 +174,7 @@ async function main() {
   let sFail = 0
   let heldBack = 0
   let heldForAddress = 0
+  let heldForImpersonation = 0
   let impostors = 0
   let keptImpostors = 0
   let totalIn = 0
@@ -214,7 +216,12 @@ async function main() {
           }
         } catch (e) {
           if (isFatalApiError(e)) { tripAbort(e); return }
-          // other web-check failure — fall through to normal scoring
+          // The posting's apply link names another company and the check that would clear or
+          // confirm it failed. Publishing it as ordinary could hide an impersonation, so it stays
+          // pending, as the keyless path does with a missing answer.
+          heldForImpersonation++
+          console.error(`  [impersonation] ${job.workbcId} held: ${(e as Error).message.slice(0, 120)}`)
+          return
         }
         let verdict
         try {
@@ -242,44 +249,29 @@ async function main() {
       }),
     ),
   )
-  const scored = jobs.length - sFail - heldBack - heldForAddress
-  if (billingAbort) await abortRun({ scored: sDone + keptImpostors, held: heldBack + heldForAddress, failed: sFail })
+  const held = heldBack + heldForAddress + heldForImpersonation
+  const scored = jobs.length - sFail - held
+  if (billingAbort) await abortRun({ scored: sDone + keptImpostors, held, failed: sFail })
 
   console.log(`\n=== JUDGE SUMMARY ===`)
   console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${scored - keptImpostors} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed, ${heldForAddress} held for a mailing address their employer's verdict was not shown) | brand-impersonation re-attributed: ${impostors}, confirmed impersonations kept: ${keptImpostors}`)
+  console.log(`Employers: web-verified ${toWebVerify.length - vFail}/${toWebVerify.length} (${vFail} failed), presumed-legit ${toPresume.length} | jobs scored: ${scored - keptImpostors} (${sFail} left pending on a Jev error, ${heldBack} held back because their employer's check failed, ${heldForAddress} held for a mailing address their employer's verdict was not shown, ${heldForImpersonation} held because their impersonation check failed) | brand-impersonation re-attributed: ${impostors}, confirmed impersonations kept: ${keptImpostors}`)
   console.log(`Bands: ${JSON.stringify(bands)}`)
   console.log(
     `Web-verify (${TIERED_VERIFIER.primary}, alarming verdicts re-checked by ${TIERED_VERIFIER.escalation}): ${escalated} escalated | tokens in=${webIn} out=${webOut} | searches ${webSearches} | ~$${webCost.toFixed(2)} at list price`,
   )
   console.log(`Jev tokens: in=${totalIn} out=${totalOut}`)
-  await resolveRerunRequests()
+  await settleRequests("[judge]")
   if (jobs.length > 0 || toWebVerify.length > 0) await requestRevalidation()
   const outcome = await finishJudgeRun(run.id, {
     pendingAtStart: run.pendingAtStart,
     scored,
-    held: heldBack + heldForAddress,
+    held,
     failed: sFail,
   })
   console.log(`[judge] run ${run.id}: ${outcome}`)
   if (outcome === "FAILED") process.exitCode = 1
   await prisma.$disconnect()
-}
-
-// A "rerun" request is serviced by any pass that re-scores its posting after the request was
-// filed. "deep" requests need a per-posting agent investigation, so they stay open for a session.
-async function resolveRerunRequests() {
-  const open = await prisma.judgeRequest.findMany({ where: { kind: "rerun", resolvedAt: null } })
-  if (open.length === 0) return
-  const scored = await prisma.job.findMany({
-    where: { workbcId: { in: open.map((r) => r.workbcId) }, status: "PUBLISHED" },
-    select: { workbcId: true, scoredAt: true },
-  })
-  const scoredAt = new Map(scored.map((j) => [j.workbcId, j.scoredAt!]))
-  const done = open.filter((r) => (scoredAt.get(r.workbcId)?.getTime() ?? 0) > r.createdAt.getTime()).map((r) => r.id)
-  if (done.length === 0) return
-  await prisma.judgeRequest.updateMany({ where: { id: { in: done } }, data: { resolvedAt: new Date() } })
-  console.log(`[judge] resolved ${done.length} rerun request(s)`)
 }
 
 main().catch((e) => {

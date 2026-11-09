@@ -126,6 +126,15 @@ async function main() {
       console.log(`[employers] ${empIdCache.size} unique employers pre-registered`)
     }
 
+    // A confirmed impersonation was re-attributed to the real company and given the
+    // apply_host_mismatch flag. The posting still names the brand, so updating it from WorkBC would
+    // point it back at the brand and drop the flag while its 90 and reasoning stayed.
+    const impersonations = new Set(
+      args.dryRun
+        ? []
+        : (await prisma.job.findMany({ where: { verdictKind: "IMPERSONATION" }, select: { workbcId: true } })).map((r) => r.workbcId),
+    )
+
     // Phase B: per-job detail (WorkBC JSON API) + flags + upsert, run with bounded concurrency.
     const limit = pLimit(args.concurrency)
     let written = 0
@@ -190,7 +199,9 @@ async function main() {
               nocGroup,
               category: categoryForNoc(nocCode),
             }
-            await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update: fields })
+            const { employerId: _employerId, applicationFlags: _flags, ...unattributed } = fields
+            const update = impersonations.has(stub.workbcId) ? unattributed : fields
+            await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update })
             written++
           }
           log.log({ workbcId: stub.workbcId, stage: "detail", ok: true, durationMs: Date.now() - dt0, meta: { flagCount: appFlags.length, ats: atsProvider } })
