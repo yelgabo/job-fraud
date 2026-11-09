@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { WARM_PATHS, MAX_WARM_PATHS, warmOrigin } from "./warm-targets"
+import { WARM_PATHS, MAX_WARM_PATHS, replicaId, warmOrigin } from "./warm-targets"
 
 describe("WARM_PATHS", () => {
   it("stays within the warm-cycle cap", () => {
@@ -30,3 +30,11 @@ describe("warmOrigin", () => {
   })
 })
 
+
+describe("replicaId", () => {
+  it("prefers Railway's replica id and falls back to the hostname", () => {
+    expect(replicaId({ RAILWAY_REPLICA_ID: "r-1" }, () => "host")).toBe("r-1")
+    expect(replicaId({}, () => "host")).toBe("host")
+    expect(replicaId({ RAILWAY_REPLICA_ID: "" }, () => "host")).toBe("host")
+  })
+})

@@ -39,7 +39,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("POST /api/revalidate (purge phase)", () => {
+describe("POST /api/revalidate token gate", () => {
   it("denies when REVALIDATE_TOKEN is unset, even with a plausible bearer token", async () => {
     const { route, cache } = await loadRoute(undefined)
     const res = await route.POST(post("Bearer anything"))
@@ -66,12 +66,23 @@ describe("POST /api/revalidate (purge phase)", () => {
     expect(cache.revalidateTag).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
+})
 
-  it("revalidates every public surface on the right token and makes no warm fetches", async () => {
+describe("POST /api/revalidate?phase=purge (loopback purge step)", () => {
+  it("denies a wrong token and purges nothing", async () => {
     const { route, cache } = await loadRoute("right-token")
-    const res = await route.POST(post("Bearer right-token"))
+    const res = await route.POST(post("Bearer wrong-token", "purge"))
+    expect(res.status).toBe(401)
+    expect(cache.revalidateTag).not.toHaveBeenCalled()
+    expect(cache.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("revalidates every public surface, names its replica, and makes no warm fetches", async () => {
+    vi.stubEnv("RAILWAY_REPLICA_ID", "replica-a")
+    const { route, cache } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token", "purge"))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ revalidated: true })
+    expect(await res.json()).toEqual({ revalidated: true, replica: "replica-a" })
 
     const { DATA_CACHE_TAG } = await import("../../../lib/shared/cache-tags")
     expect(cache.revalidateTag).toHaveBeenCalledWith(DATA_CACHE_TAG)
@@ -79,10 +90,68 @@ describe("POST /api/revalidate (purge phase)", () => {
     expect(cache.revalidatePath).toHaveBeenCalledWith("/j/[id]", "page")
     expect(cache.revalidatePath).toHaveBeenCalledWith("/e/[id]", "page")
 
-    // Ordering guarantee: warming never happens inside the purge request, because Next defers
-    // the revalidation until after this handler resolves - a same-request warm would render
-    // against the old cache and be wiped by the purge.
+    // Next defers the purge until this handler resolves, so a warm inside this request would
+    // render against the old cache and be wiped by the purge.
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("POST /api/revalidate (purge and warm on one replica)", () => {
+  it("purges through its own process, then warms through its own process, and reports its replica", async () => {
+    vi.stubEnv("PORT", "4321")
+    vi.stubEnv("RAILWAY_REPLICA_ID", "replica-b")
+    const { route, cache } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const { WARM_PATHS } = await import("../../../lib/shared/warm-targets")
+    expect(body).toMatchObject({ revalidated: true, replica: "replica-b", warmed: WARM_PATHS.length, warmFailed: 0 })
+
+    const calls = fetchMock.mock.calls.map((c) => ({ url: String(c[0]), init: c[1] as RequestInit }))
+    expect(calls[0].url).toBe("http://127.0.0.1:4321/api/revalidate?phase=purge")
+    expect(calls[0].init.method).toBe("POST")
+    expect((calls[0].init.headers as Record<string, string>).authorization).toBe("Bearer right-token")
+    // Purge first, then one loopback render per warm path and nothing else.
+    expect(calls.slice(1).map((c) => c.url)).toEqual(
+      WARM_PATHS.map((p) => new URL(p, "http://127.0.0.1:4321").toString()),
+    )
+
+    // The outer request must not queue a purge of its own: it would land after the warm.
+    expect(cache.revalidateTag).not.toHaveBeenCalled()
+    expect(cache.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the hostname when Railway sets no replica id", async () => {
+    const os = await import("node:os")
+    const { route } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token"))
+    expect((await res.json()).replica).toBe(os.hostname())
+  })
+
+  it("reports a failed loopback purge as 502 and warms nothing", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("no", { status: 500 }))
+    const { route } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token"))
+    expect(res.status).toBe(502)
+    expect((await res.json()).revalidated).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("reports an unreachable loopback purge as 502", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("connect refused"))
+    const { route } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token"))
+    expect(res.status).toBe(502)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("still succeeds when warm renders fail, and counts them", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("ok", { status: 200 })).mockRejectedValue(new Error("slow"))
+    const { route } = await loadRoute("right-token")
+    const res = await route.POST(post("Bearer right-token"))
+    expect(res.status).toBe(200)
+    const { WARM_PATHS } = await import("../../../lib/shared/warm-targets")
+    expect(await res.json()).toMatchObject({ revalidated: true, warmed: 0, warmFailed: WARM_PATHS.length })
   })
 })
 

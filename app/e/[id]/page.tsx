@@ -5,6 +5,7 @@ import { parseChecks } from "@/lib/shared/json-schemas"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import { ScoreChip } from "@/components/ScoreChip"
 import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
+import { verificationDateText } from "@/lib/shared/verification-date"
 
 // Rendered on demand per employer, then cached up to 10 minutes; a re-judged verdict appears
 // within that window. The empty generateStaticParams opts the route into on-demand static
@@ -48,6 +49,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
   if (!employer) notFound()
 
   const checks = parseChecks(employer.checks)
+  const dateText = verificationDateText(checks.web, employer.checkedAt, (d) => d.toLocaleString("en-CA"))
 
   return (
     <div className="space-y-6">
@@ -85,11 +87,7 @@ export default async function EmployerDetailPage({ params }: { params: Promise<{
         <div className="rounded-lg border border-zinc-200 bg-white p-4 text-sm">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Verification</h2>
           <pre className="overflow-x-auto text-xs text-zinc-700">{JSON.stringify(checks, null, 2)}</pre>
-          {employer.checkedAt && (
-            <p className="mt-2 text-xs text-zinc-400">
-              Checked {new Date(employer.checkedAt).toLocaleString("en-CA")}
-            </p>
-          )}
+          {dateText && <p className="mt-2 text-xs text-zinc-400">{dateText}</p>}
         </div>
       </section>
 

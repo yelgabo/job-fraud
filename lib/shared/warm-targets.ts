@@ -1,3 +1,5 @@
+import os from "node:os"
+
 /**
  * The public pages POST /api/revalidate re-warms after clearing the data cache, so the first
  * visitor to a common filter combination does not pay the cold queries.
@@ -33,4 +35,17 @@ export const MAX_WARM_PATHS = 15
  */
 export function warmOrigin(port: string | undefined = process.env.PORT): string {
   return `http://127.0.0.1:${port || 3000}`
+}
+
+/**
+ * Which replica this process is. Each Railway replica holds its own Next.js cache, so a caller
+ * refreshing the site needs to know which ones it has reached. RAILWAY_REPLICA_ID is set by
+ * Railway (docs.railway.com/reference/variables); the hostname stands in elsewhere, such as a
+ * local `next start`.
+ */
+export function replicaId(
+  env: Record<string, string | undefined> = process.env,
+  hostname: () => string = os.hostname,
+): string {
+  return env.RAILWAY_REPLICA_ID || hostname()
 }

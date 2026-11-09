@@ -6,6 +6,7 @@ import { PaginationNav } from "@/components/PaginationNav"
 import { CATEGORIES } from "@/lib/signals/job-category"
 import { effectivePostedDate } from "@/lib/shared/posted-date"
 import { DATA_CACHE_TAG } from "@/lib/shared/cache-tags"
+import { lastScanAt } from "@/lib/shared/last-scan"
 import { RATING_ANCHOR } from "@/lib/shared/methodology"
 import {
   BANDS,
@@ -70,7 +71,8 @@ async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWind
     // otherwise a filtered numerator sits next to an unfiltered denominator and reads as wrong.
     prisma.job.count({ where: { status: "PUBLISHED" } }),
     prisma.job.count({ where: { status: "PUBLISHED", riskBand: { in: ["high", "medium", "low"] } } }),
-    prisma.job.aggregate({ _max: { scrapedAt: true } }),
+    // Both maxima in one aggregate, so it stays a single scan.
+    prisma.job.aggregate({ _max: { scrapedAt: true, fetchedAt: true } }),
     prisma.job.count({ where: q.rowsWhere }),
   ])
 
@@ -89,7 +91,7 @@ async function loadCountsUncached(band: BandKey, cat: string, posted: PostedWind
     dateCounts: Object.fromEntries(postedCounts) as Record<PostedWindowKey, number>,
     total,
     scored,
-    lastScraped: agg._max.scrapedAt?.toISOString() ?? null,
+    lastScraped: lastScanAt(agg._max.scrapedAt, agg._max.fetchedAt)?.toISOString() ?? null,
     filteredTotal,
   }
 }
