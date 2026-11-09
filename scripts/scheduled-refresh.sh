@@ -7,11 +7,12 @@ set -euo pipefail
 touch .env
 
 # The term pass pages the full feed rather than --recent week: a failed or skipped week would
-# otherwise lose that week's postings for good, and --skip-existing keeps detail fetches to new ones.
+# otherwise lose that week's postings for good. --skip-existing keeps detail fetches to new postings
+# plus those not fetched for 28 days; a refetched posting whose text changed goes back to pending.
 # Unset, not empty: lib/env.ts rejects an empty REVALIDATE_TOKEN. Pending postings are not shown on
 # the site, so only the judge run needs to refresh its cache.
-env -u REVALIDATE_TOKEN npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing
-env -u REVALIDATE_TOKEN npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing
+env -u REVALIDATE_TOKEN npm run scrape -- --search-terms "software engineer,software" --limit 5000 --skip-existing --refetch-after-days 28
+env -u REVALIDATE_TOKEN npm run scrape -- --location "Victoria" --search-terms "" --limit 5000 --skip-existing --refetch-after-days 28
 
 # A missing key used to skip judging and exit 0, so the cron looked healthy while postings piled up
 # (730 pending by 2026-11-06). It now fails the run. judge.ts itself exits nonzero when a bad key or

@@ -1,5 +1,7 @@
 import pLimit from "p-limit"
 import { prisma } from "../lib/db"
+import { contentChanged, dueForRefetch } from "../lib/shared/posting-content"
+import { SENT_BACK } from "../lib/scoring/write-verdict"
 import { webEnv } from "../lib/env"
 import type { JobStub } from "../lib/workbc/scrape-workbc"
 import { classifyHost, isKnownAts } from "../lib/signals/ats-registry"
@@ -15,10 +17,10 @@ import { JsonlLogger } from "./logger"
 // the old SPA HTML scrape returned stale/duplicated detail DOM (hash-route changes don't reload),
 // corrupting hundreds of postings. Each posting is upserted as RAW/pending (no AI). Judge separately.
 
-type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean; recent: number; locations: string | null }
+type Args = { limit: number | null; searchTerms: string | null; dryRun: boolean; concurrency: number; skipExisting: boolean; refetchAfterDays: number | null; recent: number; locations: string | null }
 
 function parseArgs(): Args {
-  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false, recent: 0, locations: null }
+  const a: Args = { limit: null, searchTerms: null, dryRun: false, concurrency: 6, skipExisting: false, refetchAfterDays: null, recent: 0, locations: null }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]
@@ -32,6 +34,9 @@ function parseArgs(): Args {
     // --skip-existing (alias --new-only): the daily incremental mode — only fetch detail for
     // postings not already in the DB, so a re-run does work only for genuinely new jobs.
     else if (t === "--skip-existing" || t === "--new-only") a.skipExisting = true
+    // --refetch-after-days N, with --skip-existing: still refetch a known posting not fetched for N
+    // days, so an edit on WorkBC reaches the row. WorkBC's search gives no last-updated date.
+    else if (t === "--refetch-after-days") a.refetchAfterDays = Math.max(1, parseInt(argv[++i] ?? "", 10) || 28)
     // --recent [day|week]: ask WorkBC server-side for only recently-posted jobs (SearchDateSelection
     // 1≈last day / 2≈last week). Bare --recent = day. The cheap way to fetch incremental changes.
     else if (t === "--recent") {
@@ -95,12 +100,18 @@ async function main() {
     if (args.skipExisting && !args.dryRun) {
       const existing = await prisma.job.findMany({
         where: { workbcId: { in: stubs.map((s) => s.workbcId) } },
-        select: { workbcId: true },
+        select: { workbcId: true, fetchedAt: true, scrapedAt: true },
       })
-      const known = new Set(existing.map((e) => e.workbcId))
+      const now = new Date()
+      const days = args.refetchAfterDays
+      const known = new Set(existing.filter((e) => days === null || !dueForRefetch(e, days, now)).map((e) => e.workbcId))
       const before = stubs.length
       stubs = stubs.filter((s) => !known.has(s.workbcId))
-      console.log(`[scrape] --skip-existing: ${known.size} already in DB, ${stubs.length} new to fetch (of ${before})`)
+      const refetch = existing.length - known.size
+      console.log(
+        `[scrape] --skip-existing: ${existing.length} already in DB (${refetch} due a refetch${days === null ? "" : ` after ${days} days`}), ` +
+          `${stubs.length} to fetch (of ${before})`,
+      )
       if (stubs.length === 0) {
         console.log("[scrape] nothing new to collect — done.")
         return
@@ -126,14 +137,27 @@ async function main() {
       console.log(`[employers] ${empIdCache.size} unique employers pre-registered`)
     }
 
-    // A confirmed impersonation was re-attributed to the real company and given the
-    // apply_host_mismatch flag. The posting still names the brand, so updating it from WorkBC would
-    // point it back at the brand and drop the flag while its 90 and reasoning stayed.
-    const impersonations = new Set(
-      args.dryRun
+    // The rows this scrape may update, to decide per posting whether the update leaves its rating.
+    const previous = new Map(
+      (args.dryRun
         ? []
-        : (await prisma.job.findMany({ where: { verdictKind: "IMPERSONATION" }, select: { workbcId: true } })).map((r) => r.workbcId),
+        : await prisma.job.findMany({
+            where: { workbcId: { in: stubs.map((s) => s.workbcId) } },
+            select: {
+              workbcId: true,
+              title: true,
+              descriptionMd: true,
+              externalApplyUrl: true,
+              salary: true,
+              location: true,
+              employerId: true,
+              status: true,
+              verdictKind: true,
+            },
+          })
+      ).map((r) => [r.workbcId, r]),
     )
+    let sentBack = 0
 
     // Phase B: per-job detail (WorkBC JSON API) + flags + upsert, run with bounded concurrency.
     const limit = pLimit(args.concurrency)
@@ -198,9 +222,17 @@ async function main() {
               nocCode,
               nocGroup,
               category: categoryForNoc(nocCode),
+              fetchedAt: new Date(),
             }
+            const prev = previous.get(stub.workbcId)
+            // A confirmed impersonation was re-attributed to the real company and given the
+            // apply_host_mismatch flag. The posting still names the brand, so updating it from
+            // WorkBC would point it back at the brand and drop the flag while its 90 stayed.
+            const impersonation = prev?.verdictKind === "IMPERSONATION"
             const { employerId: _employerId, applicationFlags: _flags, ...unattributed } = fields
-            const update = impersonations.has(stub.workbcId) ? unattributed : fields
+            const changed = prev?.status === "PUBLISHED" && !impersonation && contentChanged(prev, fields)
+            if (changed) sentBack++
+            const update = { ...(impersonation ? unattributed : fields), ...(changed ? SENT_BACK : {}) }
             await prisma.job.upsert({ where: { workbcId: stub.workbcId }, create: { workbcId: stub.workbcId, ...fields }, update })
             written++
           }
@@ -212,7 +244,7 @@ async function main() {
 
     console.log(`\n=== SCRAPE SUMMARY ===`)
     console.log(`Wall time: ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-    console.log(`Collected ${written} postings (pending judgment) from ${empIdCache.size} employers; ${detailFail} detail fetch failures`)
+    console.log(`Collected ${written} postings from ${empIdCache.size} employers; ${sentBack} published postings changed on WorkBC and went back to pending; ${detailFail} detail fetch failures`)
     console.log(`Next: run the judge-postings skill (or npm run judge-keyless:fetch) to evaluate pending postings.`)
     console.log(`Log: ${logPath}`)
     if (!args.dryRun && written > 0) await requestRevalidation()

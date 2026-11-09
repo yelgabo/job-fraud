@@ -10,6 +10,7 @@ import { verifyEmployerTiered } from "../lib/ai/verify-employer-web"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
+import { storeEmployerWeb } from "../lib/shared/employer-verdict"
 import { addressKey } from "../lib/shared/mail-evidence"
 
 async function main() {
@@ -43,11 +44,11 @@ async function main() {
         descriptionExcerpt: rep.descriptionMd.slice(0, 800),
         applicationText: mailEvidence,
       })
-      const checks = {
-        ...((rep.employer!.checks as Record<string, unknown>) ?? {}),
-        web: { ...out.result, addressChecked: addressKey(rep.applicationFlags) },
-      }
-      await prisma.employer.update({ where: { id: employerId }, data: { checks: checks as never } })
+      const { checks } = await storeEmployerWeb(rep.employer!, {
+        ...out.result,
+        addressChecked: addressKey(rep.applicationFlags),
+        verifiedAt: new Date().toISOString(),
+      })
       // Append the raw web_search audit trail (separate table; not read by prod pages).
       await prisma.employerWebSearchLog.create({
         data: { employerId, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
@@ -55,12 +56,12 @@ async function main() {
       console.log(
         `\n${rep.employer!.nameDisplay} [${out.result.verifiedBy}, $${out.costUsd.toFixed(3)}]: applicationAddressType=${out.result.applicationAddressType} | ${out.result.summary.slice(0, 120)}`,
       )
-      // re-score every job for this employer
+      // Re-score this employer's published postings. Pending ones are left to the judge, which runs
+      // the brand-impersonation check this script does not.
       for (const job of group) {
-        // A confirmed impersonation was scored without the composer; re-scoring would undo it.
-        if (job.verdictKind === "IMPERSONATION") continue
+        if (job.status !== "PUBLISHED" || job.verdictKind === "IMPERSONATION") continue
         const { usage: _usage, ...data } = await buildVerdict(jev, { ...job, employerName: rep.employer!.nameDisplay }, checks)
-        if (!(await writeComposedVerdict(job.workbcId, data, "judgment"))) continue
+        if (!(await writeComposedVerdict(job.workbcId, data, "recompute"))) continue
         console.log(`   ${job.workbcId} ${job.title} → ${data.riskBand} ${data.fraudScore}`)
       }
     } catch (err) {

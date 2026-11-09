@@ -67,7 +67,12 @@ async function main() {
 
   // The API judge runs this check per posting with an Opus API call; here Opus helper agents run
   // it, and apply holds back any posting it covers until a result for its item is in the dir.
-  const impersonation = planImpersonationChecks(jobs)
+  // A pair an earlier run decided (ImpersonationAnswer) needs no helper; apply uses the saved answer.
+  const planned = planImpersonationChecks(jobs)
+  const decided = new Set(
+    (await prisma.impersonationAnswer.findMany({ where: { key: { in: planned.map((i) => i.checkKey) } }, select: { key: true } })).map((r) => r.key),
+  )
+  const impersonation = planned.filter((i) => !decided.has(i.checkKey))
   let impersonationFiles = 0
   for (let i = 0; i < impersonation.length; i += 10) {
     impersonationFiles++
@@ -82,6 +87,7 @@ async function main() {
   )
   console.log(
     `[judge-keyless:fetch] ${impersonation.length} employer-tenant pairs need an impersonation check ` +
+      `(${decided.size} more already decided) ` +
       `(${impersonation.reduce((n, i) => n + i.postings.length, 0)} postings) in ${impersonationFiles} impersonation files`,
   )
   console.log(`DIR=${dir} BATCHES=${batches} IMPERSONATION=${impersonationFiles}`)

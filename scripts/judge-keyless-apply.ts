@@ -33,7 +33,13 @@ import { planByEmployer, presumedVerdict } from "../lib/signals/verification-pla
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 import { scoreableWhere } from "../lib/shared/deep-requests"
 import { agentSearchLogRow } from "../lib/shared/agent-search-log"
-import { applyImpersonationVerdict, keepImpersonationVerdict } from "../lib/ai/resolve-impersonation"
+import {
+  applyImpersonationVerdict,
+  keepImpersonationVerdict,
+  saveImpersonationAnswer,
+  savedImpersonationAnswer,
+} from "../lib/ai/resolve-impersonation"
+import { storeEmployerWeb } from "../lib/shared/employer-verdict"
 import { impersonationCheckFor, type ImpersonationItem } from "../lib/signals/impersonation-plan"
 
 /**
@@ -108,7 +114,12 @@ async function main() {
   }
   const { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles, dirs } = resolveFiles(args)
   const fetchedAt = fetchedAtOf(dirs, force)
-  const verdicts = verdictFiles.flatMap(readJsonArray)
+  // A verdict's research happened shortly before the orchestrator wrote its file, so the file's
+  // modification time stands in for web.verifiedAt.
+  const verdicts = verdictFiles.flatMap((f) => {
+    const at = statSync(f).mtime.toISOString()
+    return readJsonArray(f).map((v) => ({ v, at }))
+  })
   const cachedEntries = cachedFiles.flatMap(readJsonArray) as Array<{ workbcId: string }>
   // The fetch's posting list per employer, keyed by the representative posting the verdict names.
   // Without the batch files a verdict scores only the posting it names.
@@ -145,6 +156,9 @@ async function main() {
   const heldForImpersonation = new Set<string>()
   /** Postings whose mailing address the employer's verdict was not shown; checked on a later fetch. */
   const heldForAddress = new Set<string>()
+  /** Postings whose new verdict was written; a deep request is serviced only by one of these. */
+  const rescored = new Set<string>()
+  const deepNamed = new Set<string>()
 
   const impItems = new Map<string, ImpersonationItem>()
   for (const it of impersonationItemFiles.flatMap(readJsonArray) as ImpersonationItem[]) impItems.set(it.checkKey, it)
@@ -158,6 +172,7 @@ async function main() {
       continue
     }
     const { checkKey, searchLog, ...verdict } = parsed.data
+    if (!dryRun) await saveImpersonationAnswer(checkKey, verdict)
     let logRow = searchLog ? agentSearchLogRow(searchLog, "opus-5.5") : undefined
     if (!searchLog) withoutSearchLog++
     const rows = await prisma.job.findMany({ where: scoreableWhere(item.postings, openDeepIds), include: { employer: true } })
@@ -199,6 +214,7 @@ async function main() {
     },
     checks: unknown,
   ) {
+    let toScore = job
     if (await keepImpersonationVerdict(job, dryRun)) {
       scored.add(job.workbcId)
       keptImpostors++
@@ -211,23 +227,41 @@ async function main() {
     }
     const check = impersonationCheckFor(job.employerName, job.externalApplyUrl)
     if (check && !cleared.has(job.workbcId)) {
-      if (!heldForImpersonation.has(job.workbcId)) {
-        heldForImpersonation.add(job.workbcId)
-        console.error(`  held (no impersonation result): ${job.workbcId} checkKey=${check.checkKey}`)
+      // A pair decided by an earlier run (either path) needs no helper this time.
+      const saved = await savedImpersonationAnswer(check.checkKey)
+      if (!saved) {
+        if (!heldForImpersonation.has(job.workbcId)) {
+          heldForImpersonation.add(job.workbcId)
+          console.error(`  held (no impersonation result): ${job.workbcId} checkKey=${check.checkKey}`)
+        }
+        return
       }
-      return
+      if (saved.relationship === "impersonation") {
+        if (!dryRun) await applyImpersonationVerdict(job, job.employerName!, check, saved)
+        scored.add(job.workbcId)
+        applied++
+        impostors++
+        bands.high = (bands.high ?? 0) + 1
+        return
+      }
+      cleared.add(job.workbcId)
+      if (!dryRun) {
+        const outcome = await applyImpersonationVerdict(job, job.employerName!, check, saved)
+        if (outcome.kind === "uncertain") toScore = { ...job, applicationFlags: outcome.applicationFlags as never }
+      }
     }
     scored.add(job.workbcId)
     if (dryRun) {
       applied++
       return
     }
-    const { usage, ...data } = await buildVerdict(jev, job, checks)
+    const { usage, ...data } = await buildVerdict(jev, toScore, checks)
     tokens += usage.inputTokens
     if (!(await writeComposedVerdict(job.workbcId, data, "judgment"))) {
       keptImpostors++
       return
     }
+    rescored.add(job.workbcId)
     applied++
     bands[data.riskBand] = (bands[data.riskBand] ?? 0) + 1
   }
@@ -242,7 +276,7 @@ async function main() {
     for (const j of rows) await score({ ...j, employerName: j.employer?.nameDisplay ?? null }, checks)
   }
 
-  for (const v of verdicts) {
+  for (const { v, at } of verdicts) {
     const parsed = VerdictSchema.safeParse(v)
     if (!parsed.success) {
       skipped++
@@ -270,8 +304,13 @@ async function main() {
         // employer in this one): it stands, and these postings are scored on it.
         newerKept++
       } else if (d.web && employer) {
-        checks = { ...checks, web: { ...d.web, addressChecked: addressKey(job.applicationFlags) } }
-        if (!dryRun) await prisma.employer.update({ where: { id: employer.id }, data: { checks: checks as never, checkedAt: new Date() } })
+        const web = { ...d.web, addressChecked: addressKey(job.applicationFlags), verifiedAt: at }
+        if (dryRun) checks = { ...checks, web }
+        else {
+          const stored = await storeEmployerWeb(employer, web)
+          checks = stored.checks
+          if (!stored.stored) newerKept++
+        }
         if (!d.searchLog) withoutSearchLog++
         else if (!dryRun) {
           const row = agentSearchLogRow(d.searchLog, d.web.verifiedBy)
@@ -282,16 +321,9 @@ async function main() {
       }
       await scorePostings(d.web ? (postingsFor.get(d.workbcId) ?? [d.workbcId]) : [d.workbcId], checks, openDeepIds)
       // A verdict that names a deep-flagged posting is the agent investigation that request asked
-      // for, so it services the request once that posting has been scored.
-      if (openDeepIds.has(d.workbcId) && scored.has(d.workbcId)) {
-        if (!dryRun) {
-          await prisma.judgeRequest.updateMany({
-            where: { kind: "deep", workbcId: d.workbcId, resolvedAt: null },
-            data: { resolvedAt: new Date() },
-          })
-        }
-        deepResolved++
-      }
+      // for. It is resolved after all writes, and only if that posting's new verdict was written:
+      // a later posting of the same employer failing must not leave it open, nor a failed write close it.
+      if (openDeepIds.has(d.workbcId)) deepNamed.add(d.workbcId)
     } catch (err) {
       skipped++
       console.error(`  skip: ${d.workbcId} - ${(err as Error).message.slice(0, 100)}`)
@@ -321,14 +353,23 @@ async function main() {
       const employer = pending[0].employer
       let checks = (employer?.checks as Record<string, unknown> | null) ?? {}
       if (plan.action === "presume") {
-        checks = { ...checks, web: presumedVerdict(employer?.nameDisplay ?? null, pending) }
-        if (!dryRun) await prisma.employer.update({ where: { id: employerId }, data: { checks: checks as never, checkedAt: new Date() } })
+        const web = presumedVerdict(employer?.nameDisplay ?? null, pending)
+        checks = dryRun || !employer ? { ...checks, web } : (await storeEmployerWeb(employer, web)).checks
       }
       await scorePostings(workbcIds, checks)
     } catch (err) {
       skipped++
       console.error(`  skip (cached): employer ${employerId} - ${(err as Error).message.slice(0, 100)}`)
     }
+  }
+
+  const deepServiced = [...deepNamed].filter((id) => (dryRun ? scored : rescored).has(id))
+  deepResolved = deepServiced.length
+  if (!dryRun && deepServiced.length > 0) {
+    await prisma.judgeRequest.updateMany({
+      where: { kind: "deep", workbcId: { in: deepServiced }, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    })
   }
 
   console.log(

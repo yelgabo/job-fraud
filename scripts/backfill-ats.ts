@@ -40,25 +40,31 @@ async function main() {
     if (rescore && j.judgments) fromStored++
     if (!apply) continue
     const applicationFlags = needsFlag ? [...flags, { flag: "ats_known_provider", evidence: j.externalApplyHost! }] : flags
+    // The new score is computed before anything is written: when the evidence was written first
+    // and the re-score then failed, the old score stayed published on inputs it never saw.
+    let verdict
+    if (rescore) {
+      try {
+        const { usage: _usage, ...data } = await rescoreVerdict(
+          jev,
+          { ...j, applicationFlags, employerName: j.employer?.nameDisplay ?? null },
+          j.employer?.checks ?? null,
+        )
+        verdict = data
+      } catch (e) {
+        rescoreFailed++
+        console.error(`  ${j.workbcId}: re-score failed, row left unchanged - ${(e as Error).message.slice(0, 120)}`)
+        continue
+      }
+    }
     await prisma.job.update({
       where: { workbcId: j.workbcId },
       data: { atsProvider: provider, ...(needsFlag ? { applicationFlags } : {}) },
     })
-    if (!rescore) continue
-    try {
-      const { usage: _usage, ...data } = await rescoreVerdict(
-        jev,
-        { ...j, applicationFlags, employerName: j.employer?.nameDisplay ?? null },
-        j.employer?.checks ?? null,
-      )
-      if (!(await writeComposedVerdict(j.workbcId, data, "recompute"))) continue
-      rescored++
-      const key = `${j.riskBand ?? "?"}->${data.riskBand}`
-      moves[key] = (moves[key] ?? 0) + 1
-    } catch (e) {
-      rescoreFailed++
-      console.error(`  ${j.workbcId}: re-score failed, old score kept - ${(e as Error).message.slice(0, 120)}`)
-    }
+    if (!verdict || !(await writeComposedVerdict(j.workbcId, verdict, "recompute"))) continue
+    rescored++
+    const key = `${j.riskBand ?? "?"}->${verdict.riskBand}`
+    moves[key] = (moves[key] ?? 0) + 1
   }
 
   console.log(`[backfill-ats] ${jobs.length} rows with an apply host; ${changed} ${apply ? "updated" : "would change"}`)

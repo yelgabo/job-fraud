@@ -7,7 +7,7 @@ import { prisma } from "../db"
 import { normalizeEmployer } from "../signals/normalize-employer"
 import { tenantEmployerMatch } from "../signals/apply-host"
 import { impersonationKey } from "../signals/impersonation-plan"
-import { checkImpersonation, type ImpersonationResult } from "./check-impersonation"
+import { checkImpersonation, ImpersonationSchema, type ImpersonationResult } from "./check-impersonation"
 import { parseFlags } from "../shared/json-schemas"
 import { bandFor } from "../shared/risk-band"
 import { republishVerdict, writeImpersonationVerdict } from "../scoring/write-verdict"
@@ -43,12 +43,29 @@ export type JobForCheck = {
 export type ApplyHostOutcome =
   | { kind: "no-check" } // no recognized tenant, or tenant matches the employer
   | { kind: "cleared"; relationship: "same" | "affiliate"; realCompany: string | null }
-  | { kind: "uncertain"; summary: string }
+  | { kind: "uncertain"; summary: string; applicationFlags: unknown }
   | { kind: "impersonation"; realCompany: string; newEmployerId: string; summary: string }
 
-// Cache web-check verdicts per (employer, tenant) pair so a repeated impersonation pattern across
-// many postings costs one search, not N. Process-scoped (judge/rescan are single-process runs).
-const verdictCache = new Map<string, ImpersonationResult>()
+/** A saved answer for this claimed employer and tenant pair, or null (see ImpersonationAnswer). */
+export async function savedImpersonationAnswer(key: string): Promise<ImpersonationResult | null> {
+  const row = await prisma.impersonationAnswer.findUnique({ where: { key } })
+  const parsed = row ? ImpersonationSchema.safeParse(row.verdict) : null
+  return parsed?.success ? parsed.data : null
+}
+
+export async function saveImpersonationAnswer(key: string, verdict: ImpersonationResult): Promise<void> {
+  await prisma.impersonationAnswer.upsert({
+    where: { key },
+    create: { key, verdict: verdict as never },
+    update: { verdict: verdict as never, decidedAt: new Date() },
+  })
+}
+
+// One check per pair at a time. Postings of the same pair run concurrently in the judge, and a
+// cache filled only after the await let each of them pay for its own Opus call. The search log
+// goes to the first posting that takes it, so it is stored once.
+type Pending = { answer: Promise<{ verdict: ImpersonationResult; searchLog?: SearchLogRow }>; logTaken: boolean }
+const inflight = new Map<string, Pending>()
 
 function titleCaseSlug(s: string): string {
   return s
@@ -58,11 +75,12 @@ function titleCaseSlug(s: string): string {
     .join(" ")
 }
 
-async function mergeFlag(job: JobForCheck, flag: string, evidence: string): Promise<void> {
+async function mergeFlag(job: JobForCheck, flag: string, evidence: string): Promise<unknown> {
   const flags = parseFlags(job.applicationFlags)
-  if (flags.some((f) => f.flag === flag)) return
+  if (flags.some((f) => f.flag === flag)) return job.applicationFlags
   flags.push({ flag, evidence })
   await prisma.job.update({ where: { workbcId: job.workbcId }, data: { applicationFlags: flags as never } })
+  return flags
 }
 
 // Find-or-create an employer by normalized name, tolerant of a concurrent creator (unique race).
@@ -92,20 +110,33 @@ export async function resolveApplyHost(
   if (m.result !== "mismatch" || !m.tenant || !employerName) return { kind: "no-check" }
 
   const key = impersonationKey(employerName, m.tenant)
-  let verdict = verdictCache.get(key)
-  let searchLog: SearchLogRow | undefined
-  if (!verdict) {
-    const out = await checkImpersonation(client, {
-      claimedEmployer: employerName,
-      tenant: m.tenant,
-      provider: m.provider ?? "",
-      applyUrl: job.externalApplyUrl!,
-      jobTitle: job.title,
-    })
-    verdict = out.result
-    searchLog = out.searchLog
-    verdictCache.set(key, verdict)
+  let pending = inflight.get(key)
+  if (!pending) {
+    const tenant = m.tenant
+    const entry: Pending = {
+      logTaken: false,
+      answer: (async () => {
+        const saved = await savedImpersonationAnswer(key)
+        if (saved) return { verdict: saved }
+        const out = await checkImpersonation(client, {
+          claimedEmployer: employerName,
+          tenant,
+          provider: m.provider ?? "",
+          applyUrl: job.externalApplyUrl!,
+          jobTitle: job.title,
+        })
+        await saveImpersonationAnswer(key, out.result)
+        return { verdict: out.result, searchLog: out.searchLog }
+      })(),
+    }
+    // A failed check is retried by the next posting of the pair, not cached as a failure.
+    entry.answer.catch(() => inflight.delete(key))
+    inflight.set(key, entry)
+    pending = entry
   }
+  const { verdict, searchLog: log } = await pending.answer
+  const searchLog = pending.logTaken ? undefined : log
+  pending.logTaken = true
   return applyImpersonationVerdict(job, employerName, { tenant: m.tenant, provider: m.provider }, verdict, searchLog)
 }
 
@@ -127,12 +158,12 @@ export async function applyImpersonationVerdict(
     return { kind: "cleared", relationship: verdict.relationship, realCompany: verdict.realCompany }
   }
   if (verdict.relationship === "uncertain") {
-    await mergeFlag(
+    const applicationFlags = await mergeFlag(
       job,
       "apply_host_mismatch_review",
       `Applies via "${m.tenant}" (${m.provider}); relationship to "${employerName}" uncertain — needs review`,
     )
-    return { kind: "uncertain", summary: verdict.summary }
+    return { kind: "uncertain", summary: verdict.summary, applicationFlags }
   }
 
   // relationship === "impersonation". Guard against the model contradicting itself

@@ -6,6 +6,7 @@
 //   [--emp-concurrency 4] [--score-concurrency 8]
 import pLimit from "p-limit"
 import Anthropic from "@anthropic-ai/sdk"
+import type { Prisma } from "@prisma/client"
 import { prisma } from "../lib/db"
 import { loadScrapeEnv } from "../lib/env"
 import { parseFlags, type WebVerification } from "../lib/shared/json-schemas"
@@ -20,6 +21,7 @@ import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { isAuthError, isFatalApiError } from "../lib/shared/anthropic-errors"
 import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
 import { settleRequests } from "../lib/shared/judge-requests"
+import { storeEmployerWeb } from "../lib/shared/employer-verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 type Args = { limit: number | null; rejudge: boolean; empConcurrency: number; scoreConcurrency: number }
@@ -97,8 +99,7 @@ async function main() {
   // Presumed-legit employers: deterministic verdict, no API call, no audit-log row.
   for (const d of toPresume) {
     const verdict = presumedVerdict(d.list[0].employer?.nameDisplay ?? null, d.list)
-    const checks = { ...((d.list[0].employer?.checks as Record<string, unknown>) ?? {}), web: verdict }
-    await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
+    const { checks } = await storeEmployerWeb(d.list[0].employer!, verdict)
     empChecks.set(d.id, checks)
   }
 
@@ -146,16 +147,17 @@ async function main() {
           webSearches += out.usage.webSearchRequests
           webCost += out.costUsd
           if (out.escalated) escalated++
-          const checks = {
-            ...((rep.employer!.checks as Record<string, unknown>) ?? {}),
-            web: { ...out.result, addressChecked: addressKey(rep.applicationFlags) },
-          }
-          await prisma.employer.update({ where: { id: d.id }, data: { checks: checks as never, checkedAt: new Date() } })
-          // Append the raw web_search audit trail (separate table; not read by prod pages).
+          const stored = await storeEmployerWeb(rep.employer!, {
+            ...out.result,
+            addressChecked: addressKey(rep.applicationFlags),
+            verifiedAt: new Date().toISOString(),
+          })
+          // The search happened either way, so its audit trail is kept (not read by prod pages).
           await prisma.employerWebSearchLog.create({
             data: { employerId: d.id, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never },
           })
-          empChecks.set(d.id, checks)
+          if (!stored.stored) console.log(`  [verify] ${rep.employer!.nameDisplay}: another run stored a verdict meanwhile; scoring on it`)
+          empChecks.set(d.id, stored.checks)
         } catch (e) {
           if (isFatalApiError(e)) { tripAbort(e); return }
           vFail++
@@ -206,8 +208,11 @@ async function main() {
         // Brand-impersonation pre-check: if the apply URL routes to a different company than the
         // claimed employer and a web-check confirms it, this re-attributes the posting + writes a
         // HIGH score itself — so skip normal scoring for that job.
+        let applicationFlags: Prisma.JsonValue = job.applicationFlags
         try {
           const outcome = await resolveApplyHost(client, job, job.employer?.nameDisplay ?? null)
+          // An uncertain answer adds a review flag in the database; score with it, not the row as loaded.
+          if (outcome.kind === "uncertain") applicationFlags = outcome.applicationFlags as Prisma.JsonValue
           if (outcome.kind === "impersonation") {
             impostors++
             bands["high"] = (bands["high"] ?? 0) + 1
@@ -227,7 +232,7 @@ async function main() {
         try {
           verdict = await buildVerdict(
             jev,
-            { ...job, employerName: job.employer?.nameDisplay ?? null },
+            { ...job, applicationFlags, employerName: job.employer?.nameDisplay ?? null },
             job.employerId ? empChecks.get(job.employerId) ?? null : null,
           )
         } catch (err) {

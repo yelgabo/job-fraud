@@ -144,6 +144,16 @@ model JudgeRun {
   @@index([startedAt])
 }
 
+// A decided brand-impersonation check for one claimed employer and ATS tenant pair (the key is
+// impersonationKey). Before this, a cleared answer lasted one process, so a posting that returned
+// to pending, or a new posting from the same pair, paid for another Opus check, and the two judge
+// paths could not see each other's answers. `verdict` is an ImpersonationSchema object.
+model ImpersonationAnswer {
+  key       String   @id
+  verdict   Json
+  decidedAt DateTime @default(now())
+}
+
 enum JudgePath {
   API
   KEYLESS

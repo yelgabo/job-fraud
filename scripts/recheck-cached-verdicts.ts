@@ -30,6 +30,7 @@ import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { isBillingError } from "../lib/shared/anthropic-errors"
 import { rescoreVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
+import { storeEmployerWeb } from "../lib/shared/employer-verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
 
 // Measured on the 2026-10-27 published-side run: Opus 5.5 averaged $0.21 per employer check.
@@ -116,7 +117,7 @@ async function main() {
           applicationText: mailEvidence(c.rep.applicationFlags),
         }, { profile })
         cost += verifierCostUsd(profile, out.usage)
-        proposals.set(c.employerId, { employerId: c.employerId, name: c.name, before: c.web, web: { ...out.result, verifiedBy: TIERED_VERIFIER.escalation } })
+        proposals.set(c.employerId, { employerId: c.employerId, name: c.name, before: c.web, web: { ...out.result, verifiedBy: TIERED_VERIFIER.escalation, verifiedAt: new Date().toISOString() } })
         if (apply) {
           await prisma.employerWebSearchLog.create({ data: { employerId: c.employerId, queries: out.searchLog.queries as never, blocks: out.searchLog.blocks as never } })
         }
@@ -157,11 +158,12 @@ async function main() {
   for (const c of chosen) {
     const p = proposals.get(c.employerId)
     if (!p) continue
-    const checks = {
-      ...((c.rep.employer!.checks as Record<string, unknown>) ?? {}),
-      web: { ...p.web, addressChecked: addressKey(c.rep.applicationFlags) },
+    const stored = await storeEmployerWeb(c.rep.employer!, { ...p.web, addressChecked: addressKey(c.rep.applicationFlags) })
+    if (!stored.stored) {
+      console.log(`  ${c.name}: another run stored a verdict since this one was read; left as it is`)
+      continue
     }
-    await prisma.employer.update({ where: { id: c.employerId }, data: { checks: checks as never, checkedAt: new Date() } })
+    const checks = stored.checks
     const before: string[] = [], after: string[] = []
     for (const job of c.judged) {
       try {

@@ -70,7 +70,10 @@ export async function republishVerdict(workbcId: string): Promise<void> {
   await prisma.job.update({ where: { workbcId }, data: { scoredAt: new Date(), status: "PUBLISHED" } })
 }
 
-/** A rerun request: off the site now, re-judged on the next update. The old verdict is kept. */
+/** Off the site until the next judge run; the old verdict is kept. Also folded into scrape upserts. */
+export const SENT_BACK = { scoredAt: null, status: "PENDING" } as const
+
+/** A rerun request: off the site now, re-judged on the next update. */
 export async function sendBackToPending(workbcId: string): Promise<void> {
-  await prisma.job.update({ where: { workbcId }, data: { scoredAt: null, status: "PENDING" } })
+  await prisma.job.update({ where: { workbcId }, data: SENT_BACK })
 }

@@ -35,8 +35,15 @@ async function main() {
 
   const moves: Record<string, number> = {}
   let changed = 0
+  let withoutJudgments = 0
   for (const job of jobs) {
     const judgments = job.judgments as Judgments | null
+    // Composed without Jev answers: recomposing would score on regex flags alone, while
+    // rescoreVerdict asks Jev again, so the two re-scorers would disagree. It needs a judgment.
+    if (judgments === null) {
+      withoutJudgments++
+      continue
+    }
     const { usage: _usage, ...data } = composeVerdict(job, parseChecks(job.employer?.checks), judgments)
     const from = job.riskBand ?? "?"
     moves[`${from}->${data.riskBand}`] = (moves[`${from}->${data.riskBand}`] ?? 0) + 1
@@ -47,7 +54,7 @@ async function main() {
     if (args.apply) await writeComposedVerdict(job.workbcId, data, "recompute")
   }
 
-  console.log(`[recompose] score changed on ${changed}/${jobs.length}`)
+  console.log(`[recompose] score changed on ${changed}/${jobs.length}; ${withoutJudgments} skipped with no stored judgments`)
   console.log(`[recompose] band moves: ${JSON.stringify(moves)}`)
   if (args.apply && changed > 0) await requestRevalidation()
   await prisma.$disconnect()
