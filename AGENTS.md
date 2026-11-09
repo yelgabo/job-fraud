@@ -346,7 +346,9 @@ network). The weekly refresh runs inside Railway as the **`job-fraud-scheduler`*
 (Mondays 12:17 UTC, start command `scripts/scheduled-refresh.sh`): both scrape passes, then
 `npm run judge -- --limit $JUDGE_LIMIT`, failing the run when `ANTHROPIC_API_KEY` is missing.
 Each judge run writes a `JudgeRun` row whose outcome (`OK`, `PARTIAL`, `FAILED`, `ABORTED`, or
-`RUNNING` with no `finishedAt` for a process that died) is the record of what a run did. Each
+`RUNNING` with no `finishedAt` for a process killed outright) is the record of what a run did; a
+thrown error closes the row as `FAILED` with the message. Keyless apply counts only the postings
+its own files reach as pending at start. Each
 scrape writes a `ScrapeRun` row the same way (`FAILED` when the search finds nothing, every detail
 fetch fails, or the process throws); a failed scrape still lets the judge run, then fails the cron. It reaches
 Postgres over the private network, so it publishes new verdicts with no human involved and keeps

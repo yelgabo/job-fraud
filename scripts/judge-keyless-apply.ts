@@ -16,15 +16,14 @@
 // EmployerWebSearchLog so /audit shows the searches behind the verdict.
 // Run: npm run judge-keyless:apply -- [--dry-run] [--force] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]
 // --dry-run validates and plans everything, then writes nothing and asks Jev nothing. --force applies
-// a dir that was already applied or has no manifest.json.
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
-import { basename, dirname, join } from "node:path"
+// files applied.json lists as applied, and a dir with no manifest.json.
+import { readFileSync, statSync } from "node:fs"
 import { prisma } from "../lib/db"
 import { ImpersonationResultSchema, VerdictSchema } from "../lib/shared/keyless-verdict"
 import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { tierViolation } from "../lib/ai/verify-employer-web"
 import { addressKey, addressUnchecked, mailEvidence } from "../lib/shared/mail-evidence"
-import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
+import { failJudgeRun, finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
 import { settleRequests } from "../lib/shared/judge-requests"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
@@ -40,69 +39,16 @@ import {
   savedImpersonationAnswer,
 } from "../lib/ai/resolve-impersonation"
 import { storeEmployerWeb } from "../lib/shared/employer-verdict"
+import { alreadyApplied, fetchedAtOf, recordApplied, resolveFiles } from "../lib/shared/keyless-files"
 import { impersonationCheckFor, type ImpersonationItem } from "../lib/signals/impersonation-plan"
-
-/**
- * A dir contributes its verdicts*.json, cached.json, batch-NNN.json (for the posting lists),
- * impersonation-NNN.json (the check items) and impersonation-result*.json (the helpers' answers),
- * in numeric order (verdicts-2 before verdicts-10). Any other file is ignored. A file named on the
- * command line that matches none of those is read as verdicts.
- */
-function resolveFiles(args: string[]) {
-  const verdictFiles: string[] = []
-  const cachedFiles: string[] = []
-  const batchFiles: string[] = []
-  const impersonationItemFiles: string[] = []
-  const impersonationResultFiles: string[] = []
-  const dirs = new Set<string>()
-  const add = (f: string, explicit: boolean) => {
-    const b = basename(f)
-    if (b === "cached.json") cachedFiles.push(f)
-    else if (/^batch-\d+\.json$/i.test(b)) batchFiles.push(f)
-    else if (/^impersonation-result.*\.json$/i.test(b)) impersonationResultFiles.push(f)
-    else if (/^impersonation-\d+\.json$/i.test(b)) impersonationItemFiles.push(f)
-    else if (explicit || /^verdicts.*\.json$/i.test(b)) verdictFiles.push(f)
-  }
-  for (const a of args) {
-    if (statSync(a).isDirectory()) {
-      dirs.add(a)
-      const names = readdirSync(a).sort((x, y) => x.localeCompare(y, undefined, { numeric: true }))
-      for (const f of names) add(join(a, f), false)
-    } else {
-      dirs.add(dirname(a))
-      add(a, true)
-    }
-  }
-  return { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles, dirs: [...dirs] }
-}
-
-/**
- * The fetch time the run's verdicts were researched against, from each dir's manifest.json. A dir
- * already applied, or one with no manifest, is refused unless --force: applying twice duplicated
- * every search log, and an old dir overwrote verdicts written since.
- */
-function fetchedAtOf(dirs: string[], force: boolean): Date | null {
-  let earliest: Date | null = null
-  for (const d of dirs) {
-    const applied = join(d, "applied.json")
-    if (existsSync(applied) && !force) {
-      throw new Error(`${d} was already applied (${applied}); pass --force to apply it again`)
-    }
-    const manifest = join(d, "manifest.json")
-    if (!existsSync(manifest)) {
-      if (force) continue
-      throw new Error(`${d} has no manifest.json (fetched before 2026-11-08?); pass --force to apply it anyway`)
-    }
-    const at = new Date((JSON.parse(readFileSync(manifest, "utf8")) as { fetchedAt: string }).fetchedAt)
-    if (!earliest || at < earliest) earliest = at
-  }
-  return earliest
-}
 
 const readJsonArray = (f: string): unknown[] => {
   const raw = JSON.parse(readFileSync(f, "utf8"))
   return Array.isArray(raw) ? raw : [raw]
 }
+
+/** Set once the run row exists, so the top-level catch can close it. */
+let runId: string | null = null
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run")
@@ -112,8 +58,23 @@ async function main() {
     console.error("usage: npm run judge-keyless:apply -- [--dry-run] [--force] <logs/judge-<ts>/ | verdicts.json | cached.json> [...]")
     process.exit(1)
   }
-  const { verdictFiles, cachedFiles, batchFiles, impersonationItemFiles, impersonationResultFiles, dirs } = resolveFiles(args)
+  const resolved = resolveFiles(args)
+  const { batchFiles, impersonationItemFiles, dirs } = resolved
   const fetchedAt = fetchedAtOf(dirs, force)
+  const fresh = (files: string[]) =>
+    files.filter((f) => {
+      if (force || !alreadyApplied(f)) return true
+      console.log(`  skip (already applied, see applied.json; --force applies it again): ${f}`)
+      return false
+    })
+  const verdictFiles = fresh(resolved.verdictFiles)
+  const cachedFiles = fresh(resolved.cachedFiles)
+  const impersonationResultFiles = fresh(resolved.impersonationResultFiles)
+  const workFiles = [...verdictFiles, ...cachedFiles, ...impersonationResultFiles]
+  if (workFiles.length === 0) {
+    console.log("[judge-keyless:apply] nothing left to apply")
+    return
+  }
   // A verdict's research happened shortly before the orchestrator wrote its file, so the file's
   // modification time stands in for web.verifiedAt.
   const verdicts = verdictFiles.flatMap((f) => {
@@ -135,9 +96,23 @@ async function main() {
       `(${jev ? "Jev + composer" : "composer only, no TYPESAFE_API_KEY"})`,
   )
 
-  const run = dryRun ? null : await startJudgeRun("KEYLESS")
   const openDeep = await prisma.judgeRequest.findMany({ where: { kind: "deep", resolvedAt: null }, select: { workbcId: true } })
   const openDeepIds = new Set(openDeep.map((r) => r.workbcId))
+  // What this apply can score: the postings its own verdict, result and cached files reach that are
+  // still waiting. The dir's other batches belong to waves not applied yet.
+  const items = new Map((impersonationItemFiles.flatMap(readJsonArray) as ImpersonationItem[]).map((it) => [it.checkKey, it]))
+  const named = new Set<string>([
+    ...verdicts.flatMap(({ v }) => {
+      const id = (v as { workbcId?: unknown })?.workbcId
+      return typeof id === "string" ? (postingsFor.get(id) ?? [id]) : []
+    }),
+    ...impersonationResultFiles.flatMap(readJsonArray).flatMap((r) => items.get((r as { checkKey?: string })?.checkKey ?? "")?.postings ?? []),
+    ...cachedEntries.map((e) => e.workbcId),
+  ])
+  const run = dryRun
+    ? null
+    : await startJudgeRun("KEYLESS", await prisma.job.count({ where: scoreableWhere([...named], openDeepIds) }))
+  if (run) runId = run.id
   const noDeep = new Set<string>()
 
   let applied = 0
@@ -387,7 +362,7 @@ async function main() {
   if ((applied > 0 || keptImpostors > 0) && !dryRun) await requestRevalidation()
   if (run) {
     await settleRequests("[judge-keyless:apply]")
-    for (const d of dirs) writeFileSync(join(d, "applied.json"), JSON.stringify({ appliedAt: new Date().toISOString(), run: run.id }, null, 2), "utf8")
+    recordApplied(workFiles, run.id)
     const outcome = await finishJudgeRun(run.id, {
       pendingAtStart: run.pendingAtStart,
       scored: applied + keptImpostors,
@@ -400,7 +375,8 @@ async function main() {
   await prisma.$disconnect()
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error("FATAL:", e)
+  if (runId) await failJudgeRun(runId, e).catch((err) => console.error(`[judge-keyless:apply] could not record the failure: ${(err as Error).message}`))
   process.exit(1)
 })

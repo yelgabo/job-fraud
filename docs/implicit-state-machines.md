@@ -312,6 +312,9 @@ code. The counts come from read-only queries against production on 2026-11-08.
 | `scoredAt` doing four jobs | `Job.judgedAt`, set only by judgment writes and impersonation verdicts, kept across a send-back, and shown as "Reviewed on"; `scoredAt` stays the publication time and the rerun clock |
 | Pending page says "never evaluated" | `lib/shared/verdict-state.ts`: a withheld row says it is being re-evaluated, and the audit mirror shows the withheld verdict |
 | No scrape record | `ScrapeRun`, written by `lib/shared/scrape-run.ts`; a scrape that finds nothing, fetches nothing or throws exits nonzero, the scheduler judges anyway and then fails; "last scan" reads the latest finished run |
+| Crashed judge runs left `RUNNING` | both judges' top-level catch closes the run as `FAILED` (`failJudgeRun`), reading the scored count from `judgedAt`; the audit page labels a `RUNNING` row older than three hours as probably killed |
+| Keyless apply `FAILED` with nothing to do | its `pendingAtStart` counts only the postings its own files reach |
+| Keyless waves refused by `applied.json` | `applied.json` lists applied files, not dirs; naming files still reads the dir's batch and item files (`lib/shared/keyless-files.ts`) |
 | Refetch overwrites evidence | `keepJudgeFlags` keeps `apply_host_mismatch_review` while the apply link is unchanged; no employer enrichment on an impersonation; a name found only in the detail creates its employer, and no name keeps the earlier one |
 
 The rest of this section is as found.

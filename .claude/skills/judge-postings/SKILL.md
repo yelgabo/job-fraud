@@ -94,8 +94,9 @@ Run from the `job-fraud` project directory.
 
 5. **Apply (single writer).** First `npm run judge-keyless:apply -- --dry-run logs/judge-<ts>/` to see
    how many postings it would score and whether any verdict breaks the tier rule; then run it
-   without `--dry-run`. Apply refuses a directory with no `manifest.json` (the fetch writes it) or
-   one it has already applied (`applied.json`); `--force` overrides both, and is rarely right. It
+   without `--dry-run`. Apply refuses a directory with no `manifest.json` (the fetch writes it), and
+   skips any verdict, result or cached file that `applied.json` lists as applied; `--force`
+   overrides both, and is rarely right. It
    does not store a verdict over one an employer received after the fetch. A directory contributes
    its `verdicts*.json`, its `batch-*.json` (for
    `employerPostings`), its `cached.json` and its `impersonation-*.json` files. It applies the
@@ -108,8 +109,11 @@ Run from the `job-fraud` project directory.
    `EmployerWebSearchLog`, where `/audit` shows it as agent-reported; the summary counts verdicts
    that arrived without one, and lists postings held for a missing impersonation result with
    their `checkKey`.
-   Apply each completed wave serially using its explicit verdict file paths, or apply the
-   directory once after all its waves finish, to avoid reapplying earlier waves.
+   Apply each completed wave serially by naming its verdict and result files; apply still reads
+   the directory's `batch-*.json` and `impersonation-NNN.json`, so each verdict scores all of its
+   employer's postings. Naming files does not apply `cached.json`, so finish by applying the
+   directory: `applied.json` records every file applied, and the directory apply takes only what
+   is left. Applying the directory once after all waves finish also works.
 
 6. For large corpora (e.g. 500), repeat steps 1-5 in waves until `judge-keyless:fetch` reports 0 pending.
 

@@ -19,7 +19,7 @@ import { jevClientFromEnv } from "../lib/ai/jev-judgments"
 import { buildVerdict } from "../lib/scoring/verdict"
 import { writeComposedVerdict } from "../lib/scoring/write-verdict"
 import { isAuthError, isFatalApiError } from "../lib/shared/anthropic-errors"
-import { finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
+import { failJudgeRun, finishJudgeRun, startJudgeRun } from "../lib/shared/judge-run"
 import { settleRequests } from "../lib/shared/judge-requests"
 import { storeEmployerWeb } from "../lib/shared/employer-verdict"
 import { requestRevalidation } from "../lib/shared/request-revalidation"
@@ -39,6 +39,9 @@ function parseArgs(): Args {
 }
 
 
+/** Set once the run row exists, so the top-level catch can close it. */
+let runId: string | null = null
+
 async function main() {
   const args = parseArgs()
   const env = loadScrapeEnv()
@@ -49,6 +52,7 @@ async function main() {
   console.log(jev ? "[judge] stage 2: Jev text judgments + composer" : "[judge] stage 2: composer only (no TYPESAFE_API_KEY, route judged by flags)")
   const t0 = Date.now()
   const run = await startJudgeRun("API")
+  runId = run.id
 
   const jobs = await prisma.job.findMany({
     where: args.rejudge ? {} : { status: "PENDING" },
@@ -279,7 +283,8 @@ async function main() {
   await prisma.$disconnect()
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error("FATAL:", e)
+  if (runId) await failJudgeRun(runId, e).catch((err) => console.error(`[judge] could not record the failure: ${(err as Error).message}`))
   process.exit(1)
 })

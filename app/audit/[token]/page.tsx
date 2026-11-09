@@ -4,7 +4,7 @@ import { parseChecks } from "@/lib/shared/json-schemas"
 import { requireAuditToken } from "./guard"
 import { isPrivateAddress, scoredAddressType } from "@/lib/shared/address-type"
 import { isPresumed } from "@/lib/shared/employer-check"
-import { scrapeRunStatus } from "@/lib/shared/scrape-run-status"
+import { runStatus } from "@/lib/shared/run-status"
 
 export const dynamic = "force-dynamic"
 
@@ -91,8 +91,12 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
             <ul className="space-y-1 text-sm">
               {runs.map((r) => (
                 <li key={r.id} className="text-zinc-700">
-                  <span className={r.outcome === "OK" ? "font-semibold text-zinc-700" : "font-semibold text-red-700"}>
-                    {r.outcome}
+                  <span
+                    className={
+                      ["OK", "RUNNING"].includes(runStatus(r, now)) ? "font-semibold text-zinc-700" : "font-semibold text-red-700"
+                    }
+                  >
+                    {runStatus(r, now)}
                   </span>{" "}
                   {r.path.toLowerCase()} · {new Date(r.startedAt).toLocaleString("en-CA")} · {r.pendingAtStart} pending at
                   start, {r.scored} scored, {r.held} held, {r.failed} failed
@@ -110,7 +114,7 @@ export default async function AuditIndexPage({ params }: { params: Promise<{ tok
           ) : (
             <ul className="space-y-1 text-sm">
               {scrapeRuns.map((r) => {
-                const status = scrapeRunStatus(r, now)
+                const status = runStatus(r, now)
                 return (
                   <li key={r.id} className="text-zinc-700">
                     <span
