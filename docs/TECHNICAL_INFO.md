@@ -361,3 +361,58 @@ newly judged verdicts. Levers when traffic actually hurts: `--html-caching force
 load event (then `railway cdn purge html` for instant refresh), and
 `railway waf under-attack enable --duration 1h` for an active flood (browser-challenges visitors,
 `disable` after).
+
+## Repository state and deploy history
+
+Moved from `AGENTS.md` on 2026-11-10 so the instruction file holds only rules. The text is as it stood then.
+
+`.github/workflows/test.yml` is the only workflow (tsc, vitest, build on push/PR; no DB, no
+network). The weekly refresh runs inside Railway as the **`job-fraud-scheduler`** cron service
+(Mondays 12:17 UTC, start command `scripts/scheduled-refresh.sh`): both scrape passes, then
+`npm run judge -- --limit $JUDGE_LIMIT`, failing the run when `ANTHROPIC_API_KEY` is missing.
+Each judge run writes a `JudgeRun` row whose outcome (`OK`, `PARTIAL`, `FAILED`, `ABORTED`, or
+`RUNNING` with no `finishedAt` for a process killed outright) is the record of what a run did; a
+thrown error closes the row as `FAILED` with the message. Keyless apply counts only the postings
+its own files reach as pending at start. Each
+scrape writes a `ScrapeRun` row the same way (`FAILED` when the search finds nothing, every detail
+fetch fails, or the process throws); a failed scrape still lets the judge run, then fails the cron. It reaches
+Postgres over the private network, so it publishes new verdicts with no human involved and keeps
+working if the public TCP proxy is removed again. Its settings live on the Railway service;
+`docs/TECHNICAL_INFO.md` ("Scheduled refresh") lists them and how to trigger or
+inspect a run. Postgres was private between 2026-10-22 (credential-rotation incident) and
+2026-10-26, when a new public TCP proxy was added for local runs; an old `.env` holding
+`zephyr.proxy.rlwy.net` points at nothing. Since 2026-10-27 local `.env` files connect as
+**`jobfraud_local`**, a login that can only read and write rows in the app's tables (no DDL, no
+superuser, no `TRUNCATE`), with `sslmode=require`; default privileges cover tables a deploy adds.
+The `postgres` superuser password lives only in Railway's variables. `log_connections` is on, so
+Railway's Postgres logs show every connection and its source address. Rotating the superuser
+password is planned in `docs/postgres-credential-rotation-plan.md`, not done.
+
+The `job-fraud` web service deploys from GitHub: every push to `main` deploys once the Tests
+workflow passes, except a push that only touches `docs/`, `AGENTS.md`, `CLAUDE.md`, `.claude/` or
+`.agents/` (the service's watch paths, set 2026-10-27; the list must start with `**`, since a first rule
+of `/**` matched nothing and skipped every deploy). `README.md` still deploys: `/about` reads it. Its build and start settings live on the service, not in the repo (there is no
+`railway.json`); read them with `railway api` on `serviceInstance` before changing them.
+
+- **Deploying an older commit drops newer columns.** This has happened. On 2026-10-23 the
+  incident redeploy used `railway up` from a backport branch whose schema predated
+  `Job.judgments` and `Job.scoringVersion`; its `db push` dropped both, erasing the Jev answers
+  for every composed row (no backup covered them). The columns were re-added empty on
+  2026-10-26. Before any `railway up`, run the `migrate diff` above from that checkout and stop
+  if it prints a `DROP`.
+
+Normal deploys come from GitHub push (the service's source is `yelgabo/job-fraud`, trigger reconnected 2026-10-26). `railway up` is
+only the fallback when auto-deploy does not fire. The web service also sits behind Railway's edge
+CDN cache (enabled 2026-10-26, resting state `auto`); what it caches, the escalation levers and the
+purge command are documented in `docs/TECHNICAL_INFO.md` ("Railway edge CDN"). **Data refreshes never need a deploy** - the site
+serves pages cached up to 10 minutes, so refreshed data appears within the revalidation window (or
+immediately, when the run could call `POST /api/revalidate` with `REVALIDATE_TOKEN` set).
+
+Which path runs is decided by one predicate: **is `ANTHROPIC_API_KEY` set in `.env`?** "Set" means
+non-empty, which is all `lib/env.ts` checks. `.env.example` therefore ships that line commented out,
+and leaving it commented is what keeps a keyless machine on the keyless path. A placeholder or stale
+key answers the predicate "yes" and then every Anthropic call 401s; a 401 is not a billing error, so
+the run does not abort. Every employer check fails, and since 2026-11-06 `judge.ts` holds back the
+postings of any employer whose check failed (they stay pending) instead of scoring them on a stale
+or missing verdict. Postings of employers with a reusable or presumed verdict are still scored, with
+the impersonation pre-check failing open. `.env.example`'s comment on that variable has the detail.

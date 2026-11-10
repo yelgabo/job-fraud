@@ -111,3 +111,21 @@ escalation fires, which these 10 could not (none were alarming).
 move any row by one. The token counts include each agent's fixed overhead (system prompt, tool
 definitions), which favours larger batches. This picks a default; it does not certify one.
 Re-run with more labels (`docs/labelset.md` has 59 blank) before relying on the margins.
+
+## Model pins and the 2026-10-27 recheck runs
+
+Moved from `AGENTS.md` on 2026-11-10 so the instruction file holds only rules. The text is as it stood then.
+
+Models are pinned in the source, not in env. Employer verification is **tiered** since 2026-10-26:
+Haiku 5.5 checks every employer, and when its verdict would raise a rating (a business or location
+`mismatch`, or a residential / P.O. box / virtual mailing address) or it left a posting's mailing
+address `uncertain`, Opus 5.5 checks again and its verdict is used instead (`needsEscalation`, `verifyEmployerTiered`; models and prices in `lib/ai/verifier-models.ts`,
+the evidence in `docs/verifier-model-eval.md`). Each verdict records `web.verifiedBy`. The keyless
+agent path does the same with Haiku and Opus helper agents (`.claude/skills/judge-postings/SKILL.md`,
+step 3b). Opus 5.5 also runs the brand-impersonation check (`lib/ai/check-impersonation.ts`, an
+API call in the API judge and `rescan-impersonation`, and Opus helper agents on the keyless path
+since 2026-11-06; moved from Opus 4.8 on 2026-10-27 without a side-by-side comparison), and
+TypeSafe's default Jev model for the text judgments (`lib/ai/jev-judgments.ts`). Nothing scores:
+`scoringVersion` on the row says which era produced its number (null = a model chose it).
+
+Recheck runs on 2026-10-27 (`npm run recheck-cached-verdicts`): 73 pending-side verdicts (47 no longer alarming); 218 published-side employers (179 changed, 346 postings re-scored: 169 lowered, 12 raised, $45.63); `--residential` gave 4 `home_business` verdicts, applied after owner review; `--ids` re-checked 38 verdicts that had hit the old 5-search cap (19 changed, 77 postings re-scored).

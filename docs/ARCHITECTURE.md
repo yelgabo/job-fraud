@@ -126,3 +126,27 @@ rating; `opus-5-5` for impersonation reasoning; all with the server-side `web_se
 **2,920 postings · 1,157 companies · all judged** → Low 2,667 / Medium 191 / High 62. Risk
 concentrates in individual / small-operator categories (care, food, trades); corporate / verifiable
 categories (healthcare, engineering, software) are lowest.
+
+## Verdict and status columns
+
+Moved from `AGENTS.md` on 2026-11-10 so the instruction file holds only rules. The text is as it stood then.
+
+`Job.status` (`PENDING` / `PUBLISHED`, since 2026-11-08) says whether the site shows a posting;
+every reader filters on it. `scoredAt` is when the current verdict was last published, by any
+writer, and is null while pending. `judgedAt` (since 2026-11-08) is when a judgment last produced the
+verdict: recompose and republish leave it alone and a send-back keeps it, so it is the "Reviewed on"
+date. `Job.verdictKind`
+(`MODEL` / `COMPOSED` / `IMPERSONATION`) records how the current verdict was produced. Only
+`lib/scoring/write-verdict.ts` writes the verdict columns: it refuses to let a composed verdict
+replace an impersonation, and refuses a "recompute" on a pending row (an open rerun). A new
+scorer calls it rather than `prisma.job.update`. `npm run backfill-status` (dry run by default)
+derives both columns from the older fields and lists any row that disagrees. Employer verdicts
+likewise go through `lib/shared/employer-verdict.ts` (`storeEmployerWeb`), which will not overwrite
+a verdict another run stored after the writer read the employer, and brand-impersonation answers
+are saved in `ImpersonationAnswer` and reused by both paths (delete a row to force a re-check).
+The weekly scrape refetches known postings not fetched for 28 days (`--refetch-after-days`,
+`Job.fetchedAt`); a published posting whose text, apply link, pay, place or employer changed goes
+back to pending. `scripts/measure-refetch-drift.ts` measures that rate read-only. Running the
+stages out of order is not possible from the CLI; the sequencing risk is the *helpers*
+(`rescore-failed`, `reverify-mail`, `rescan-impersonation`), which assume postings already have
+scores and employers already have verdicts. Run `judge` first.
