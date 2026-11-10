@@ -17,7 +17,8 @@ export type VerifierProfile = {
 export const WEB_SEARCH_USD = 0.01
 
 export const VERIFIER_PROFILES = {
-  // The production default. Unchanged request: these are the values judge.ts has always sent.
+  // DEFAULT_VERIFIER, the fallback when no profile is passed. Production uses TIERED_VERIFIER
+  // (below). Unchanged request: these are the values judge.ts sent until 2026-10-26.
   "haiku-4.5": {
     model: "claude-haiku-4-5-20251001",
     inputPerMTok: 1,
